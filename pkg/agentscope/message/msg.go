@@ -1,11 +1,16 @@
 package message
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/types"
 	"github.com/google/uuid"
 )
+
+// TimestampFormat is the canonical timestamp layout used throughout agentscope-go.
+const TimestampFormat = "2006-01-02 15:04:05.000"
 
 // Role represents the sender role of a message.
 type Role string
@@ -115,24 +120,22 @@ type Msg struct {
 }
 
 // NewMsg constructs a new Msg with generated ID and timestamp.
+// Content must be a string or []ContentBlock; any other type causes a panic.
 func NewMsg(name string, role Role, content any) *Msg {
-	if contentStr, ok := content.(string); !ok {
-		if _, ok := content.([]ContentBlock); !ok {
-			panic("message content must be string or []ContentBlock")
-		}
-	} else {
-		_ = contentStr
+	switch content.(type) {
+	case string, []ContentBlock:
+		// valid content types
+	default:
+		panic(fmt.Sprintf("message: content must be string or []ContentBlock, got %T", content))
 	}
-
-	now := time.Now().Format("2006-01-02 15:04:05.000")
 
 	return &Msg{
 		ID:        uuid.NewString(),
 		Name:      name,
 		Role:      role,
 		Content:   content,
-				Metadata:  types.JSONObject{},
-		Timestamp: now,
+		Metadata:  types.JSONObject{},
+		Timestamp: time.Now().Format(TimestampFormat),
 	}
 }
 
@@ -174,7 +177,7 @@ func FromMap(data map[string]any) *Msg {
 		msg.ID = uuid.NewString()
 	}
 	if msg.Timestamp == "" {
-		msg.Timestamp = time.Now().Format("2006-01-02 15:04:05.000")
+		msg.Timestamp = time.Now().Format(TimestampFormat)
 	}
 	return msg
 }
@@ -217,10 +220,7 @@ func (m *Msg) GetTextContent(separator string) *string {
 	if len(texts) == 0 {
 		return nil
 	}
-	joined := texts[0]
-	for i := 1; i < len(texts); i++ {
-		joined += separator + texts[i]
-	}
+	joined := strings.Join(texts, separator)
 	return &joined
 }
 

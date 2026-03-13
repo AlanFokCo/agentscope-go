@@ -11,6 +11,12 @@ import (
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 )
 
+const (
+	defaultAnthropicBaseURL        = "https://api.anthropic.com"
+	defaultAnthropicVersion        = "2023-06-01"
+	defaultAnthropicMaxOutputTokens = 1024
+)
+
 // AnthropicChatModel is a wrapper around Anthropic's Messages API,
 // aligned with the ChatModel interface so it can be swapped with other models
 // in ReActAgent / Pipeline.
@@ -49,21 +55,15 @@ func NewAnthropicChatModel(cfg AnthropicConfig) (*AnthropicChatModel, error) {
 	}
 	base := cfg.BaseURL
 	if base == "" {
-		base = "https://api.anthropic.com"
+		base = defaultAnthropicBaseURL
 	}
 	ver := cfg.Version
 	if ver == "" {
-		ver = "2023-06-01"
+		ver = defaultAnthropicVersion
 	}
 	maxTok := cfg.MaxOutputTokens
 	if maxTok <= 0 {
-		maxTok = 1024
-	}
-	client := cfg.HTTPClient
-	if client == nil {
-		client = &http.Client{
-			Timeout: 60 * time.Second,
-		}
+		maxTok = defaultAnthropicMaxOutputTokens
 	}
 	return &AnthropicChatModel{
 		apiKey:       cfg.APIKey,
@@ -71,7 +71,7 @@ func NewAnthropicChatModel(cfg AnthropicConfig) (*AnthropicChatModel, error) {
 		model:        cfg.Model,
 		version:      ver,
 		maxOutputTok: maxTok,
-		httpClient:   client,
+		httpClient:   defaultHTTPClient(cfg.HTTPClient),
 	}, nil
 }
 

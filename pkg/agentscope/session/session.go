@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -57,7 +58,7 @@ func (s *MemorySession) List(_ context.Context, prefix string) ([]string, error)
 	defer s.mu.RUnlock()
 	var keys []string
 	for k := range s.data {
-		if prefix == "" || len(k) >= len(prefix) && k[:len(prefix)] == prefix {
+		if prefix == "" || strings.HasPrefix(k, prefix) {
 			keys = append(keys, k)
 		}
 	}
@@ -112,7 +113,7 @@ func (s *JSONSession) List(_ context.Context, prefix string) ([]string, error) {
 	defer s.mu.RUnlock()
 	var keys []string
 	for k := range s.data {
-		if prefix == "" || len(k) >= len(prefix) && k[:len(prefix)] == prefix {
+		if prefix == "" || strings.HasPrefix(k, prefix) {
 			keys = append(keys, k)
 		}
 	}
