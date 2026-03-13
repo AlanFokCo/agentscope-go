@@ -11,6 +11,8 @@ import (
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 )
 
+const defaultDashScopeBaseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
 // DashScopeChatModel calls Alibaba Cloud DashScope (Qwen) models via the OpenAI-compatible API.
 // Reference: https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope
 type DashScopeChatModel struct {
@@ -39,19 +41,13 @@ func NewDashScopeChatModel(cfg DashScopeConfig) (*DashScopeChatModel, error) {
 	}
 	base := cfg.BaseURL
 	if base == "" {
-		base = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-	}
-	client := cfg.HTTPClient
-	if client == nil {
-		client = &http.Client{
-			Timeout: 60 * time.Second,
-		}
+		base = defaultDashScopeBaseURL
 	}
 	return &DashScopeChatModel{
 		apiKey:     cfg.APIKey,
 		baseURL:    base,
 		model:      cfg.Model,
-		httpClient: client,
+		httpClient: defaultHTTPClient(cfg.HTTPClient),
 	}, nil
 }
 

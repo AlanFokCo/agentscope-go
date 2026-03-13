@@ -4,12 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/memory"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/rag"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/tool"
+)
+
+const (
+	// defaultMaxIters is the default cap on the ReAct reasoning-acting loop iterations.
+	defaultMaxIters = 4
+	// defaultTopK is the default number of documents retrieved per knowledge base query.
+	defaultTopK = 3
 )
 
 // ReActAgent is a simplified Go implementation of a ReAct-style agent,
@@ -57,7 +67,7 @@ func NewReActAgent(
 		Model:     m,
 		Toolkit:   tk,
 		Memory:    mem,
-		MaxIters:  4,
+		MaxIters:  defaultMaxIters,
 	}
 }
 
@@ -161,11 +171,17 @@ func (a *ReActAgent) Reply(ctx context.Context, args ...any) (*message.Msg, erro
 
 		// Non-tool reply is treated as the final answer.
 		history = append(history, assistantMsg)
-		_ = a.Memory.Save(ctx, memKey, userMsg)
-		_ = a.Memory.Save(ctx, memKey, assistantMsg)
+		if err := a.Memory.Save(ctx, memKey, userMsg); err != nil {
+			logrus.WithError(err).Warn("react agent: failed to save user message to memory")
+		}
+		if err := a.Memory.Save(ctx, memKey, assistantMsg); err != nil {
+			logrus.WithError(err).Warn("react agent: failed to save assistant message to memory")
+		}
 
 		// Print final reply.
-		_ = a.Print(ctx, assistantMsg)
+		if err := a.Print(ctx, assistantMsg); err != nil {
+			logrus.WithError(err).Warn("react agent: failed to print assistant message")
+		}
 		return assistantMsg, nil
 	}
 
@@ -174,7 +190,9 @@ func (a *ReActAgent) Reply(ctx context.Context, args ...any) (*message.Msg, erro
 		return nil, fmt.Errorf("react agent: no messages in history")
 	}
 	last := history[len(history)-1]
-	_ = a.Print(ctx, last)
+	if err := a.Print(ctx, last); err != nil {
+		logrus.WithError(err).Warn("react agent: failed to print last message")
+	}
 	return last, nil
 }
 
@@ -190,7 +208,6 @@ func (a *ReActAgent) retrieveKnowledge(ctx context.Context, query string) string
 	if len(a.Knowledge) == 0 || query == "" {
 		return ""
 	}
-	const topK = 3
 	type kbSnippet struct {
 		name string
 		text string
@@ -200,39 +217,39 @@ func (a *ReActAgent) retrieveKnowledge(ctx context.Context, query string) string
 		if kb == nil {
 			continue
 		}
-		docs, err := kb.Query(ctx, query, topK)
+		docs, err := kb.Query(ctx, query, defaultTopK)
 		if err != nil || len(docs) == 0 {
 			continue
 		}
-		var text string
+		var sb strings.Builder
 		for i, d := range docs {
-			if i >= topK {
+			if i >= defaultTopK {
 				break
 			}
-			if text != "" {
-				text += "\n---\n"
+			if sb.Len() > 0 {
+				sb.WriteString("\n---\n")
 			}
-			text += d.Content
+			sb.WriteString(d.Content)
 		}
-		if text != "" {
+		if sb.Len() > 0 {
 			name := kb.Name()
 			if name == "" {
 				name = "kb"
 			}
-			snippets = append(snippets, kbSnippet{name: name, text: text})
+			snippets = append(snippets, kbSnippet{name: name, text: sb.String()})
 		}
 	}
 	if len(snippets) == 0 {
 		return ""
 	}
-	out := ""
+	var out strings.Builder
 	for _, s := range snippets {
-		if out != "" {
-			out += "\n\n"
+		if out.Len() > 0 {
+			out.WriteString("\n\n")
 		}
-		out += fmt.Sprintf("[%s]\n%s", s.name, s.text)
+		fmt.Fprintf(&out, "[%s]\n%s", s.name, s.text)
 	}
-	return out
+	return out.String()
 }
 
 // tryParseToolCall attempts to parse the assistant Msg content as a tool call JSON.

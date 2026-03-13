@@ -11,6 +11,8 @@ import (
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 )
 
+const defaultOpenAIBaseURL = "https://api.openai.com"
+
 // OpenAIChatModel is a thin wrapper around the OpenAI Chat Completions API.
 // It uses the https://api.openai.com/v1/chat/completions endpoint style.
 type OpenAIChatModel struct {
@@ -40,19 +42,13 @@ func NewOpenAIChatModel(cfg OpenAIConfig) (*OpenAIChatModel, error) {
 	}
 	base := cfg.BaseURL
 	if base == "" {
-		base = "https://api.openai.com"
-	}
-	client := cfg.HTTPClient
-	if client == nil {
-		client = &http.Client{
-			Timeout: 60 * time.Second,
-		}
+		base = defaultOpenAIBaseURL
 	}
 	return &OpenAIChatModel{
 		apiKey:     cfg.APIKey,
 		baseURL:    base,
 		model:      cfg.Model,
-		httpClient: client,
+		httpClient: defaultHTTPClient(cfg.HTTPClient),
 	}, nil
 }
 
