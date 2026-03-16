@@ -101,7 +101,9 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("assistant:", reply.GetTextContent())
+	if txt := reply.GetTextContent("\n"); txt != nil {
+		fmt.Println("assistant:", *txt)
+	}
 }
 ```
 
@@ -133,12 +135,11 @@ The `react_tool` example shows how to let the model call tools. The core idea is
 sumTool := &tool.Tool{
 	Name:        "sum_numbers",
 	Description: "Sum a list of numbers",
-	Func: func(args map[string]any) (any, error) {
+	Execute: func(ctx context.Context, args map[string]any) (any, error) {
 		numsAny, _ := args["numbers"].([]any)
 		var sum float64
 		for _, v := range numsAny {
-			switch n := v.(type) {
-			case float64:
+			if n, ok := v.(float64); ok {
 				sum += n
 			}
 		}
@@ -157,6 +158,30 @@ react := asagent.NewReActAgent("assistant", sysPrompt, cm, tk, mem)
 // 3) Call Reply and let the agent decide whether to use the tool
 reply, err := react.Reply(ctx, "Please calculate the sum of [1, 2, 3.5].")
 ```
+
+### Built-in tools: execute_shell_command and view_text_file
+
+The `tool` package provides two built-in tools usable by ReActAgent:
+
+- **execute_shell_command**: runs shell commands. Args: `command` (string), `timeout` (optional, seconds).
+- **view_text_file**: reads text file contents. Args: `path` or `file_path` (string).
+
+```go
+tk := tool.NewBuiltinToolkit()
+react := asagent.NewReActAgent("assistant", sysPrompt, cm, tk, mem)
+```
+
+Or add them to an existing toolkit:
+
+```go
+tk := tool.NewToolkit(
+	tool.ExecuteShellCommandTool(),
+	tool.ViewTextFileTool(),
+	myCustomTool,
+)
+```
+
+See `examples/react_builtin_tools` for a full example.
 
 ### RAG + Qdrant usage sketch
 
@@ -200,6 +225,7 @@ All examples are in the `examples/` directory:
 
 - `examples/simple`: single Agent + ChatModel.
 - `examples/react_tool`: `ReActAgent` with a custom tool (`tool.Toolkit`).
+- `examples/react_builtin_tools`: `ReActAgent` with built-in tools (`execute_shell_command`, `view_text_file`).
 - `examples/rag_react`: `ReActAgent` with RAG (`rag.KnowledgeBase`) and memory compression.
 - `examples/tracing`: enable `tracing.LoggerTracer` to log spans.
 - `examples/a2a_http`: `A2AAgent` + `a2a.HTTPClient` calling a local HTTP server Agent.
