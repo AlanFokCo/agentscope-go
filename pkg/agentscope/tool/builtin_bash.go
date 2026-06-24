@@ -43,6 +43,10 @@ func (t *bashTool) Execute(ctx context.Context, args map[string]any) (*ToolRespo
 		return NewErrorResponse(fmt.Errorf("command cannot be empty")), nil
 	}
 
+	if dangerous, reason := CheckDangerousCommand(cmdStr); dangerous {
+		return NewErrorResponse(fmt.Errorf("blocked: %s — this command requires explicit user approval", reason)), nil
+	}
+
 	timeoutSec := DefaultShellTimeout
 	if v, ok := args["timeout"]; ok {
 		switch n := v.(type) {

@@ -50,6 +50,10 @@ func (t *editTool) Execute(ctx context.Context, args map[string]any) (*ToolRespo
 		return NewErrorResponse(fmt.Errorf("file_path cannot be empty")), nil
 	}
 
+	if dangerous, reason := CheckDangerousPath(path); dangerous {
+		return NewErrorResponse(fmt.Errorf("blocked: %s — this file requires explicit user approval", reason)), nil
+	}
+
 	oldStr, ok := args["old_string"].(string)
 	if !ok {
 		return NewErrorResponse(fmt.Errorf("old_string is required and must be a string")), nil

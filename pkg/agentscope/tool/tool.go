@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/exception"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/internal/jsonx"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/permission"
@@ -218,11 +220,14 @@ func (tk *Toolkit) GetToolSchemas() []model.ToolSchema {
 // CallTool executes a tool by name with the given input.
 func (tk *Toolkit) CallTool(ctx context.Context, name string, input map[string]any) (*ToolResponse, error) {
 	tk.mu.RLock()
-	t := tk.findTool(name)
+	t, groupName := tk.findToolWithGroup(name)
 	tk.mu.RUnlock()
 
 	if t == nil {
-		return nil, fmt.Errorf("tool %q not found or not active", name)
+		if groupName != "" {
+			return nil, &exception.ToolGroupInactiveError{ToolName: name, GroupName: groupName}
+		}
+		return nil, &exception.ToolNotFoundError{ToolName: name}
 	}
 	return t.Execute(ctx, input)
 }
@@ -231,7 +236,17 @@ func (tk *Toolkit) CallTool(ctx context.Context, name string, input map[string]a
 func (tk *Toolkit) CallToolFromBlock(ctx context.Context, block message.ToolCallBlock) (*ToolResponse, error) {
 	input, err := block.ParseInput()
 	if err != nil {
-		return NewErrorResponse(fmt.Errorf("parse tool input: %w", err)), nil
+		// Try JSON repair before giving up
+		var repaired map[string]any
+		if repairErr := jsonx.RepairAndUnmarshal([]byte(block.Input), &repaired); repairErr == nil {
+			input = repaired
+		} else {
+			return NewErrorResponse(&exception.ToolJSONDecodeError{
+				ToolName: block.Name,
+				Input:    block.Input,
+				Err:      err,
+			}), nil
+		}
 	}
 	return tk.CallTool(ctx, block.Name, input)
 }
@@ -244,17 +259,25 @@ func (tk *Toolkit) Get(name string) Tool {
 }
 
 func (tk *Toolkit) findTool(name string) Tool {
+	t, _ := tk.findToolWithGroup(name)
+	return t
+}
+
+// findToolWithGroup returns the tool and, if the tool exists but its group is
+// inactive, the group name (so the caller can produce a specific error).
+func (tk *Toolkit) findToolWithGroup(name string) (Tool, string) {
+	inactiveGroup := ""
 	for _, g := range tk.groups {
-		if !g.Active {
-			continue
-		}
 		for _, t := range g.Tools {
 			if t.Name() == name {
-				return t
+				if g.Active {
+					return t, ""
+				}
+				inactiveGroup = g.GroupName
 			}
 		}
 	}
-	return nil
+	return nil, inactiveGroup
 }
 
 // --- Global Registry ---

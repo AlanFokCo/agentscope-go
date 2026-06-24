@@ -42,6 +42,10 @@ func (t *writeTool) Execute(ctx context.Context, args map[string]any) (*ToolResp
 		return NewErrorResponse(fmt.Errorf("file_path cannot be empty")), nil
 	}
 
+	if dangerous, reason := CheckDangerousPath(path); dangerous {
+		return NewErrorResponse(fmt.Errorf("blocked: %s — this file requires explicit user approval", reason)), nil
+	}
+
 	contentRaw, ok := args["content"]
 	if !ok {
 		return NewErrorResponse(fmt.Errorf("content is required")), nil

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/internal/jsonx"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 )
 
@@ -41,10 +42,17 @@ func GenerateStructuredOutput(ctx context.Context, model ChatModel, msgs []*mess
 		}
 		if tc.Name == structuredOutputToolName {
 			raw := json.RawMessage(tc.Input)
-			if !json.Valid(raw) {
-				return nil, fmt.Errorf("structured output: invalid JSON in tool call arguments")
+			if json.Valid(raw) {
+				return raw, nil
 			}
-			return raw, nil
+			// Try JSON repair
+			var repaired any
+			if err := jsonx.RepairAndUnmarshal([]byte(tc.Input), &repaired); err == nil {
+				if b, err := json.Marshal(repaired); err == nil {
+					return json.RawMessage(b), nil
+				}
+			}
+			return nil, fmt.Errorf("structured output: invalid JSON in tool call arguments")
 		}
 	}
 

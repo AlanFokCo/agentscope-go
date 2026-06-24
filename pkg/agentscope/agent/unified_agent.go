@@ -10,6 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/exception"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/middleware"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
@@ -466,8 +467,12 @@ func (a *UnifiedAgent) executeTool(
 	var resultState message.ToolResultState
 	var outputText string
 	if execErr != nil {
+		// DeveloperErrors propagate up; AgentErrors become tool results for the LLM
+		if _, ok := execErr.(exception.DeveloperError); ok {
+			logrus.WithError(execErr).Error("agent: developer error in tool execution")
+		}
 		resultState = message.ToolResultError
-		outputText = execErr.Error()
+		outputText = exception.GetAgentMessage(execErr)
 	} else if toolResp != nil {
 		resultState = toolResp.State
 		for _, b := range toolResp.Content {
