@@ -323,27 +323,15 @@ func (a *UnifiedAgent) replyLoop(ctx context.Context, input string, ch chan<- ev
 		a.state.Context = append(a.state.Context, assistantMsg)
 		a.mu.Unlock()
 
-		for _, tc := range toolCalls {
-			emit(ctx, ch, event.NewToolCallStartEvent(replyID, tc.ID, tc.Name))
-			emit(ctx, ch, event.NewToolCallEndEvent(replyID, tc.ID))
-
-			resultState, outputText := a.executeToolCallWithPermission(
-				ctx, ch, replyID, tc, actingHandler,
-			)
-
-			// Add tool result to context
-			toolResultMsg := message.NewMsg(a.name, message.RoleAssistant, []message.ContentBlock{
-				message.ToolResultBlock{
-					Type:   "tool_result",
-					ID:     tc.ID,
-					Name:   tc.Name,
-					Output: outputText,
-					State:  resultState,
-				},
-			})
-			a.mu.Lock()
-			a.state.Context = append(a.state.Context, toolResultMsg)
-			a.mu.Unlock()
+		batches := batchToolCalls(toolCalls, a.toolkit)
+		for _, batch := range batches {
+			if batch.concurrent && len(batch.calls) > 1 {
+				a.executeConcurrentBatch(ctx, ch, replyID, batch.calls, actingHandler)
+			} else {
+				for _, tc := range batch.calls {
+					a.executeAndRecord(ctx, ch, replyID, tc, actingHandler)
+				}
+			}
 		}
 	}
 
@@ -580,8 +568,137 @@ func extractToolCalls(content []message.ContentBlock) []message.ToolCallBlock {
 }
 
 func emit(ctx context.Context, ch chan<- event.Event, evt event.Event) {
+	if ch == nil {
+		return
+	}
 	select {
 	case ch <- evt:
 	case <-ctx.Done():
+	}
+}
+
+// --- Concurrent tool execution ---
+
+type toolBatch struct {
+	calls      []message.ToolCallBlock
+	concurrent bool
+}
+
+type toolResult struct {
+	index int
+	state message.ToolResultState
+	text  string
+}
+
+// batchToolCalls groups consecutive concurrency-safe tool calls into concurrent
+// batches. Non-concurrent-safe calls form single-item sequential batches.
+func batchToolCalls(calls []message.ToolCallBlock, tk *tool.Toolkit) []toolBatch {
+	if len(calls) <= 1 {
+		return []toolBatch{{calls: calls, concurrent: false}}
+	}
+
+	var batches []toolBatch
+	var curBatch []message.ToolCallBlock
+	curConcurrent := false
+
+	for i, tc := range calls {
+		safe := true
+		if t := tk.Get(tc.Name); t != nil {
+			safe = t.IsConcurrencySafe()
+		}
+
+		if i == 0 {
+			curConcurrent = safe
+			curBatch = []message.ToolCallBlock{tc}
+			continue
+		}
+
+		if safe == curConcurrent && safe {
+			curBatch = append(curBatch, tc)
+		} else {
+			batches = append(batches, toolBatch{calls: curBatch, concurrent: curConcurrent})
+			curBatch = []message.ToolCallBlock{tc}
+			curConcurrent = safe
+		}
+	}
+	if len(curBatch) > 0 {
+		batches = append(batches, toolBatch{calls: curBatch, concurrent: curConcurrent})
+	}
+	return batches
+}
+
+// executeAndRecord runs a single tool call, emits events, and appends the result to context.
+func (a *UnifiedAgent) executeAndRecord(
+	ctx context.Context,
+	ch chan<- event.Event,
+	replyID string,
+	tc message.ToolCallBlock,
+	actingHandler middleware.ActingHandler,
+) {
+	emit(ctx, ch, event.NewToolCallStartEvent(replyID, tc.ID, tc.Name))
+	emit(ctx, ch, event.NewToolCallEndEvent(replyID, tc.ID))
+
+	resultState, outputText := a.executeToolCallWithPermission(ctx, ch, replyID, tc, actingHandler)
+
+	toolResultMsg := message.NewMsg(a.name, message.RoleAssistant, []message.ContentBlock{
+		message.ToolResultBlock{
+			Type:   "tool_result",
+			ID:     tc.ID,
+			Name:   tc.Name,
+			Output: outputText,
+			State:  resultState,
+		},
+	})
+	a.mu.Lock()
+	a.state.Context = append(a.state.Context, toolResultMsg)
+	a.mu.Unlock()
+}
+
+// executeConcurrentBatch runs all tool calls in the batch concurrently, then
+// emits events and appends results in the original call order.
+func (a *UnifiedAgent) executeConcurrentBatch(
+	ctx context.Context,
+	ch chan<- event.Event,
+	replyID string,
+	calls []message.ToolCallBlock,
+	actingHandler middleware.ActingHandler,
+) {
+	results := make([]toolResult, len(calls))
+	var wg sync.WaitGroup
+	wg.Add(len(calls))
+
+	for i, tc := range calls {
+		go func(idx int, tc message.ToolCallBlock) {
+			defer wg.Done()
+			state, text := a.executeToolCallWithPermission(ctx, nil, replyID, tc, actingHandler)
+			results[idx] = toolResult{index: idx, state: state, text: text}
+		}(i, tc)
+	}
+	wg.Wait()
+
+	// Emit events and record results in original order
+	for i, tc := range calls {
+		emit(ctx, ch, event.NewToolCallStartEvent(replyID, tc.ID, tc.Name))
+		emit(ctx, ch, event.NewToolCallEndEvent(replyID, tc.ID))
+
+		r := results[i]
+		emit(ctx, ch, event.NewToolResultStartEvent(replyID, tc.ID, tc.Name))
+		if r.text != "" {
+			emit(ctx, ch, event.NewToolResultTextDeltaEvent(replyID, tc.ID, r.text))
+		}
+		emit(ctx, ch, event.NewToolResultEndEvent(replyID, tc.ID, r.state))
+
+		toolResultMsg := message.NewMsg(a.name, message.RoleAssistant, []message.ContentBlock{
+			message.ToolResultBlock{
+				Type:   "tool_result",
+				ID:     tc.ID,
+				Name:   tc.Name,
+				Output: r.text,
+				State:  r.state,
+			},
+		})
+		a.mu.Lock()
+		a.state.Context = append(a.state.Context, toolResultMsg)
+		a.mu.Unlock()
 	}
 }
