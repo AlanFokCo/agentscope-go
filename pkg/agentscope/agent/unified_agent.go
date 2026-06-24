@@ -340,9 +340,9 @@ reactLoop:
 
 		switch action {
 		case actionExit:
-			// Waiting for external events — exit the loop
+			// Waiting for external events — emit to consumer, don't save to context
 			if exitMsg != nil {
-				a.saveToContext(exitMsg.Content, nil)
+				emitContentEvents(ctx, ch, replyID, exitMsg.Content)
 			}
 			emit(ctx, ch, event.NewReplyEndEvent(a.state.SessionID, replyID))
 			return

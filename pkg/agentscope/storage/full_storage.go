@@ -65,6 +65,16 @@ type TeamRecord struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// SessionRecord stores a session configuration (separate from AgentState runtime data).
+type SessionRecord struct {
+	ID         string    `json:"id"`
+	AgentID    string    `json:"agent_id"`
+	TeamID     string    `json:"team_id,omitempty"`
+	ScheduleID string    `json:"schedule_id,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
 // FullStorage extends StateSaver with CRUD for credentials, agents,
 // schedules, messages, and teams.
 type FullStorage interface {
@@ -82,10 +92,17 @@ type FullStorage interface {
 	ListAgents(ctx context.Context, userID string) ([]*AgentRecord, error)
 	DeleteAgent(ctx context.Context, userID, id string) error
 
+	// Sessions (extended)
+	SaveSession(ctx context.Context, record *SessionRecord) error
+	LoadSession(ctx context.Context, id string) (*SessionRecord, error)
+	SetSessionTeamID(ctx context.Context, sessionID, teamID string) error
+	ListSessionsBySchedule(ctx context.Context, scheduleID string) ([]*SessionRecord, error)
+
 	// Schedules
 	SaveSchedule(ctx context.Context, record *ScheduleRecord) error
 	LoadSchedule(ctx context.Context, id string) (*ScheduleRecord, error)
 	ListSchedules(ctx context.Context, userID string) ([]*ScheduleRecord, error)
+	ListAllSchedules(ctx context.Context) ([]*ScheduleRecord, error)
 	DeleteSchedule(ctx context.Context, id string) error
 
 	// Messages
@@ -106,6 +123,7 @@ type InMemoryFullStorage struct {
 	mu          sync.RWMutex
 	credentials map[string]*CredentialRecord // key: userID:id
 	agents      map[string]*AgentRecord      // key: userID:id
+	sessions    map[string]*SessionRecord     // key: id
 	schedules   map[string]*ScheduleRecord   // key: id
 	messages    map[string][]*MessageRecord   // key: sessionID
 	teams       map[string]*TeamRecord        // key: id
@@ -117,6 +135,7 @@ func NewInMemoryFullStorage() *InMemoryFullStorage {
 		InMemoryStorage: *NewInMemoryStorage(),
 		credentials:     make(map[string]*CredentialRecord),
 		agents:          make(map[string]*AgentRecord),
+		sessions:        make(map[string]*SessionRecord),
 		schedules:       make(map[string]*ScheduleRecord),
 		messages:        make(map[string][]*MessageRecord),
 		teams:           make(map[string]*TeamRecord),
@@ -320,6 +339,63 @@ func (s *InMemoryFullStorage) DeleteTeam(_ context.Context, id string) error {
 	defer s.mu.Unlock()
 	delete(s.teams, id)
 	return nil
+}
+
+// --- Sessions ---
+
+func (s *InMemoryFullStorage) SaveSession(_ context.Context, r *SessionRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r.UpdatedAt = time.Now()
+	if r.CreatedAt.IsZero() {
+		r.CreatedAt = r.UpdatedAt
+	}
+	s.sessions[r.ID] = r
+	return nil
+}
+
+func (s *InMemoryFullStorage) LoadSession(_ context.Context, id string) (*SessionRecord, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	r, ok := s.sessions[id]
+	if !ok {
+		return nil, fmt.Errorf("session %q not found", id)
+	}
+	return r, nil
+}
+
+func (s *InMemoryFullStorage) SetSessionTeamID(_ context.Context, sessionID, teamID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, ok := s.sessions[sessionID]
+	if !ok {
+		return fmt.Errorf("session %q not found", sessionID)
+	}
+	r.TeamID = teamID
+	r.UpdatedAt = time.Now()
+	return nil
+}
+
+func (s *InMemoryFullStorage) ListSessionsBySchedule(_ context.Context, scheduleID string) ([]*SessionRecord, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var result []*SessionRecord
+	for _, r := range s.sessions {
+		if r.ScheduleID == scheduleID {
+			result = append(result, r)
+		}
+	}
+	return result, nil
+}
+
+func (s *InMemoryFullStorage) ListAllSchedules(_ context.Context) ([]*ScheduleRecord, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := make([]*ScheduleRecord, 0, len(s.schedules))
+	for _, r := range s.schedules {
+		result = append(result, r)
+	}
+	return result, nil
 }
 
 // Compile-time check

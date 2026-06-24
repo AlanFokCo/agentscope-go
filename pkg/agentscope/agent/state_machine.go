@@ -172,6 +172,7 @@ func (a *UnifiedAgent) saveToContext(blocks []message.ContentBlock, usage *model
 	}
 
 	msg := message.AssistantMsg(a.name, persisted)
+	msg.ID = a.state.ReplyID // tie message ID to reply session
 	if usage != nil {
 		msg.Usage = &message.Usage{
 			InputTokens:  usage.InputTokens,
