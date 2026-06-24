@@ -13,6 +13,21 @@ type Tracer interface {
 	StartSpan(ctx context.Context, name string) (context.Context, func())
 }
 
+// SpanAttribute is a key-value pair attached to a span.
+type SpanAttribute struct {
+	Key   string
+	Value any // string, int, float64, bool
+}
+
+// AttributedTracer is an optional extension of Tracer that supports
+// attaching attributes to spans. Implementations that support richer
+// tracing (like OTEL) should implement this interface.
+type AttributedTracer interface {
+	Tracer
+	// StartSpanWithAttrs creates a span with initial attributes.
+	StartSpanWithAttrs(ctx context.Context, name string, attrs ...SpanAttribute) (context.Context, func())
+}
+
 // NoopTracer is the default implementation that performs no tracing and only keeps the interface wired.
 type NoopTracer struct{}
 
