@@ -34,14 +34,14 @@ func (a *EchoLLMAgent) Reply(ctx context.Context, args ...any) (*message.Msg, er
 		}
 	}
 	if last == nil {
-		last = message.NewMsg("user", message.RoleUser, "Hello from pipeline.")
+		last = message.UserMsg("user", "Hello from pipeline.")
 	}
 	resp, err := a.model.Chat(ctx, []*message.Msg{last})
 	if err != nil {
 		return nil, err
 	}
-	_ = a.Print(ctx, resp.Msg)
-	return resp.Msg, nil
+	_ = a.Print(ctx, resp.ToMsg("assistant"))
+	return resp.ToMsg("assistant"), nil
 }
 
 func (a *EchoLLMAgent) Observe(ctx context.Context, msgs []*message.Msg) error {
@@ -81,7 +81,7 @@ func main() {
 
 	// Step1: construct user question.
 	stepUser := func(c *pipeline.Context) error {
-		msg := message.NewMsg("user", message.RoleUser, "Explain in one sentence what a pipeline is.")
+		msg := message.UserMsg("user", "Explain in one sentence what a pipeline is.")
 		c.Messages = append(c.Messages, msg)
 		return nil
 	}

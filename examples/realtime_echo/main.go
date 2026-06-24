@@ -32,7 +32,7 @@ func (a *RealtimeAgent) Reply(ctx context.Context, args ...any) (*message.Msg, e
 		}
 	}
 	if initMsg == nil {
-		initMsg = message.NewMsg("user", message.RoleUser, "Hello realtime echo")
+		initMsg = message.UserMsg("user", "Hello realtime echo")
 	}
 
 	stream, err := a.client.Start(ctx, []*message.Msg{initMsg})
@@ -64,7 +64,7 @@ func main() {
 	rt := NewRealtimeAgent(echoClient)
 
 	ctx := context.Background()
-	msg := message.NewMsg("user", message.RoleUser, "This message will be echoed back.")
+	msg := message.UserMsg("user", "This message will be echoed back.")
 	reply, err := rt.Reply(ctx, msg)
 	if err != nil {
 		fmt.Println("RealtimeAgent error:", err)

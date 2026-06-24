@@ -8,21 +8,13 @@ import (
 
 	as "github.com/alanfokco/agentscope-go/pkg/agentscope"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/middleware"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/tool"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/tracing"
 )
 
-// This example demonstrates TracingMiddleware, which automatically creates
-// nested spans for agent lifecycle events:
-//   - invoke_agent: wraps the entire Reply lifecycle
-//   - chat: wraps each model API call
-//   - execute_tool: wraps each tool execution
-//
-// Spans are nested via Go context propagation, producing a trace tree.
-// The example uses LoggerTracer for console output; switch to OTELTracer
-// for production OpenTelemetry integration.
+// This example demonstrates the unified Agent (v2) with native tool calling.
+// The model uses API-level function calling to invoke tools, rather than
+// parsing JSON from text output.
 
 func main() {
 	as.Init()
@@ -33,13 +25,7 @@ func main() {
 		return
 	}
 
-	// Set up logger-based tracing (prints span start/end to console).
-	tracer := tracing.LoggerTracer{Logger: as.Logger()}
-	tracing.SetupTracing(tracer)
-
-	// Create the tracing middleware (uses the global tracer if nil is passed).
-	tracingMW := middleware.NewTracingMiddleware(nil)
-
+	// Define tools with JSON Schema
 	weatherSchema := json.RawMessage(`{
 		"type": "object",
 		"properties": {
@@ -53,32 +39,31 @@ func main() {
 			loc, _ := input["location"].(string)
 			return map[string]any{
 				"location":    loc,
-				"temperature": "24°C",
-				"condition":   "clear sky",
+				"temperature": "18°C",
+				"condition":   "partly cloudy",
+				"humidity":    "65%",
 			}, nil
 		},
 	)
 
 	tk := tool.NewToolkit(weatherTool)
 
+	// Create the unified agent
 	a := agent.NewUnifiedAgent(
-		"traced-assistant",
-		"You are a helpful assistant. Use get_weather to look up weather.",
+		"weather-assistant",
+		"You are a helpful weather assistant. Use the get_weather tool to look up weather information when asked.",
 		cm,
 		agent.WithToolkit(tk),
-		agent.WithMiddlewares(tracingMW),
 		agent.WithReactConfig(agent.ReactConfig{MaxIters: 5}),
 	)
 
-	fmt.Println("Sending request (watch trace output in logs)...")
-
-	reply, err := a.Reply(context.Background(), "What's the weather in Tokyo?")
+	// Synchronous reply
+	reply, err := a.Reply(context.Background(), "What's the weather like in Shanghai?")
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
 	}
 
-	fmt.Println()
 	if txt := reply.GetTextContent("\n"); txt != nil {
 		fmt.Println("Assistant:", *txt)
 	}

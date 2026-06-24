@@ -35,14 +35,14 @@ func (a *SimpleAgent) Reply(ctx context.Context, args ...any) (*message.Msg, err
 		userText = "Hello from Go AgentScope!"
 	}
 
-	userMsg := message.NewMsg("user", message.RoleUser, userText)
+	userMsg := message.UserMsg("user", userText)
 	resp, err := a.model.Chat(ctx, []*message.Msg{userMsg})
 	if err != nil {
 		return nil, err
 	}
 	// Print the reply to stdout.
-	_ = a.Print(ctx, resp.Msg)
-	return resp.Msg, nil
+	_ = a.Print(ctx, resp.ToMsg("assistant"))
+	return resp.ToMsg("assistant"), nil
 }
 
 func (a *SimpleAgent) Observe(ctx context.Context, msgs []*message.Msg) error {

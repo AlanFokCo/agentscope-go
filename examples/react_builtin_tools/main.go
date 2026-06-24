@@ -47,8 +47,8 @@ When the user asks to run a command or read a file, respond with JSON:
 
 	if txt := reply.GetTextContent("\n"); txt != nil {
 		fmt.Println("final answer:", *txt)
-	} else if s, ok := reply.Content.(string); ok {
-		fmt.Println("final answer:", s)
+	} else {
+		fmt.Println("final answer: [no text content]")
 	}
 }
 

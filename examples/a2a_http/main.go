@@ -38,14 +38,14 @@ func (a *serverAgent) Reply(ctx context.Context, args ...any) (*message.Msg, err
 		}
 	}
 	if len(msgs) == 0 {
-		msgs = []*message.Msg{message.NewMsg("user", message.RoleUser, "Hello from A2A server")}
+		msgs = []*message.Msg{message.UserMsg("user", "Hello from A2A server")}
 	}
 	resp, err := a.model.Chat(ctx, msgs)
 	if err != nil {
 		return nil, err
 	}
-	_ = a.Print(ctx, resp.Msg)
-	return resp.Msg, nil
+	_ = a.Print(ctx, resp.ToMsg("assistant"))
+	return resp.ToMsg("assistant"), nil
 }
 
 func (a *serverAgent) Observe(ctx context.Context, msgs []*message.Msg) error {
@@ -112,7 +112,7 @@ func main() {
 	a2aAgent := asagent.NewA2AAgent("remote_assistant", client)
 
 	ctx := context.Background()
-	msg := message.NewMsg("user", message.RoleUser, "Introduce yourself in one sentence (via A2A HTTP call).")
+	msg := message.UserMsg("user", "Introduce yourself in one sentence (via A2A HTTP call).")
 	reply, err := a2aAgent.Reply(ctx, msg)
 	if err != nil {
 		fmt.Println("A2AAgent error:", err)

@@ -23,11 +23,12 @@ func main() {
 		return
 	}
 
-	// Define a simple sum tool.
-	sumTool := &tool.Tool{
-		Name:        "sum_numbers",
-		Description: "sum a list of numbers",
-		Execute: func(ctx context.Context, args map[string]any) (any, error) {
+	// Define a simple sum tool using FunctionTool.
+	sumTool := tool.NewFunctionTool(
+		"sum_numbers",
+		"sum a list of numbers",
+		nil,
+		func(ctx context.Context, args map[string]any) (any, error) {
 			_ = ctx
 			raw, ok := args["numbers"]
 			if !ok {
@@ -45,7 +46,7 @@ func main() {
 			}
 			return map[string]any{"result": total}, nil
 		},
-	}
+	)
 
 	tk := tool.NewToolkit(sumTool)
 	mem := memory.NewInMemoryStore()
@@ -66,8 +67,8 @@ func main() {
 
 	if txt := reply.GetTextContent("\n"); txt != nil {
 		fmt.Println("final answer:", *txt)
-	} else if s, ok := reply.Content.(string); ok {
-		fmt.Println("final answer:", s)
+	} else {
+		fmt.Println("final answer: [no text content]")
 	}
 }
 
