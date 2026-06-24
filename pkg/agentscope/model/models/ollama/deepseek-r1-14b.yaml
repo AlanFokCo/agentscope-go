@@ -1,0 +1,13 @@
+name: deepseek-r1:14b
+label: DeepSeek R1 14B
+status: active
+
+input_types:
+  - text/plain
+
+output_types:
+  - text/plain
+  - application/x-thinking
+
+context_size: 65536
+output_size: 8192

@@ -1,0 +1,12 @@
+name: moonshot-v1-32k
+label: Moonshot V1 32K
+status: active
+
+input_types:
+  - text/plain
+
+output_types:
+  - text/plain
+
+context_size: 32000
+output_size: 8192

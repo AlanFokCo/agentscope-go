@@ -1,0 +1,12 @@
+name: moonshot-v1-128k
+label: Moonshot V1 128K
+status: active
+
+input_types:
+  - text/plain
+
+output_types:
+  - text/plain
+
+context_size: 128000
+output_size: 8192

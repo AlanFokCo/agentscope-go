@@ -1,0 +1,16 @@
+name: claude-haiku-4-5
+label: Claude Haiku 4.5
+status: active
+
+input_types:
+  - text/plain
+  - image/jpeg
+  - image/png
+  - image/gif
+  - image/webp
+
+output_types:
+  - text/plain
+
+context_size: 200000
+output_size: 8192

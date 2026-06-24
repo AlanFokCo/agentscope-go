@@ -1,0 +1,13 @@
+name: qwen3.5-plus
+label: Qwen Plus 3.5
+status: active
+
+input_types:
+  - text/plain
+
+output_types:
+  - text/plain
+  - application/x-thinking
+
+context_size: 1000000
+output_size: 16384

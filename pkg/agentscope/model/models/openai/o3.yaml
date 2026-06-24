@@ -1,0 +1,17 @@
+name: o3
+label: O3
+status: active
+
+input_types:
+  - text/plain
+  - image/jpeg
+  - image/png
+  - image/gif
+  - image/webp
+
+output_types:
+  - text/plain
+  - application/x-thinking
+
+context_size: 200000
+output_size: 100000

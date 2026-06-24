@@ -1,0 +1,12 @@
+name: deepseek-chat
+label: DeepSeek Chat
+status: active
+
+input_types:
+  - text/plain
+
+output_types:
+  - text/plain
+
+context_size: 64000
+output_size: 8192

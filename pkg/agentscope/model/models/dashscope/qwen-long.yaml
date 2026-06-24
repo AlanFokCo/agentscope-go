@@ -1,0 +1,12 @@
+name: qwen-long
+label: Qwen Long
+status: active
+
+input_types:
+  - text/plain
+
+output_types:
+  - text/plain
+
+context_size: 10000000
+output_size: 6000

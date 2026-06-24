@@ -2,10 +2,8 @@ package model
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/internal/httpx"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
@@ -13,8 +11,7 @@ import (
 
 const defaultOpenAIBaseURL = "https://api.openai.com"
 
-// OpenAIChatModel is a thin wrapper around the OpenAI Chat Completions API.
-// It uses the https://api.openai.com/v1/chat/completions endpoint style.
+// OpenAIChatModel wraps the OpenAI Chat Completions API.
 type OpenAIChatModel struct {
 	apiKey  string
 	baseURL string
@@ -26,10 +23,10 @@ type OpenAIChatModel struct {
 // OpenAIConfig configures OpenAIChatModel.
 type OpenAIConfig struct {
 	APIKey  string
-	BaseURL string // Optional, defaults to https://api.openai.com
+	BaseURL string
 	Model   string
 
-	HTTPClient *http.Client // Optional custom client
+	HTTPClient *http.Client
 }
 
 // NewOpenAIChatModel creates a ChatModel backed by OpenAI.
@@ -52,35 +49,6 @@ func NewOpenAIChatModel(cfg OpenAIConfig) (*OpenAIChatModel, error) {
 	}, nil
 }
 
-// openAIChatMessage mirrors the OpenAI Chat message structure.
-type openAIChatMessage struct {
-	Role    string      `json:"role"`
-	Content interface{} `json:"content"`
-	Name    string      `json:"name,omitempty"`
-}
-
-type openAIChatRequest struct {
-	Model    string              `json:"model"`
-	Messages []openAIChatMessage `json:"messages"`
-
-	Temperature *float32 `json:"temperature,omitempty"`
-	MaxTokens   *int     `json:"max_tokens,omitempty"`
-	TopP        *float32 `json:"top_p,omitempty"`
-}
-
-type openAIChatResponse struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	Model   string `json:"model"`
-	Choices []struct {
-		Index        int               `json:"index"`
-		Message      openAIChatMessage `json:"message"`
-		FinishReason string            `json:"finish_reason"`
-	} `json:"choices"`
-	Usage any `json:"usage"`
-}
-
 // Chat implements the ChatModel interface for OpenAI.
 func (m *OpenAIChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts ...CallOption) (*ChatResponse, error) {
 	if len(msgs) == 0 {
@@ -96,9 +64,23 @@ func (m *OpenAIChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts ..
 		Model:    m.model,
 		Messages: convertMessagesToOpenAI(msgs),
 	}
-	reqBody.Temperature = callOpts.Temperature
-	reqBody.MaxTokens = callOpts.MaxTokens
-	reqBody.TopP = callOpts.TopP
+	if callOpts.Temperature != nil {
+		t := float32(*callOpts.Temperature)
+		reqBody.Temperature = &t
+	}
+	if callOpts.MaxTokens != nil {
+		reqBody.MaxTokens = callOpts.MaxTokens
+	}
+	if callOpts.TopP != nil {
+		p := float32(*callOpts.TopP)
+		reqBody.TopP = &p
+	}
+	if len(callOpts.Tools) > 0 {
+		reqBody.Tools = callOpts.Tools
+	}
+	if callOpts.ToolChoice != nil {
+		reqBody.ToolChoice = formatToolChoice(callOpts.ToolChoice)
+	}
 
 	var parsed openAIChatResponse
 	if err := httpx.DoJSONRequest(
@@ -116,38 +98,67 @@ func (m *OpenAIChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts ..
 		return nil, fmt.Errorf("openai: %w", err)
 	}
 
-	if len(parsed.Choices) == 0 {
-		return nil, fmt.Errorf("openai: empty choices")
-	}
-
-	choice := parsed.Choices[0]
-	replyContent, ok := choice.Message.Content.(string)
-	if !ok {
-		// Some models return list[dict] content; convert it to a JSON string.
-		b, err := json.Marshal(choice.Message.Content)
-		if err != nil {
-			return nil, fmt.Errorf("openai: unexpected content type and marshal failed: %w", err)
-		}
-		replyContent = string(b)
-	}
-
-	last := msgs[len(msgs)-1]
-	reply := message.NewMsg(last.Name, message.RoleAssistant, replyContent)
-
-	return &ChatResponse{
-		Msg:       reply,
-		Raw:       parsed,
-		ModelName: parsed.Model,
-		CreatedAt: time.Now(),
-	}, nil
+	return parseOpenAIResponse(parsed, msgs)
 }
 
-// ChatStream is not supported yet and returns ErrStreamNotSupported.
-func (m *OpenAIChatModel) ChatStream(ctx context.Context, msgs []*message.Msg, opts ...CallOption) (ChatStream, error) {
-	_ = ctx
-	_ = msgs
-	_ = opts
-	return nil, ErrStreamNotSupported
+// ChatStream implements streaming chat via SSE (OpenAI format).
+func (m *OpenAIChatModel) ChatStream(ctx context.Context, msgs []*message.Msg, opts ...CallOption) (<-chan ChatResponse, error) {
+	if len(msgs) == 0 {
+		return nil, fmt.Errorf("openai: msgs must not be empty")
+	}
+
+	callOpts := &CallOptions{}
+	for _, opt := range opts {
+		opt(callOpts)
+	}
+
+	reqBody := openAIChatRequest{
+		Model:         m.model,
+		Messages:      convertMessagesToOpenAI(msgs),
+		Stream:        true,
+		StreamOptions: &openAIStreamOpts{IncludeUsage: true},
+	}
+	if callOpts.Temperature != nil {
+		t := float32(*callOpts.Temperature)
+		reqBody.Temperature = &t
+	}
+	if callOpts.MaxTokens != nil {
+		reqBody.MaxTokens = callOpts.MaxTokens
+	}
+	if callOpts.TopP != nil {
+		p := float32(*callOpts.TopP)
+		reqBody.TopP = &p
+	}
+	if len(callOpts.Tools) > 0 {
+		reqBody.Tools = callOpts.Tools
+	}
+	if callOpts.ToolChoice != nil {
+		reqBody.ToolChoice = formatToolChoice(callOpts.ToolChoice)
+	}
+
+	sseCh, err := httpx.DoSSERequest(
+		ctx,
+		m.httpClient,
+		"POST",
+		m.baseURL+"/v1/chat/completions",
+		reqBody,
+		map[string]string{
+			"Content-Type":  "application/json",
+			"Authorization": "Bearer " + m.apiKey,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("openai: %w", err)
+	}
+
+	outCh := make(chan ChatResponse, 16)
+	go processOpenAIStream(ctx, sseCh, outCh)
+	return outCh, nil
+}
+
+// CountTokens estimates token count.
+func (m *OpenAIChatModel) CountTokens(msgs []*message.Msg, tools []ToolSchema) int {
+	return countTokensByBytes(msgs, tools)
 }
 
 // convertMessagesToOpenAI maps internal Msg instances to OpenAI messages.
@@ -161,36 +172,45 @@ func convertMessagesToOpenAI(msgs []*message.Msg) []openAIChatMessage {
 		if role == "" {
 			role = "user"
 		}
-		// Simplified: if structured content exists, prefer plain text content.
-		if txt := m.GetTextContent("\n"); txt != nil {
-			out = append(out, openAIChatMessage{
-				Role:    role,
-				Content: *txt,
-				Name:    m.Name,
-			})
-		} else if s, ok := m.Content.(string); ok {
-			out = append(out, openAIChatMessage{
-				Role:    role,
-				Content: s,
-				Name:    m.Name,
-			})
-		} else {
-			// Fallback: non-string content is converted to JSON text.
-			b, err := json.Marshal(m.Content)
-			if err != nil {
-				out = append(out, openAIChatMessage{
-					Role:    role,
-					Content: fmt.Sprintf("unsupported content: %T", m.Content),
-					Name:    m.Name,
-				})
-			} else {
-				out = append(out, openAIChatMessage{
-					Role:    role,
-					Content: string(b),
-					Name:    m.Name,
+
+		msg := openAIChatMessage{Role: role, Name: m.Name}
+
+		// Check for tool result blocks (need special handling)
+		toolResults := m.GetContentBlocks(message.ContentBlockToolResult)
+		if len(toolResults) > 0 {
+			tr := toolResults[0].(message.ToolResultBlock)
+			msg.Role = "tool"
+			msg.ToolCallID = tr.ID
+			msg.Content = tr.GetOutputText()
+			msg.Name = tr.Name
+			out = append(out, msg)
+			continue
+		}
+
+		// Check for tool call blocks
+		toolCalls := m.GetContentBlocks(message.ContentBlockToolCall)
+		if len(toolCalls) > 0 {
+			for _, tc := range toolCalls {
+				tcb := tc.(message.ToolCallBlock)
+				msg.ToolCalls = append(msg.ToolCalls, openAIToolCall{
+					ID:   tcb.ID,
+					Type: "function",
+					Function: struct {
+						Name      string `json:"name"`
+						Arguments string `json:"arguments"`
+					}{Name: tcb.Name, Arguments: tcb.Input},
 				})
 			}
 		}
+
+		// Text content
+		if txt := m.GetTextContent("\n"); txt != nil {
+			msg.Content = *txt
+		} else if msg.ToolCalls == nil {
+			msg.Content = ""
+		}
+
+		out = append(out, msg)
 	}
 	return out
 }

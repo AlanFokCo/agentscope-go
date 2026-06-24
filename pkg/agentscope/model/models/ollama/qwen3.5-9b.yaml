@@ -1,0 +1,13 @@
+name: qwen3.5:9b
+label: Qwen3.5 9B
+status: active
+
+input_types:
+  - text/plain
+
+output_types:
+  - text/plain
+  - application/x-thinking
+
+context_size: 40960
+output_size: 8192
