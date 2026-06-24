@@ -1,7 +1,10 @@
 package message
 
 import (
+	"encoding/base64"
 	"time"
+
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/types"
 )
 
 // AppendEvent incrementally reconstructs this Msg from a streaming event.
@@ -78,7 +81,7 @@ func (m *Msg) AppendEvent(ev any) {
 				if idx >= 0 {
 					if db, ok := m.Content[idx].(DataBlock); ok {
 						if src, ok := db.Source.(Base64Source); ok {
-							src.Data += de.GetData()
+							src.Data = mergeBase64Chunks(src.Data, de.GetData())
 							db.Source = src
 							m.Content[idx] = db
 						}
@@ -173,7 +176,76 @@ func (m *Msg) AppendEvent(ev any) {
 				Type: "hint", ID: blockID, Source: source, Hint: he.GetHint(),
 			})
 		}
+
+	case "require_user_confirm":
+		if te, ok := ev.(interface{ GetToolCallID() string }); ok {
+			idx := m.findBlockByTypeAndID(ContentBlockToolCall, te.GetToolCallID())
+			if idx >= 0 {
+				if tc, ok := m.Content[idx].(ToolCallBlock); ok {
+					tc.State = ToolCallAsking
+					m.Content[idx] = tc
+				}
+			}
+		}
+
+	case "user_confirm_result":
+		if te, ok := ev.(interface{ GetToolCallID() string }); ok {
+			idx := m.findBlockByTypeAndID(ContentBlockToolCall, te.GetToolCallID())
+			if idx >= 0 {
+				if tc, ok := m.Content[idx].(ToolCallBlock); ok {
+					tc.State = ToolCallAllowed
+					m.Content[idx] = tc
+				}
+			}
+		}
+
+	case "require_external_execution":
+		if te, ok := ev.(interface{ GetToolCallID() string }); ok {
+			idx := m.findBlockByTypeAndID(ContentBlockToolCall, te.GetToolCallID())
+			if idx >= 0 {
+				if tc, ok := m.Content[idx].(ToolCallBlock); ok {
+					tc.State = ToolCallSubmitted
+					m.Content[idx] = tc
+				}
+			}
+		}
+
+	case "external_execution_result":
+		if te, ok := ev.(interface{ GetToolCallID() string }); ok {
+			idx := m.findBlockByTypeAndID(ContentBlockToolCall, te.GetToolCallID())
+			if idx >= 0 {
+				if tc, ok := m.Content[idx].(ToolCallBlock); ok {
+					tc.State = ToolCallFinished
+					m.Content[idx] = tc
+				}
+			}
+		}
+
+	case "exceed_max_iters":
+		// No content mutation needed; stored in metadata for observability.
+		if m.Metadata == nil {
+			m.Metadata = make(types.JSONObject)
+		}
+		m.Metadata["exceed_max_iters"] = true
 	}
+}
+
+// mergeBase64Chunks correctly concatenates two base64-encoded binary chunks.
+// It decodes both, concatenates the raw bytes, and re-encodes.
+// Falls back to string concatenation if decoding fails.
+func mergeBase64Chunks(existing, delta string) string {
+	if existing == "" {
+		return delta
+	}
+	existingBytes, err1 := base64.StdEncoding.DecodeString(existing)
+	deltaBytes, err2 := base64.StdEncoding.DecodeString(delta)
+	if err1 != nil || err2 != nil {
+		return existing + delta
+	}
+	merged := make([]byte, len(existingBytes)+len(deltaBytes))
+	copy(merged, existingBytes)
+	copy(merged[len(existingBytes):], deltaBytes)
+	return base64.StdEncoding.EncodeToString(merged)
 }
 
 func (m *Msg) applyBlockDelta(blockType ContentBlockType, ev any) {

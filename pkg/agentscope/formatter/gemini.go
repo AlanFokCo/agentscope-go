@@ -87,7 +87,11 @@ func (f *GeminiFormatter) formatMsg(msg *message.Msg) map[string]any {
 				},
 			})
 		case message.HintBlock:
-			parts = append(parts, map[string]any{"text": blk.Hint})
+			parts = append(parts, map[string]any{"text": blk.GetHintText()})
+		case message.DataBlock:
+			if formatted := formatGeminiDataBlock(blk); formatted != nil {
+				parts = append(parts, formatted)
+			}
 		}
 	}
 
@@ -99,6 +103,27 @@ func (f *GeminiFormatter) formatMsg(msg *message.Msg) map[string]any {
 		"role":  role,
 		"parts": parts,
 	}
+}
+
+func formatGeminiDataBlock(blk message.DataBlock) map[string]any {
+	mt := blk.GetMediaType()
+	switch src := blk.Source.(type) {
+	case message.Base64Source:
+		return map[string]any{
+			"inlineData": map[string]any{
+				"mimeType": mt,
+				"data":     src.Data,
+			},
+		}
+	case message.URLSource:
+		return map[string]any{
+			"fileData": map[string]any{
+				"mimeType": mt,
+				"fileUri":  src.URL,
+			},
+		}
+	}
+	return nil
 }
 
 // ExtractGeminiSystemInstruction extracts the system message for Gemini.

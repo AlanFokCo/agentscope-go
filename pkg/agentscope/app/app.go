@@ -1,0 +1,462 @@
+package app
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"sync"
+	"time"
+
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/credential"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/middleware"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/service"
+	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
+)
+
+// AppConfig configures the full application.
+type AppConfig struct {
+	Addr              string
+	AllowedOrigins    []string
+	Storage           agent.StateSaver
+	CredentialFactory *credential.Factory
+	DefaultModel      string
+	SystemPrompt      string
+	AgentMiddlewares  []middleware.Middleware
+	ReadTimeout       time.Duration
+	WriteTimeout      time.Duration
+}
+
+// App is the top-level application that assembles all components.
+type App struct {
+	cfg        AppConfig
+	mux        *http.ServeMux
+	srv        *http.Server
+	credFact   *credential.Factory
+	chatSvc    *ChatService
+	bgManager  *BackgroundTaskManager
+	cancelDisp *CancelDispatcher
+
+	mu       sync.RWMutex
+	sessions map[string]*SessionRecord
+}
+
+// SessionRecord tracks a managed session.
+type SessionRecord struct {
+	ID           string    `json:"id"`
+	AgentName    string    `json:"agent_name"`
+	SystemPrompt string    `json:"system_prompt"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// CreateApp assembles and returns a ready-to-serve App.
+func CreateApp(cfg AppConfig) (*App, error) {
+	if cfg.Addr == "" {
+		cfg.Addr = ":8080"
+	}
+	if cfg.ReadTimeout == 0 {
+		cfg.ReadTimeout = 30 * time.Second
+	}
+	if cfg.WriteTimeout == 0 {
+		cfg.WriteTimeout = 120 * time.Second
+	}
+	if cfg.CredentialFactory == nil {
+		cfg.CredentialFactory = credential.NewFactory()
+	}
+
+	app := &App{
+		cfg:      cfg,
+		mux:      http.NewServeMux(),
+		credFact: cfg.CredentialFactory,
+		sessions: make(map[string]*SessionRecord),
+	}
+
+	app.bgManager = NewBackgroundTaskManager()
+	app.cancelDisp = NewCancelDispatcher(app.bgManager)
+	app.chatSvc = NewChatService(app)
+
+	app.registerRoutes()
+	return app, nil
+}
+
+func (a *App) registerRoutes() {
+	// Session management
+	a.mux.HandleFunc("POST /api/session", a.handleCreateSession)
+	a.mux.HandleFunc("GET /api/session", a.handleListSessions)
+	a.mux.HandleFunc("GET /api/session/{id}", a.handleGetSession)
+	a.mux.HandleFunc("DELETE /api/session/{id}", a.handleDeleteSession)
+
+	// Chat
+	a.mux.HandleFunc("POST /api/chat/{sessionID}", a.handleChat)
+	a.mux.HandleFunc("POST /api/chat/{sessionID}/stream", a.handleChatStream)
+	a.mux.HandleFunc("POST /api/chat/{sessionID}/cancel", a.handleCancelChat)
+
+	// Credentials
+	a.mux.HandleFunc("GET /api/credential/schemas", a.handleListCredentialSchemas)
+
+	// Models
+	a.mux.HandleFunc("GET /api/model", a.handleListModels)
+
+	// Background tasks
+	a.mux.HandleFunc("GET /api/task", a.handleListTasks)
+	a.mux.HandleFunc("DELETE /api/task/{id}", a.handleCancelTask)
+}
+
+// Handler returns the HTTP handler.
+func (a *App) Handler() http.Handler {
+	if len(a.cfg.AllowedOrigins) > 0 {
+		return corsMiddleware(a.mux, a.cfg.AllowedOrigins)
+	}
+	return a.mux
+}
+
+// ListenAndServe starts the HTTP server.
+func (a *App) ListenAndServe() error {
+	a.srv = &http.Server{
+		Addr:         a.cfg.Addr,
+		Handler:      a.Handler(),
+		ReadTimeout:  a.cfg.ReadTimeout,
+		WriteTimeout: a.cfg.WriteTimeout,
+	}
+	logrus.WithField("addr", a.cfg.Addr).Info("app: starting server")
+	return a.srv.ListenAndServe()
+}
+
+// Shutdown gracefully shuts down the server.
+func (a *App) Shutdown(ctx context.Context) error {
+	if a.srv != nil {
+		return a.srv.Shutdown(ctx)
+	}
+	return nil
+}
+
+// --- Session handlers ---
+
+func (a *App) handleCreateSession(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		AgentName    string `json:"agent_name"`
+		SystemPrompt string `json:"system_prompt"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.AgentName == "" {
+		req.AgentName = "agent"
+	}
+	if req.SystemPrompt == "" {
+		req.SystemPrompt = a.cfg.SystemPrompt
+	}
+
+	session := &SessionRecord{
+		ID:           uuid.NewString(),
+		AgentName:    req.AgentName,
+		SystemPrompt: req.SystemPrompt,
+		CreatedAt:    time.Now(),
+	}
+
+	a.mu.Lock()
+	a.sessions[session.ID] = session
+	a.mu.Unlock()
+
+	writeJSON(w, http.StatusCreated, session)
+}
+
+func (a *App) handleListSessions(w http.ResponseWriter, _ *http.Request) {
+	a.mu.RLock()
+	sessions := make([]*SessionRecord, 0, len(a.sessions))
+	for _, s := range a.sessions {
+		sessions = append(sessions, s)
+	}
+	a.mu.RUnlock()
+	writeJSON(w, http.StatusOK, sessions)
+}
+
+func (a *App) handleGetSession(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	a.mu.RLock()
+	session, ok := a.sessions[id]
+	a.mu.RUnlock()
+	if !ok {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, session)
+}
+
+func (a *App) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	a.mu.Lock()
+	delete(a.sessions, id)
+	a.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Chat handlers ---
+
+func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("sessionID")
+	var req struct {
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	resp, err := a.chatSvc.Chat(r.Context(), sessionID, req.Message)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (a *App) handleChatStream(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("sessionID")
+	var req struct {
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ch, err := a.chatSvc.ChatStream(r.Context(), sessionID, req.Message)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	sse, err2 := service.NewSSEWriter(w)
+	if err2 != nil {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+	for evt := range ch {
+		if writeErr := sse.WriteEvent("event", evt); writeErr != nil {
+			break
+		}
+	}
+}
+
+func (a *App) handleCancelChat(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("sessionID")
+	a.cancelDisp.Cancel(sessionID)
+	w.WriteHeader(http.StatusOK)
+}
+
+// --- Credential handlers ---
+
+func (a *App) handleListCredentialSchemas(w http.ResponseWriter, _ *http.Request) {
+	schemas := a.credFact.ListSchemas()
+	writeJSON(w, http.StatusOK, schemas)
+}
+
+// --- Model handlers ---
+
+func (a *App) handleListModels(w http.ResponseWriter, _ *http.Request) {
+	cards := model.ListModels()
+	writeJSON(w, http.StatusOK, cards)
+}
+
+// --- Task handlers ---
+
+func (a *App) handleListTasks(w http.ResponseWriter, _ *http.Request) {
+	tasks := a.bgManager.List()
+	writeJSON(w, http.StatusOK, tasks)
+}
+
+func (a *App) handleCancelTask(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	a.bgManager.Cancel(id)
+	w.WriteHeader(http.StatusOK)
+}
+
+// --- Chat Service ---
+
+// ChatService manages chat interactions with agents.
+type ChatService struct {
+	app *App
+	mu  sync.RWMutex
+	// sessionID -> running agent
+	agents map[string]*agent.UnifiedAgent
+}
+
+// NewChatService creates a new chat service.
+func NewChatService(app *App) *ChatService {
+	return &ChatService{
+		app:    app,
+		agents: make(map[string]*agent.UnifiedAgent),
+	}
+}
+
+func (cs *ChatService) getOrCreateAgent(sessionID string) (*agent.UnifiedAgent, error) {
+	cs.mu.RLock()
+	a, ok := cs.agents[sessionID]
+	cs.mu.RUnlock()
+	if ok {
+		return a, nil
+	}
+
+	cs.app.mu.RLock()
+	session, ok := cs.app.sessions[sessionID]
+	cs.app.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("session %s not found", sessionID)
+	}
+
+	// For now, return an error if no model is available
+	// In a full implementation, this would use the credential factory to create a model
+	return nil, fmt.Errorf("no model configured for session %s (agent=%s, prompt=%s)", sessionID, session.AgentName, session.SystemPrompt[:min(50, len(session.SystemPrompt))])
+}
+
+// Chat sends a message and returns the final response.
+func (cs *ChatService) Chat(ctx context.Context, sessionID, userMessage string) (*message.Msg, error) {
+	a, err := cs.getOrCreateAgent(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return a.Reply(ctx, userMessage)
+}
+
+// ChatStream sends a message and returns a channel of streaming events.
+func (cs *ChatService) ChatStream(ctx context.Context, sessionID, userMessage string) (<-chan event.Event, error) {
+	a, err := cs.getOrCreateAgent(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return a.ReplyStream(ctx, userMessage)
+}
+
+// --- Background Task Manager ---
+
+// TaskInfo describes a background task.
+type TaskInfo struct {
+	ID        string    `json:"id"`
+	SessionID string    `json:"session_id"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// BackgroundTaskManager tracks running background tasks.
+type BackgroundTaskManager struct {
+	mu    sync.RWMutex
+	tasks map[string]*bgTask
+}
+
+type bgTask struct {
+	info   TaskInfo
+	cancel context.CancelFunc
+}
+
+// NewBackgroundTaskManager creates a new task manager.
+func NewBackgroundTaskManager() *BackgroundTaskManager {
+	return &BackgroundTaskManager{
+		tasks: make(map[string]*bgTask),
+	}
+}
+
+// Track registers a new task.
+func (m *BackgroundTaskManager) Track(sessionID string, cancel context.CancelFunc) string {
+	id := uuid.NewString()
+	m.mu.Lock()
+	m.tasks[id] = &bgTask{
+		info: TaskInfo{
+			ID:        id,
+			SessionID: sessionID,
+			Status:    "running",
+			CreatedAt: time.Now(),
+		},
+		cancel: cancel,
+	}
+	m.mu.Unlock()
+	return id
+}
+
+// Complete marks a task as completed.
+func (m *BackgroundTaskManager) Complete(id string) {
+	m.mu.Lock()
+	if t, ok := m.tasks[id]; ok {
+		t.info.Status = "completed"
+	}
+	m.mu.Unlock()
+}
+
+// Cancel cancels a task.
+func (m *BackgroundTaskManager) Cancel(id string) {
+	m.mu.Lock()
+	if t, ok := m.tasks[id]; ok {
+		t.cancel()
+		t.info.Status = "cancelled"
+	}
+	m.mu.Unlock()
+}
+
+// List returns all tasks.
+func (m *BackgroundTaskManager) List() []TaskInfo {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	result := make([]TaskInfo, 0, len(m.tasks))
+	for _, t := range m.tasks {
+		result = append(result, t.info)
+	}
+	return result
+}
+
+// --- Cancel Dispatcher ---
+
+// CancelDispatcher cancels running chat sessions.
+type CancelDispatcher struct {
+	bgMgr *BackgroundTaskManager
+}
+
+// NewCancelDispatcher creates a new cancel dispatcher.
+func NewCancelDispatcher(bgMgr *BackgroundTaskManager) *CancelDispatcher {
+	return &CancelDispatcher{bgMgr: bgMgr}
+}
+
+// Cancel cancels all tasks for a given session.
+func (d *CancelDispatcher) Cancel(sessionID string) {
+	d.bgMgr.mu.RLock()
+	defer d.bgMgr.mu.RUnlock()
+	for _, t := range d.bgMgr.tasks {
+		if t.info.SessionID == sessionID && t.info.Status == "running" {
+			t.cancel()
+			t.info.Status = "cancelled"
+		}
+	}
+}
+
+// --- Helpers ---
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
+}
+
+func corsMiddleware(next http.Handler, origins []string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		for _, o := range origins {
+			if o == "*" || o == origin {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+				break
+			}
+		}
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}

@@ -227,6 +227,7 @@ func (tk *Toolkit) GetToolSchemas() []model.ToolSchema {
 }
 
 // CallTool executes a tool by name with the given input.
+// If the tool has a non-empty InputSchema, ValidateInput is called first.
 // If the tool's BaseTool has Middlewares, they are applied as an onion chain.
 func (tk *Toolkit) CallTool(ctx context.Context, name string, input map[string]any) (*ToolResponse, error) {
 	tk.mu.RLock()
@@ -238,6 +239,13 @@ func (tk *Toolkit) CallTool(ctx context.Context, name string, input map[string]a
 			return nil, &exception.ToolGroupInactiveError{ToolName: name, GroupName: groupName}
 		}
 		return nil, &exception.ToolNotFoundError{ToolName: name}
+	}
+
+	// Validate input against schema before execution
+	if schema := t.InputSchema(); len(schema) > 0 {
+		if err := ValidateInput(schema, input); err != nil {
+			return NewErrorResponse(fmt.Errorf("input validation: %w", err)), nil
+		}
 	}
 
 	mws := getToolMiddlewares(t)
@@ -375,4 +383,109 @@ func ListRegistered() []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// ValidateInput performs basic type checking of input values against a JSON
+// Schema. This is not a full JSON Schema validator; it checks:
+// - required fields are present
+// - field types match ("string", "number", "integer", "boolean", "array", "object")
+//
+// Unknown properties are allowed (additionalProperties is not enforced).
+// Returns nil if validation passes or the schema cannot be parsed.
+func ValidateInput(schema json.RawMessage, input map[string]any) error {
+	if len(schema) == 0 || input == nil {
+		return nil
+	}
+
+	var s struct {
+		Type       string                     `json:"type"`
+		Properties map[string]json.RawMessage `json:"properties"`
+		Required   []string                   `json:"required"`
+	}
+	if err := json.Unmarshal(schema, &s); err != nil {
+		return nil // can't parse schema, skip validation
+	}
+
+	// Check required fields
+	for _, req := range s.Required {
+		if _, ok := input[req]; !ok {
+			return fmt.Errorf("missing required field %q", req)
+		}
+	}
+
+	// Check types for fields present in both input and schema
+	for name, propSchema := range s.Properties {
+		val, ok := input[name]
+		if !ok {
+			continue // not required, skip
+		}
+
+		var prop struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(propSchema, &prop); err != nil {
+			continue
+		}
+
+		if err := checkType(name, val, prop.Type); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// checkType validates that val matches the expected JSON Schema type.
+func checkType(name string, val any, expectedType string) error {
+	if val == nil || expectedType == "" {
+		return nil
+	}
+
+	switch expectedType {
+	case "string":
+		if _, ok := val.(string); !ok {
+			return fmt.Errorf("field %q: expected string, got %T", name, val)
+		}
+	case "number":
+		switch val.(type) {
+		case float64, int, int64, float32:
+			// ok
+		case json.Number:
+			// ok
+		default:
+			return fmt.Errorf("field %q: expected number, got %T", name, val)
+		}
+	case "integer":
+		switch v := val.(type) {
+		case float64:
+			if v != float64(int64(v)) {
+				return fmt.Errorf("field %q: expected integer, got float %v", name, v)
+			}
+		case int, int64:
+			// ok
+		case json.Number:
+			if _, err := v.Int64(); err != nil {
+				return fmt.Errorf("field %q: expected integer, got %v", name, v)
+			}
+		default:
+			return fmt.Errorf("field %q: expected integer, got %T", name, val)
+		}
+	case "boolean":
+		if _, ok := val.(bool); !ok {
+			return fmt.Errorf("field %q: expected boolean, got %T", name, val)
+		}
+	case "array":
+		switch val.(type) {
+		case []any, []string, []float64, []int:
+			// ok
+		default:
+			return fmt.Errorf("field %q: expected array, got %T", name, val)
+		}
+	case "object":
+		if _, ok := val.(map[string]any); !ok {
+			return fmt.Errorf("field %q: expected object, got %T", name, val)
+		}
+	}
+
+	return nil
 }

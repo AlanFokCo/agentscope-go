@@ -333,6 +333,71 @@ func TruncateToolResult(text string, tokenLimit int) (string, bool) {
 	return text[:charLimit] + "\n<<<TRUNCATED>>>", true
 }
 
+// TruncateToolResultBlocks truncates individual blocks within a multi-block tool result.
+// Text blocks are truncated by character limit. Data blocks with Base64Source
+// have their data replaced with a placeholder.
+func TruncateToolResultBlocks(blocks []message.ContentBlock, tokenLimit int) []message.ContentBlock {
+	totalTokens := 0
+	for _, b := range blocks {
+		switch blk := b.(type) {
+		case message.TextBlock:
+			totalTokens += len(blk.Text) / 4
+		case message.DataBlock:
+			if src, ok := blk.Source.(message.Base64Source); ok {
+				totalTokens += len(src.Data) * 3 / 16 // base64 → raw → tokens
+			}
+		}
+	}
+
+	if totalTokens <= tokenLimit {
+		return blocks
+	}
+
+	result := make([]message.ContentBlock, 0, len(blocks))
+	for _, b := range blocks {
+		switch blk := b.(type) {
+		case message.TextBlock:
+			charLimit := tokenLimit * 4
+			if len(blk.Text) > charLimit {
+				blk.Text = blk.Text[:charLimit] + "\n<<<TRUNCATED>>>"
+			}
+			result = append(result, blk)
+		case message.DataBlock:
+			// Replace large base64 data with a placeholder
+			if src, ok := blk.Source.(message.Base64Source); ok && len(src.Data) > 1000 {
+				blk.Source = message.Base64Source{
+					Type:      "base64",
+					Data:      "",
+					MediaType: src.MediaType,
+				}
+				result = append(result, blk)
+			} else {
+				result = append(result, blk)
+			}
+		default:
+			result = append(result, b)
+		}
+	}
+	return result
+}
+
+// splitMessageAtBlock splits a message into two messages at the given block index.
+// The first message contains blocks [0, blockIdx), the second [blockIdx, end).
+func splitMessageAtBlock(msg *message.Msg, blockIdx int) (*message.Msg, *message.Msg) {
+	if blockIdx <= 0 || blockIdx >= len(msg.Content) {
+		return msg, nil
+	}
+	first := *msg
+	first.Content = make([]message.ContentBlock, blockIdx)
+	copy(first.Content, msg.Content[:blockIdx])
+
+	second := *msg
+	second.Content = make([]message.ContentBlock, len(msg.Content)-blockIdx)
+	copy(second.Content, msg.Content[blockIdx:])
+
+	return &first, &second
+}
+
 func buildCompressionMessages(systemPrompt, summary string, msgsToCompress []*message.Msg, compressionPrompt string) []*message.Msg {
 	msgs := make([]*message.Msg, 0, len(msgsToCompress)+3)
 	msgs = append(msgs, message.SystemMsg("system", systemPrompt))

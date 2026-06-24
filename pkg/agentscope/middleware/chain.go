@@ -22,6 +22,19 @@ func BuildReplyChain(middlewares []Middleware, core ReplyHandler) ReplyHandler {
 	return handler
 }
 
+// BuildReasoningChain wraps a core ReasoningHandler with middlewares in onion order.
+func BuildReasoningChain(middlewares []Middleware, core ReasoningHandler) ReasoningHandler {
+	handler := core
+	for i := len(middlewares) - 1; i >= 0; i-- {
+		mw := middlewares[i]
+		next := handler
+		handler = func(ctx context.Context, input ReasoningInput) <-chan event.Event {
+			return mw.OnReasoning(ctx, input, next)
+		}
+	}
+	return handler
+}
+
 // BuildModelCallChain wraps a core ModelCallHandler with middlewares in onion order.
 func BuildModelCallChain(middlewares []Middleware, core ModelCallHandler) ModelCallHandler {
 	handler := core

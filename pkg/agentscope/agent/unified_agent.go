@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/middleware"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/permission"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/skill"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/tool"
 )
 
@@ -37,6 +39,7 @@ type UnifiedAgent struct {
 	contextCfg   *ContextConfig
 	readCache    *tool.ReadCache
 	engine       *permission.Engine
+	skills       []skill.Skill
 
 	confirmCh chan event.UserConfirmResultEvent
 	mu        sync.Mutex
@@ -144,6 +147,13 @@ func WithPermissionContext(ctx *permission.Context) AgentOption {
 	return func(a *UnifiedAgent) {
 		a.engine = permission.NewEngine(ctx)
 		a.confirmCh = make(chan event.UserConfirmResultEvent, 1)
+	}
+}
+
+// WithSkills sets the available skills for system prompt injection.
+func WithSkills(skills []skill.Skill) AgentOption {
+	return func(a *UnifiedAgent) {
+		a.skills = skills
 	}
 }
 
@@ -323,6 +333,7 @@ func (a *UnifiedAgent) replyLoop(ctx context.Context, input string, ch chan<- ev
 		if len(toolCalls) == 0 {
 			// No tool calls — this is the final answer
 			assistantMsg := resp.ToMsg(a.name)
+			assistantMsg.Content = filterAudioBlocks(assistantMsg.Content)
 			a.mu.Lock()
 			a.state.Context = append(a.state.Context, assistantMsg)
 			a.mu.Unlock()
@@ -345,6 +356,7 @@ func (a *UnifiedAgent) replyLoop(ctx context.Context, input string, ch chan<- ev
 
 		// Has tool calls — add assistant msg to context and execute tools
 		assistantMsg := resp.ToMsg(a.name)
+		assistantMsg.Content = filterAudioBlocks(assistantMsg.Content)
 		a.mu.Lock()
 		a.state.Context = append(a.state.Context, assistantMsg)
 		a.mu.Unlock()
@@ -358,6 +370,11 @@ func (a *UnifiedAgent) replyLoop(ctx context.Context, input string, ch chan<- ev
 					a.executeAndRecord(ctx, ch, replyID, tc, actingHandler)
 				}
 			}
+		}
+
+		// If this was the last iteration, emit ExceedMaxIters
+		if iter == a.reactCfg.MaxIters-1 {
+			emit(ctx, ch, event.NewExceedMaxItersEvent(replyID, a.name))
 		}
 	}
 
@@ -540,6 +557,14 @@ func (a *UnifiedAgent) prepareModelInput(ctx context.Context) []*message.Msg {
 	prompt := a.systemPrompt
 	if len(a.middlewares) > 0 {
 		prompt = middleware.ApplySystemPromptPipeline(ctx, a.middlewares, a.name, prompt)
+	}
+
+	// Append skill instructions if skills are configured
+	if len(a.skills) > 0 {
+		instructions := skill.FormatSkillInstructions(a.skills)
+		if instructions != "" {
+			prompt = prompt + "\n\n" + instructions
+		}
 	}
 
 	sysMsg := message.SystemMsg(a.name, prompt)
@@ -727,4 +752,20 @@ func (a *UnifiedAgent) executeConcurrentBatch(
 		a.state.Context = append(a.state.Context, toolResultMsg)
 		a.mu.Unlock()
 	}
+}
+
+// filterAudioBlocks removes audio DataBlocks from content to prevent
+// audio data from bloating persisted context.
+func filterAudioBlocks(content []message.ContentBlock) []message.ContentBlock {
+	filtered := make([]message.ContentBlock, 0, len(content))
+	for _, b := range content {
+		if db, ok := b.(message.DataBlock); ok {
+			mt := db.GetMediaType()
+			if strings.HasPrefix(mt, "audio/") {
+				continue
+			}
+		}
+		filtered = append(filtered, b)
+	}
+	return filtered
 }

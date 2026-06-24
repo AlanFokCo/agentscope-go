@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 )
@@ -51,8 +52,10 @@ func (r *ChatResponse) ToMsg(name string) *message.Msg {
 	msg.ID = r.ID
 	if r.Usage != nil {
 		msg.Usage = &message.Usage{
-			InputTokens:  r.Usage.InputTokens,
-			OutputTokens: r.Usage.OutputTokens,
+			InputTokens:              r.Usage.InputTokens,
+			OutputTokens:             r.Usage.OutputTokens,
+			CacheCreationInputTokens: r.Usage.CacheCreationInputTokens,
+			CacheInputTokens:         r.Usage.CacheInputTokens,
 		}
 	}
 	return msg
@@ -60,9 +63,11 @@ func (r *ChatResponse) ToMsg(name string) *message.Msg {
 
 // ChatUsage tracks token consumption for a model call.
 type ChatUsage struct {
-	InputTokens  int     `json:"input_tokens"`
-	OutputTokens int     `json:"output_tokens"`
-	Time         float64 `json:"time,omitempty"` // seconds
+	InputTokens              int     `json:"input_tokens"`
+	OutputTokens             int     `json:"output_tokens"`
+	Time                     float64 `json:"time,omitempty"` // seconds
+	CacheCreationInputTokens int     `json:"cache_creation_input_tokens,omitempty"`
+	CacheInputTokens         int     `json:"cache_input_tokens,omitempty"`
 }
 
 // ToolSchema defines a tool for model API function calling.
@@ -118,11 +123,16 @@ var ErrStreamNotSupported = fmt.Errorf("chat model: stream not supported")
 
 // CallOptions stores model call options configured via functional options.
 type CallOptions struct {
-	Temperature *float64
-	MaxTokens   *int
-	TopP        *float64
-	Tools       []ToolSchema
-	ToolChoice  *ToolChoice
+	Temperature     *float64
+	MaxTokens       *int
+	TopP            *float64
+	Tools           []ToolSchema
+	ToolChoice      *ToolChoice
+	ThinkingEnable  *bool
+	ThinkingBudget  *int
+	ReasoningEffort *string // "low", "medium", "high"
+	MaxRetries      int
+	RetryDelay      time.Duration
 }
 
 // CallOption mutates CallOptions.
@@ -160,21 +170,108 @@ func WithToolChoice(tc *ToolChoice) CallOption {
 	}
 }
 
+// WithThinking enables extended thinking with an optional token budget.
+func WithThinking(enable bool, budget int) CallOption {
+	return func(o *CallOptions) {
+		o.ThinkingEnable = &enable
+		if budget > 0 {
+			o.ThinkingBudget = &budget
+		}
+	}
+}
+
+// WithReasoningEffort sets the reasoning effort level (e.g. "low", "medium", "high").
+func WithReasoningEffort(effort string) CallOption {
+	return func(o *CallOptions) {
+		o.ReasoningEffort = &effort
+	}
+}
+
+// WithRetries configures retry behavior for transient errors.
+func WithRetries(maxRetries int, delay time.Duration) CallOption {
+	return func(o *CallOptions) {
+		o.MaxRetries = maxRetries
+		o.RetryDelay = delay
+	}
+}
+
+// ValidateToolChoice validates that a tool choice references valid tools.
+func ValidateToolChoice(tc *ToolChoice, tools []ToolSchema) error {
+	if tc == nil {
+		return nil
+	}
+	switch tc.Mode {
+	case "auto", "none", "required", "":
+		return nil
+	default:
+		for _, t := range tools {
+			if t.Function.Name == tc.Mode {
+				return nil
+			}
+		}
+		return fmt.Errorf("model: tool_choice references unknown tool %q", tc.Mode)
+	}
+}
+
+// IsRetryableError checks if an error is a transient error worth retrying.
+func IsRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	for _, pattern := range []string{"429", "rate limit", "timeout", "connection reset", "connection refused", "500", "502", "503", "overloaded"} {
+		if contains(s, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsLower(s, substr))
+}
+
+func containsLower(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
+
 // Deprecated: ChatStream interface. Use the <-chan ChatResponse return from ChatModel.ChatStream instead.
 type ChatStream interface {
 	Recv() (*message.Msg, error)
 	Close() error
 }
 
-// countTokensByBytes estimates tokens from byte length (len/4).
+// countTokensByBytes estimates tokens from byte length across all block types.
 func countTokensByBytes(msgs []*message.Msg, tools []ToolSchema) int {
 	total := 0
 	for _, m := range msgs {
 		if m == nil {
 			continue
 		}
-		if t := m.GetTextContent("\n"); t != nil {
-			total += len(*t)
+		for _, b := range m.Content {
+			switch blk := b.(type) {
+			case message.TextBlock:
+				total += len(blk.Text)
+			case message.ThinkingBlock:
+				total += len(blk.Thinking)
+			case message.ToolCallBlock:
+				total += len(blk.Input)
+			case message.ToolResultBlock:
+				total += len(blk.GetOutputText())
+			case message.HintBlock:
+				total += len(blk.GetHintText())
+			case message.DataBlock:
+				if src, ok := blk.Source.(message.Base64Source); ok {
+					total += len(src.Data) * 3 / 4 // base64 → raw bytes
+				} else if src, ok := blk.Source.(message.URLSource); ok {
+					total += len(src.URL)
+				}
+			}
 		}
 	}
 	if len(tools) > 0 {

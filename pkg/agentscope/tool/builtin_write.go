@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/permission"
 )
 
 var writeSchema = json.RawMessage(`{
@@ -42,10 +44,6 @@ func (t *writeTool) Execute(ctx context.Context, args map[string]any) (*ToolResp
 		return NewErrorResponse(fmt.Errorf("file_path cannot be empty")), nil
 	}
 
-	if dangerous, reason := CheckDangerousPath(path); dangerous {
-		return NewErrorResponse(fmt.Errorf("blocked: %s — this file requires explicit user approval", reason)), nil
-	}
-
 	contentRaw, ok := args["content"]
 	if !ok {
 		return NewErrorResponse(fmt.Errorf("content is required")), nil
@@ -60,12 +58,16 @@ func (t *writeTool) Execute(ctx context.Context, args map[string]any) (*ToolResp
 		return NewErrorResponse(fmt.Errorf("invalid path: %w", err)), nil
 	}
 
-	if _, statErr := os.Stat(abs); statErr == nil {
+	// Read old content for diff generation
+	var oldContent string
+	if existingData, statErr := os.ReadFile(abs); statErr == nil {
+		// File exists, check read-before-write guard
 		if rc := GetReadCache(ctx); rc != nil {
 			if !rc.HasBeenRead(abs) {
 				return NewErrorResponse(fmt.Errorf("file exists but has not been read yet; you must read the file first before writing to it")), nil
 			}
 		}
+		oldContent = string(existingData)
 	}
 
 	dir := filepath.Dir(abs)
@@ -77,7 +79,99 @@ func (t *writeTool) Execute(ctx context.Context, args map[string]any) (*ToolResp
 		return NewErrorResponse(fmt.Errorf("write file: %w", err)), nil
 	}
 
-	return NewTextResponse(fmt.Sprintf("Written %d bytes to %s", len(content), abs)), nil
+	// Invalidate read cache if present
+	if rc := GetReadCache(ctx); rc != nil {
+		rc.CleanFileCache(nil) // Invalidate cache for the written file
+	}
+
+	resp := NewTextResponse(fmt.Sprintf("Written %d bytes to %s", len(content), abs))
+
+	// Generate diff metadata
+	if oldContent != "" || content != "" {
+		diff := generateUnifiedDiff(abs, oldContent, content)
+		if diff != "" {
+			if resp.Metadata == nil {
+				resp.Metadata = make(map[string]any)
+			}
+			resp.Metadata["diff"] = diff
+		}
+	}
+
+	return resp, nil
+}
+
+// CheckPermissions checks for dangerous paths and defers to AcceptEdits mode.
+func (t *writeTool) CheckPermissions(input map[string]any, ctx *permission.Context) permission.Decision {
+	path, _ := input["file_path"].(string)
+	if path == "" {
+		return permission.Decision{Behavior: permission.BehaviorPassthrough}
+	}
+
+	// Dangerous path -> bypass-immune ASK
+	if dangerous, reason := CheckDangerousPath(path); dangerous {
+		return permission.Decision{
+			Behavior:     permission.BehaviorAsk,
+			Message:      reason,
+			BypassImmune: true,
+		}
+	}
+
+	// AcceptEdits mode allows writes
+	if ctx != nil && ctx.Mode == permission.ModeAcceptEdits {
+		return permission.Decision{Behavior: permission.BehaviorAllow}
+	}
+
+	return permission.Decision{Behavior: permission.BehaviorPassthrough}
+}
+
+// MatchRule checks whether a permission rule's glob pattern matches the file path.
+func (t *writeTool) MatchRule(ruleContent string, input map[string]any) bool {
+	if ruleContent == "" {
+		return true
+	}
+	path, _ := input["file_path"].(string)
+	if path == "" {
+		return false
+	}
+	abs, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return false
+	}
+	matched, _ := filepath.Match(ruleContent, abs)
+	if matched {
+		return true
+	}
+	matched, _ = filepath.Match(ruleContent, filepath.Base(abs))
+	return matched
+}
+
+// GenerateSuggestions produces a permission rule for the parent directory.
+func (t *writeTool) GenerateSuggestions(input map[string]any) []permission.Rule {
+	path, _ := input["file_path"].(string)
+	if path == "" {
+		return []permission.Rule{{
+			ToolName: t.ToolName,
+			Behavior: permission.BehaviorAllow,
+			Source:   "suggested",
+		}}
+	}
+
+	abs, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return []permission.Rule{{
+			ToolName: t.ToolName,
+			Behavior: permission.BehaviorAllow,
+			Source:   "suggested",
+		}}
+	}
+
+	parentDir := filepath.Dir(abs)
+	return []permission.Rule{{
+		ToolName:    t.ToolName,
+		RuleContent: filepath.Join(parentDir, "**"),
+		Behavior:    permission.BehaviorAllow,
+		Source:      "suggested",
+	}}
 }
 
 // WriteTool returns a tool that writes content to a file (complete overwrite).
@@ -89,4 +183,70 @@ func WriteTool() Tool {
 			ToolSchema:      writeSchema,
 		},
 	}
+}
+
+// generateUnifiedDiff creates a simple unified diff between old and new content.
+func generateUnifiedDiff(filePath, oldContent, newContent string) string {
+	oldLines := strings.Split(oldContent, "\n")
+	newLines := strings.Split(newContent, "\n")
+
+	if oldContent == newContent {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("--- a/%s\n", filepath.Base(filePath)))
+	b.WriteString(fmt.Sprintf("+++ b/%s\n", filepath.Base(filePath)))
+
+	// Simple diff: show removed and added lines
+	// For a proper unified diff we'd need an LCS algorithm, but a simple
+	// context-free diff is sufficient for metadata purposes.
+	maxLines := len(oldLines)
+	if len(newLines) > maxLines {
+		maxLines = len(newLines)
+	}
+
+	// Limit output size
+	const maxDiffLines = 100
+	diffLines := 0
+
+	b.WriteString(fmt.Sprintf("@@ -%d,%d +%d,%d @@\n", 1, len(oldLines), 1, len(newLines)))
+
+	i, j := 0, 0
+	for i < len(oldLines) || j < len(newLines) {
+		if diffLines >= maxDiffLines {
+			b.WriteString(fmt.Sprintf("... (%d more lines)\n", maxLines-diffLines))
+			break
+		}
+
+		if i < len(oldLines) && j < len(newLines) && oldLines[i] == newLines[j] {
+			b.WriteString(" " + oldLines[i] + "\n")
+			i++
+			j++
+		} else if i < len(oldLines) && (j >= len(newLines) || !containsAt(newLines, j, oldLines[i])) {
+			b.WriteString("-" + oldLines[i] + "\n")
+			i++
+		} else {
+			b.WriteString("+" + newLines[j] + "\n")
+			j++
+		}
+		diffLines++
+	}
+
+	return b.String()
+}
+
+// containsAt checks if target appears at or after position start in lines.
+// Used for simple diff heuristic to decide whether a line was removed vs added.
+func containsAt(lines []string, start int, target string) bool {
+	end := start + 5 // look ahead a few lines
+	if end > len(lines) {
+		end = len(lines)
+	}
+	for i := start; i < end; i++ {
+		if lines[i] == target {
+			return true
+		}
+	}
+	return false
 }

@@ -10,6 +10,8 @@ import (
 type OpenAIFormatter struct {
 	// SupportsThinking enables reasoning_content field (DashScope/DeepSeek).
 	SupportsThinking bool
+	// SupportedInputMediaTypes lists glob patterns of accepted media types (e.g. "image/*").
+	SupportedInputMediaTypes []string
 }
 
 func (f *OpenAIFormatter) Format(msgs []*message.Msg) ([]map[string]any, error) {
@@ -39,7 +41,9 @@ func (f *OpenAIFormatter) formatMsg(msg *message.Msg) map[string]any {
 	var thinkingParts []string
 	var toolCalls []map[string]any
 	var toolResultID, toolResultContent string
+	var multimodalParts []map[string]any
 	isToolResult := false
+	hasMultimodal := false
 
 	for _, b := range blocks {
 		switch blk := b.(type) {
@@ -62,7 +66,12 @@ func (f *OpenAIFormatter) formatMsg(msg *message.Msg) map[string]any {
 			toolResultID = blk.ID
 			toolResultContent = blk.GetOutputText()
 		case message.HintBlock:
-			textParts = append(textParts, blk.Hint)
+			textParts = append(textParts, blk.GetHintText())
+		case message.DataBlock:
+			if formatted := FormatDataBlockForOpenAI(blk, f.SupportedInputMediaTypes); formatted != nil {
+				multimodalParts = append(multimodalParts, formatted)
+				hasMultimodal = true
+			}
 		}
 	}
 
@@ -78,9 +87,17 @@ func (f *OpenAIFormatter) formatMsg(msg *message.Msg) map[string]any {
 		m["tool_calls"] = toolCalls
 	}
 
-	content := joinStrings(textParts)
-	if content != "" {
-		m["content"] = content
+	textContent := joinStrings(textParts)
+
+	if hasMultimodal {
+		var contentArray []map[string]any
+		if textContent != "" {
+			contentArray = append(contentArray, map[string]any{"type": "text", "text": textContent})
+		}
+		contentArray = append(contentArray, multimodalParts...)
+		m["content"] = contentArray
+	} else if textContent != "" {
+		m["content"] = textContent
 	} else if len(toolCalls) > 0 {
 		m["content"] = nil
 	} else {
@@ -108,10 +125,10 @@ func joinStrings(parts []string) string {
 	return result
 }
 
-// --- DashScope Formatter (extends OpenAI with thinking support) ---
+// --- DashScope Formatter (extends OpenAI with video/audio/thinking support) ---
 
 // DashScopeFormatter formats messages for DashScope APIs.
-// DashScope uses OpenAI-compatible format with reasoning_content support.
+// Extends OpenAI with video_url, input_audio, and reasoning_content support.
 type DashScopeFormatter struct {
 	OpenAIFormatter
 }
@@ -119,7 +136,10 @@ type DashScopeFormatter struct {
 // NewDashScopeFormatter creates a formatter for DashScope.
 func NewDashScopeFormatter() *DashScopeFormatter {
 	return &DashScopeFormatter{
-		OpenAIFormatter: OpenAIFormatter{SupportsThinking: true},
+		OpenAIFormatter: OpenAIFormatter{
+			SupportsThinking:         true,
+			SupportedInputMediaTypes: []string{"image/*", "audio/*", "video/*"},
+		},
 	}
 }
 
@@ -130,7 +150,10 @@ func (f *OpenAIFormatter) FormatMultiAgent(msgs []*message.Msg, currentAgent str
 
 // NewOpenAIFormatter creates a formatter for standard OpenAI APIs.
 func NewOpenAIFormatter() *OpenAIFormatter {
-	return &OpenAIFormatter{SupportsThinking: false}
+	return &OpenAIFormatter{
+		SupportsThinking:         false,
+		SupportedInputMediaTypes: []string{"image/*", "audio/*"},
+	}
 }
 
 // FormatMultiAgent formats messages for multi-agent DashScope conversations.
@@ -141,7 +164,10 @@ func (f *DashScopeFormatter) FormatMultiAgent(msgs []*message.Msg, currentAgent 
 // --- Anthropic Formatter ---
 
 // AnthropicFormatter formats messages for Anthropic's Messages API.
-type AnthropicFormatter struct{}
+// Supports image content blocks and ThinkingBlock with signature.
+type AnthropicFormatter struct {
+	SupportedInputMediaTypes []string
+}
 
 func (f *AnthropicFormatter) Format(msgs []*message.Msg) ([]map[string]any, error) {
 	var result []map[string]any
@@ -183,10 +209,14 @@ func (f *AnthropicFormatter) formatMsg(msg *message.Msg) map[string]any {
 				"text": blk.Text,
 			})
 		case message.ThinkingBlock:
-			content = append(content, map[string]any{
+			tb := map[string]any{
 				"type":     "thinking",
 				"thinking": blk.Thinking,
-			})
+			}
+			if sig, ok := blk.Extra["signature"]; ok && sig != "" {
+				tb["signature"] = sig
+			}
+			content = append(content, tb)
 		case message.ToolCallBlock:
 			var inputObj any
 			if err := json.Unmarshal([]byte(blk.Input), &inputObj); err != nil {
@@ -199,16 +229,21 @@ func (f *AnthropicFormatter) formatMsg(msg *message.Msg) map[string]any {
 				"input": inputObj,
 			})
 		case message.ToolResultBlock:
-			content = append(content, map[string]any{
-				"type":       "tool_result",
+			trBlock := map[string]any{
+				"type":        "tool_result",
 				"tool_use_id": blk.ID,
-				"content":    blk.GetOutputText(),
-			})
+				"content":     ConvertToolResultToString(blk.Output),
+			}
+			content = append(content, trBlock)
 		case message.HintBlock:
 			content = append(content, map[string]any{
 				"type": "text",
-				"text": blk.Hint,
+				"text": blk.GetHintText(),
 			})
+		case message.DataBlock:
+			if formatted := f.formatAnthropicDataBlock(blk); formatted != nil {
+				content = append(content, formatted)
+			}
 		}
 	}
 
@@ -222,8 +257,35 @@ func (f *AnthropicFormatter) formatMsg(msg *message.Msg) map[string]any {
 	}
 }
 
+func (f *AnthropicFormatter) formatAnthropicDataBlock(blk message.DataBlock) map[string]any {
+	mt := blk.GetMediaType()
+	if !SupportsMediaType(f.SupportedInputMediaTypes, mt) {
+		return nil
+	}
+	switch src := blk.Source.(type) {
+	case message.Base64Source:
+		return map[string]any{
+			"type": "image",
+			"source": map[string]any{
+				"type":       "base64",
+				"media_type": src.MediaType,
+				"data":       src.Data,
+			},
+		}
+	case message.URLSource:
+		return map[string]any{
+			"type": "image",
+			"source": map[string]any{
+				"type": "url",
+				"url":  src.URL,
+			},
+		}
+	}
+	return nil
+}
+
 // FormatMultiAgent formats messages for multi-agent Anthropic conversations.
-// Anthropic uses content blocks, so agent names are injected as text prefixes.
+// Uses <history> tags for conversation context from other agents.
 func (f *AnthropicFormatter) FormatMultiAgent(msgs []*message.Msg, currentAgent string) ([]map[string]any, error) {
 	formatted, err := f.Format(msgs)
 	if err != nil {
@@ -235,7 +297,6 @@ func (f *AnthropicFormatter) FormatMultiAgent(msgs []*message.Msg, currentAgent 
 		if (role == "user" || role == "assistant") && i < len(msgs) && msgs[i] != nil {
 			if msgs[i].Name != "" && msgs[i].Name != currentAgent {
 				if content, ok := m["content"].([]map[string]any); ok && len(content) > 0 {
-					// Prepend a text block with the agent name
 					nameBlock := map[string]any{"type": "text", "text": "[" + msgs[i].Name + "]:"}
 					m["content"] = append([]map[string]any{nameBlock}, content...)
 				}
@@ -248,7 +309,9 @@ func (f *AnthropicFormatter) FormatMultiAgent(msgs []*message.Msg, currentAgent 
 
 // NewAnthropicFormatter creates a formatter for Anthropic's Messages API.
 func NewAnthropicFormatter() *AnthropicFormatter {
-	return &AnthropicFormatter{}
+	return &AnthropicFormatter{
+		SupportedInputMediaTypes: []string{"image/*"},
+	}
 }
 
 // ExtractSystemPrompt extracts the system message text from a message list.

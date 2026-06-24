@@ -368,6 +368,9 @@ type openAIChatResponse struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
 		TotalTokens      int `json:"total_tokens"`
+		PromptTokensDetails *struct {
+			CachedTokens int `json:"cached_tokens,omitempty"`
+		} `json:"prompt_tokens_details,omitempty"`
 	} `json:"usage,omitempty"`
 }
 
@@ -386,6 +389,9 @@ type openAIStreamChunk struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
 		TotalTokens      int `json:"total_tokens"`
+		PromptTokensDetails *struct {
+			CachedTokens int `json:"cached_tokens,omitempty"`
+		} `json:"prompt_tokens_details,omitempty"`
 	} `json:"usage,omitempty"`
 }
 
@@ -474,6 +480,9 @@ func parseOpenAIResponse(parsed openAIChatResponse, msgs []*message.Msg) (*ChatR
 		usage = &ChatUsage{
 			InputTokens:  parsed.Usage.PromptTokens,
 			OutputTokens: parsed.Usage.CompletionTokens,
+		}
+		if parsed.Usage.PromptTokensDetails != nil {
+			usage.CacheInputTokens = parsed.Usage.PromptTokensDetails.CachedTokens
 		}
 	}
 

@@ -49,11 +49,24 @@ type CompressInput struct {
 	ReserveRatio float64
 }
 
+// ReasoningHandler processes a reasoning step and returns an event stream.
+type ReasoningHandler func(ctx context.Context, input ReasoningInput) <-chan event.Event
+
+// ReasoningInput is passed to OnReasoning hooks.
+type ReasoningInput struct {
+	AgentName string
+	Messages  []*message.Msg
+	Iteration int
+}
+
 // Middleware defines the hooks that can intercept agent behavior.
 // Implement only the hooks you need; embed BaseMiddleware for pass-through defaults.
 type Middleware interface {
 	// OnReply wraps the entire reply lifecycle (outermost hook).
 	OnReply(ctx context.Context, input ReplyInput, next ReplyHandler) <-chan event.Event
+
+	// OnReasoning wraps each reasoning step within the ReAct loop.
+	OnReasoning(ctx context.Context, input ReasoningInput, next ReasoningHandler) <-chan event.Event
 
 	// OnModelCall wraps each model API call within the ReAct loop.
 	OnModelCall(ctx context.Context, input ModelCallInput, next ModelCallHandler) (*model.ChatResponse, error)
@@ -67,6 +80,10 @@ type Middleware interface {
 
 	// OnCompressContext wraps context compression.
 	OnCompressContext(ctx context.Context, input CompressInput, next CompressHandler) error
+
+	// ListTools returns additional tools provided by this middleware.
+	// Returns nil if the middleware does not provide tools.
+	ListTools() []tool.Tool
 
 	// Key returns a unique identifier for this middleware instance.
 	// Used to namespace middleware state in MiddleContext.
@@ -83,6 +100,14 @@ func (b *BaseMiddleware) Key() string { return b.MiddlewareKey }
 
 func (b *BaseMiddleware) OnReply(ctx context.Context, input ReplyInput, next ReplyHandler) <-chan event.Event {
 	return next(ctx, input)
+}
+
+func (b *BaseMiddleware) OnReasoning(ctx context.Context, input ReasoningInput, next ReasoningHandler) <-chan event.Event {
+	return next(ctx, input)
+}
+
+func (b *BaseMiddleware) ListTools() []tool.Tool {
+	return nil
 }
 
 func (b *BaseMiddleware) OnModelCall(ctx context.Context, input ModelCallInput, next ModelCallHandler) (*model.ChatResponse, error) {

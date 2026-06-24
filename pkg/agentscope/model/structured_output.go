@@ -31,7 +31,16 @@ func GenerateStructuredOutput(ctx context.Context, model ChatModel, msgs []*mess
 
 	resp, err := model.Chat(ctx, msgs, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("structured output: model call failed: %w", err)
+		// If thinking is enabled, some providers reject forced tool_choice.
+		// Retry with tool_choice "auto" as fallback.
+		errStr := err.Error()
+		if containsLower(errStr, "tool_choice") || containsLower(errStr, "thinking") {
+			opts[1] = WithToolChoice(&ToolChoice{Mode: "auto"})
+			resp, err = model.Chat(ctx, msgs, opts...)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("structured output: model call failed: %w", err)
+		}
 	}
 
 	// Extract the tool call arguments from the response

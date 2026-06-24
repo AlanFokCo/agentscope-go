@@ -74,11 +74,17 @@ type anthropicMessage struct {
 }
 
 type anthropicRequest struct {
-	Model           string             `json:"model"`
-	Messages        []anthropicMessage `json:"messages"`
-	MaxTokens       int                `json:"max_tokens"`
-	System          string             `json:"system,omitempty"`
-	Tools           []anthropicTool    `json:"tools,omitempty"`
+	Model     string             `json:"model"`
+	Messages  []anthropicMessage `json:"messages"`
+	MaxTokens int                `json:"max_tokens"`
+	System    string             `json:"system,omitempty"`
+	Tools     []anthropicTool    `json:"tools,omitempty"`
+	Thinking  *anthropicThinking `json:"thinking,omitempty"`
+}
+
+type anthropicThinking struct {
+	Type         string `json:"type"`
+	BudgetTokens int    `json:"budget_tokens"`
 }
 
 type anthropicTool struct {
@@ -92,15 +98,19 @@ type anthropicResponse struct {
 	Model   string `json:"model"`
 	Role    string `json:"role"`
 	Content []struct {
-		Type  string          `json:"type"`
-		Text  string          `json:"text,omitempty"`
-		ID    string          `json:"id,omitempty"`
-		Name  string          `json:"name,omitempty"`
-		Input json.RawMessage `json:"input,omitempty"`
+		Type      string          `json:"type"`
+		Text      string          `json:"text,omitempty"`
+		Thinking  string          `json:"thinking,omitempty"`
+		Signature string          `json:"signature,omitempty"`
+		ID        string          `json:"id,omitempty"`
+		Name      string          `json:"name,omitempty"`
+		Input     json.RawMessage `json:"input,omitempty"`
 	} `json:"content"`
 	Usage *struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
+		InputTokens              int `json:"input_tokens"`
+		OutputTokens             int `json:"output_tokens"`
+		CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
+		CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
 	} `json:"usage,omitempty"`
 }
 
@@ -124,7 +134,18 @@ func (m *AnthropicChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts
 		System:    system,
 	}
 
-	// Convert tools to Anthropic format
+	// Thinking parameters
+	if callOpts.ThinkingEnable != nil && *callOpts.ThinkingEnable {
+		budget := reqBody.MaxTokens / 2
+		if callOpts.ThinkingBudget != nil && *callOpts.ThinkingBudget > 0 {
+			budget = *callOpts.ThinkingBudget
+		}
+		if budget >= reqBody.MaxTokens {
+			reqBody.MaxTokens = budget + 1024
+		}
+		reqBody.Thinking = &anthropicThinking{Type: "enabled", BudgetTokens: budget}
+	}
+
 	if len(callOpts.Tools) > 0 {
 		for _, ts := range callOpts.Tools {
 			reqBody.Tools = append(reqBody.Tools, anthropicTool{
@@ -135,21 +156,41 @@ func (m *AnthropicChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts
 		}
 	}
 
+	// Retry loop
+	maxRetries := callOpts.MaxRetries
+	retryDelay := callOpts.RetryDelay
+	if retryDelay == 0 {
+		retryDelay = time.Second
+	}
+
 	var parsed anthropicResponse
-	if err := httpx.DoJSONRequest(
-		ctx,
-		m.httpClient,
-		http.MethodPost,
-		m.baseURL+"/v1/messages",
-		reqBody,
-		&parsed,
-		map[string]string{
-			"Content-Type":      "application/json",
-			"x-api-key":         m.apiKey,
-			"anthropic-version": m.version,
-		},
-	); err != nil {
-		return nil, fmt.Errorf("anthropic: %w", err)
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			time.Sleep(retryDelay)
+		}
+		lastErr = httpx.DoJSONRequest(
+			ctx,
+			m.httpClient,
+			http.MethodPost,
+			m.baseURL+"/v1/messages",
+			reqBody,
+			&parsed,
+			map[string]string{
+				"Content-Type":      "application/json",
+				"x-api-key":         m.apiKey,
+				"anthropic-version": m.version,
+			},
+		)
+		if lastErr == nil {
+			break
+		}
+		if !IsRetryableError(lastErr) {
+			return nil, fmt.Errorf("anthropic: %w", lastErr)
+		}
+	}
+	if lastErr != nil {
+		return nil, fmt.Errorf("anthropic: %w", lastErr)
 	}
 
 	if len(parsed.Content) == 0 {
@@ -166,11 +207,15 @@ func (m *AnthropicChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts
 				Text: c.Text,
 			})
 		case "thinking":
-			content = append(content, message.ThinkingBlock{
+			tb := message.ThinkingBlock{
 				Type:     "thinking",
 				ID:       fmt.Sprintf("thinking_%s", parsed.ID),
-				Thinking: c.Text,
-			})
+				Thinking: c.Thinking,
+			}
+			if c.Signature != "" {
+				tb.Extra = map[string]any{"signature": c.Signature}
+			}
+			content = append(content, tb)
 		case "tool_use":
 			inputStr := string(c.Input)
 			content = append(content, message.ToolCallBlock{
@@ -186,8 +231,10 @@ func (m *AnthropicChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts
 	var usage *ChatUsage
 	if parsed.Usage != nil {
 		usage = &ChatUsage{
-			InputTokens:  parsed.Usage.InputTokens,
-			OutputTokens: parsed.Usage.OutputTokens,
+			InputTokens:              parsed.Usage.InputTokens,
+			OutputTokens:             parsed.Usage.OutputTokens,
+			CacheCreationInputTokens: parsed.Usage.CacheCreationInputTokens,
+			CacheInputTokens:         parsed.Usage.CacheReadInputTokens,
 		}
 	}
 
@@ -220,6 +267,17 @@ func (m *AnthropicChatModel) ChatStream(ctx context.Context, msgs []*message.Msg
 		MaxTokens: m.maxOutputTok,
 		System:    system,
 		Stream:    true,
+	}
+
+	if callOpts.ThinkingEnable != nil && *callOpts.ThinkingEnable {
+		budget := reqBody.MaxTokens / 2
+		if callOpts.ThinkingBudget != nil && *callOpts.ThinkingBudget > 0 {
+			budget = *callOpts.ThinkingBudget
+		}
+		if budget >= reqBody.MaxTokens {
+			reqBody.MaxTokens = budget + 1024
+		}
+		reqBody.Thinking = &anthropicThinking{Type: "enabled", BudgetTokens: budget}
 	}
 
 	if len(callOpts.Tools) > 0 {
@@ -259,6 +317,7 @@ type anthropicStreamRequest struct {
 	MaxTokens int                `json:"max_tokens"`
 	System    string             `json:"system,omitempty"`
 	Tools     []anthropicTool    `json:"tools,omitempty"`
+	Thinking  *anthropicThinking `json:"thinking,omitempty"`
 	Stream    bool               `json:"stream"`
 }
 
@@ -291,10 +350,11 @@ type anthropicContentBlockDelta struct {
 	Type  string `json:"type"`
 	Index int    `json:"index"`
 	Delta struct {
-		Type        string `json:"type"` // "text_delta", "thinking_delta", "input_json_delta"
+		Type        string `json:"type"` // "text_delta", "thinking_delta", "input_json_delta", "signature_delta"
 		Text        string `json:"text,omitempty"`
 		Thinking    string `json:"thinking,omitempty"`
 		PartialJSON string `json:"partial_json,omitempty"`
+		Signature   string `json:"signature,omitempty"`
 	} `json:"delta"`
 }
 
@@ -312,12 +372,14 @@ func processAnthropicStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, ou
 	defer close(outCh)
 
 	var (
-		responseID      string
-		modelName       string
-		inputTokens     int
-		outputTokens    int
-		accBlocks       []anthropicAccBlock
-		currentBlockIdx int = -1
+		responseID               string
+		modelName                string
+		inputTokens              int
+		outputTokens             int
+		cacheCreationInputTokens int
+		cacheInputTokens         int
+		accBlocks                []anthropicAccBlock
+		currentBlockIdx          int = -1
 	)
 
 	for evt := range sseCh {
@@ -335,6 +397,22 @@ func processAnthropicStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, ou
 				modelName = ms.Message.Model
 				if ms.Message.Usage != nil {
 					inputTokens = ms.Message.Usage.InputTokens
+				}
+			}
+			// Also try to extract cache tokens from message_start
+			var raw map[string]json.RawMessage
+			if json.Unmarshal([]byte(evt.Data), &raw) == nil {
+				if msgRaw, ok := raw["message"]; ok {
+					var msgData struct {
+						Usage *struct {
+							CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+							CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+						} `json:"usage"`
+					}
+					if json.Unmarshal(msgRaw, &msgData) == nil && msgData.Usage != nil {
+						cacheCreationInputTokens = msgData.Usage.CacheCreationInputTokens
+						cacheInputTokens = msgData.Usage.CacheReadInputTokens
+					}
 				}
 			}
 
@@ -391,6 +469,8 @@ func processAnthropicStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, ou
 						}
 					case "input_json_delta":
 						accBlocks[idx].text += cbd.Delta.PartialJSON
+					case "signature_delta":
+						accBlocks[idx].signature += cbd.Delta.Signature
 					}
 				}
 			}
@@ -425,11 +505,15 @@ func processAnthropicStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, ou
 				Text: ab.text,
 			})
 		case "thinking":
-			finalContent = append(finalContent, message.ThinkingBlock{
+			tb := message.ThinkingBlock{
 				Type:     "thinking",
 				ID:       fmt.Sprintf("thinking_%s", responseID),
 				Thinking: ab.text,
-			})
+			}
+			if ab.signature != "" {
+				tb.Extra = map[string]any{"signature": ab.signature}
+			}
+			finalContent = append(finalContent, tb)
 		case "tool_use":
 			finalContent = append(finalContent, message.ToolCallBlock{
 				Type:  "tool_call",
@@ -444,8 +528,10 @@ func processAnthropicStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, ou
 	var usage *ChatUsage
 	if inputTokens > 0 || outputTokens > 0 {
 		usage = &ChatUsage{
-			InputTokens:  inputTokens,
-			OutputTokens: outputTokens,
+			InputTokens:              inputTokens,
+			OutputTokens:             outputTokens,
+			CacheCreationInputTokens: cacheCreationInputTokens,
+			CacheInputTokens:         cacheInputTokens,
 		}
 	}
 
@@ -468,6 +554,7 @@ type anthropicAccBlock struct {
 	id        string
 	name      string
 	text      string
+	signature string
 }
 
 // CountTokens estimates token count.

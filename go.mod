@@ -8,6 +8,7 @@ require (
 	github.com/sirupsen/logrus v1.9.4
 	go.opentelemetry.io/otel/trace v1.44.0
 	gopkg.in/yaml.v3 v3.0.1
+	mvdan.cc/sh/v3 v3.13.1
 )
 
 require (

@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/permission"
 )
 
 var readSchema = json.RawMessage(`{
@@ -29,7 +31,11 @@ var readSchema = json.RawMessage(`{
 	"required": ["file_path"]
 }`)
 
-const defaultReadLimit = 2000
+const (
+	defaultReadLimit    = 2000
+	maxLineLengthChars  = 2000
+	lineTruncatedSuffix = " [truncated]"
+)
 
 type readTool struct {
 	BaseTool
@@ -120,11 +126,43 @@ func (t *readTool) Execute(ctx context.Context, args map[string]any) (*ToolRespo
 
 	var lines []string
 	for i := offset; i < end; i++ {
-		lines = append(lines, fmt.Sprintf("%d\t%s", i+1, rawLines[i]))
+		line := rawLines[i]
+		// Truncate very long lines to prevent output explosion
+		if len(line) > maxLineLengthChars {
+			line = line[:maxLineLengthChars] + lineTruncatedSuffix
+		}
+		lines = append(lines, fmt.Sprintf("%d\t%s", i+1, line))
 	}
 
 	content := strings.Join(lines, "\n")
 	return NewTextResponse(content), nil
+}
+
+// CheckPermissions returns passthrough for read operations (reads are generally safe).
+func (t *readTool) CheckPermissions(input map[string]any, ctx *permission.Context) permission.Decision {
+	return permission.Decision{Behavior: permission.BehaviorPassthrough}
+}
+
+// MatchRule checks whether a permission rule's glob pattern matches the file path.
+func (t *readTool) MatchRule(ruleContent string, input map[string]any) bool {
+	if ruleContent == "" {
+		return true
+	}
+	path, _ := input["file_path"].(string)
+	if path == "" {
+		return false
+	}
+	abs, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return false
+	}
+	matched, _ := filepath.Match(ruleContent, abs)
+	if matched {
+		return true
+	}
+	// Also try matching against just the base name
+	matched, _ = filepath.Match(ruleContent, filepath.Base(abs))
+	return matched
 }
 
 // ReadTool returns a tool that reads text files with optional line offset and limit.

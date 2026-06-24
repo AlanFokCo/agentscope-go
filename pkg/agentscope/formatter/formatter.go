@@ -1,6 +1,8 @@
 package formatter
 
 import (
+	"fmt"
+	"path"
 	"strings"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
@@ -18,6 +20,132 @@ type Formatter interface {
 type MultiAgentFormatter interface {
 	Formatter
 	FormatMultiAgent(msgs []*message.Msg, currentAgent string) ([]map[string]any, error)
+}
+
+// SupportsMediaType checks if a media type is supported by the formatter.
+// Uses path.Match for glob-style matching (e.g. "image/*" matches "image/png").
+func SupportsMediaType(supported []string, mediaType string) bool {
+	for _, pattern := range supported {
+		if matched, _ := path.Match(pattern, mediaType); matched {
+			return true
+		}
+	}
+	return false
+}
+
+// ConvertToolResultToString converts a tool result output to a string.
+// Handles string, []ContentBlock, and other types.
+func ConvertToolResultToString(output any) string {
+	switch o := output.(type) {
+	case string:
+		return o
+	case []message.ContentBlock:
+		var parts []string
+		for _, b := range o {
+			if tb, ok := b.(message.TextBlock); ok {
+				parts = append(parts, tb.Text)
+			} else if db, ok := b.(message.DataBlock); ok {
+				mt := db.GetMediaType()
+				if src, ok := db.Source.(message.URLSource); ok {
+					parts = append(parts, fmt.Sprintf("[%s: %s]", mt, src.URL))
+				} else {
+					parts = append(parts, fmt.Sprintf("[%s data]", mt))
+				}
+			}
+		}
+		return strings.Join(parts, "\n")
+	default:
+		return fmt.Sprintf("%v", o)
+	}
+}
+
+// MessageGroup represents a group of messages classified by type.
+type MessageGroup struct {
+	Type string         // "tool_sequence" or "agent_message"
+	Msgs []*message.Msg // messages in this group
+}
+
+// GroupMessages separates messages into tool sequences and agent messages.
+// A tool sequence is a contiguous run of messages containing tool_call or tool_result blocks.
+func GroupMessages(msgs []*message.Msg) []MessageGroup {
+	var groups []MessageGroup
+	var currentGroup *MessageGroup
+
+	for _, msg := range msgs {
+		if msg == nil {
+			continue
+		}
+		isToolMsg := msg.HasContentBlocks(message.ContentBlockToolCall, message.ContentBlockToolResult)
+
+		groupType := "agent_message"
+		if isToolMsg {
+			groupType = "tool_sequence"
+		}
+
+		if currentGroup == nil || currentGroup.Type != groupType {
+			groups = append(groups, MessageGroup{Type: groupType})
+			currentGroup = &groups[len(groups)-1]
+		}
+		currentGroup.Msgs = append(currentGroup.Msgs, msg)
+	}
+	return groups
+}
+
+// FormatDataBlockForOpenAI converts a DataBlock to OpenAI image_url format.
+func FormatDataBlockForOpenAI(blk message.DataBlock, supported []string) map[string]any {
+	mt := blk.GetMediaType()
+	if !SupportsMediaType(supported, mt) {
+		return nil
+	}
+	if strings.HasPrefix(mt, "image/") {
+		switch src := blk.Source.(type) {
+		case message.Base64Source:
+			return map[string]any{
+				"type": "image_url",
+				"image_url": map[string]any{
+					"url": fmt.Sprintf("data:%s;base64,%s", src.MediaType, src.Data),
+				},
+			}
+		case message.URLSource:
+			return map[string]any{
+				"type": "image_url",
+				"image_url": map[string]any{
+					"url": src.URL,
+				},
+			}
+		}
+	}
+	if strings.HasPrefix(mt, "audio/") {
+		if src, ok := blk.Source.(message.Base64Source); ok {
+			format := strings.TrimPrefix(src.MediaType, "audio/")
+			return map[string]any{
+				"type": "input_audio",
+				"input_audio": map[string]any{
+					"data":   src.Data,
+					"format": format,
+				},
+			}
+		}
+	}
+	if strings.HasPrefix(mt, "video/") {
+		switch src := blk.Source.(type) {
+		case message.URLSource:
+			return map[string]any{
+				"type": "video_url",
+				"video_url": map[string]any{
+					"url": src.URL,
+				},
+			}
+		case message.Base64Source:
+			return map[string]any{
+				"type": "video_url",
+				"video_url": map[string]any{
+					"url": fmt.Sprintf("data:%s;base64,%s", src.MediaType, src.Data),
+				},
+			}
+		}
+	}
+	return nil
 }
 
 // formatMultiAgentOpenAI applies multi-agent formatting for OpenAI-compatible APIs:

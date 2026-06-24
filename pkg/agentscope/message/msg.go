@@ -24,8 +24,10 @@ const (
 
 // Usage tracks token consumption for a message.
 type Usage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
+	CacheInputTokens         int `json:"cache_input_tokens,omitempty"`
 }
 
 // Msg is the core message type in agentscope-go.
@@ -149,11 +151,12 @@ func UnmarshalContentBlocks(data json.RawMessage) ([]ContentBlock, error) {
 }
 
 type toolResultBlockJSON struct {
-	Type   string          `json:"type"`
-	ID     string          `json:"id"`
-	Name   string          `json:"name"`
-	Output json.RawMessage `json:"output"`
-	State  ToolResultState `json:"state"`
+	Type     string          `json:"type"`
+	ID       string          `json:"id"`
+	Name     string          `json:"name"`
+	Output   json.RawMessage `json:"output"`
+	State    ToolResultState `json:"state"`
+	Metadata map[string]any  `json:"metadata,omitempty"`
 }
 
 func (b toolResultBlockJSON) toBlock() ToolResultBlock {
@@ -165,11 +168,12 @@ func (b toolResultBlockJSON) toBlock() ToolResultBlock {
 		output = string(b.Output)
 	}
 	return ToolResultBlock{
-		Type:   b.Type,
-		ID:     b.ID,
-		Name:   b.Name,
-		Output: output,
-		State:  b.State,
+		Type:     b.Type,
+		ID:       b.ID,
+		Name:     b.Name,
+		Output:   output,
+		State:    b.State,
+		Metadata: b.Metadata,
 	}
 }
 

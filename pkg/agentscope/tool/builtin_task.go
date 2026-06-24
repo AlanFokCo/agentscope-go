@@ -67,32 +67,104 @@ func (tc *TaskContext) list() []*Task {
 	return out
 }
 
+// findLocked returns a task by ID. Must be called with tc.mu held.
+func (tc *TaskContext) findLocked(id string) *Task {
+	for _, t := range tc.tasks {
+		if t.ID == id {
+			return t
+		}
+	}
+	return nil
+}
+
 func (tc *TaskContext) update(id string, updates map[string]any) (*Task, error) {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
-	for _, t := range tc.tasks {
-		if t.ID == id {
-			if v, ok := updates["state"].(string); ok {
-				switch v {
-				case "pending", "in_progress", "completed":
-					t.State = v
-				default:
-					return nil, fmt.Errorf("invalid state: %q", v)
-				}
-			}
-			if v, ok := updates["owner"].(string); ok {
-				t.Owner = v
-			}
-			if v, ok := updates["subject"].(string); ok {
-				t.Subject = v
-			}
-			if v, ok := updates["description"].(string); ok {
-				t.Description = v
-			}
-			return t, nil
+
+	t := tc.findLocked(id)
+	if t == nil {
+		return nil, fmt.Errorf("task %q not found", id)
+	}
+
+	if v, ok := updates["state"].(string); ok {
+		switch v {
+		case "pending", "in_progress", "completed":
+			t.State = v
+		default:
+			return nil, fmt.Errorf("invalid state: %q", v)
 		}
 	}
-	return nil, fmt.Errorf("task %q not found", id)
+	if v, ok := updates["owner"].(string); ok {
+		t.Owner = v
+	}
+	if v, ok := updates["subject"].(string); ok {
+		t.Subject = v
+	}
+	if v, ok := updates["description"].(string); ok {
+		t.Description = v
+	}
+
+	// Bidirectional dependency updates
+	if v, ok := updates["blocks"]; ok {
+		newBlocks := toStringSlice(v)
+		// Remove this task from old blocked_by entries
+		for _, oldBlockedID := range t.Blocks {
+			if other := tc.findLocked(oldBlockedID); other != nil {
+				other.BlockedBy = removeFromSlice(other.BlockedBy, id)
+			}
+		}
+		t.Blocks = newBlocks
+		// Add this task to new blocked_by entries
+		for _, blockedID := range newBlocks {
+			if other := tc.findLocked(blockedID); other != nil {
+				if !containsString(other.BlockedBy, id) {
+					other.BlockedBy = append(other.BlockedBy, id)
+				}
+			}
+		}
+	}
+
+	if v, ok := updates["blocked_by"]; ok {
+		newBlockedBy := toStringSlice(v)
+		// Remove this task from old blocks entries
+		for _, oldBlockerID := range t.BlockedBy {
+			if other := tc.findLocked(oldBlockerID); other != nil {
+				other.Blocks = removeFromSlice(other.Blocks, id)
+			}
+		}
+		t.BlockedBy = newBlockedBy
+		// Add this task to new blocks entries
+		for _, blockerID := range newBlockedBy {
+			if other := tc.findLocked(blockerID); other != nil {
+				if !containsString(other.Blocks, id) {
+					other.Blocks = append(other.Blocks, id)
+				}
+			}
+		}
+	}
+
+	return t, nil
+}
+
+// removeFromSlice removes all occurrences of target from s.
+func removeFromSlice(s []string, target string) []string {
+	var result []string
+	for _, v := range s {
+		if v != target {
+			result = append(result, v)
+		}
+	}
+	return result
+}
+
+// containsString checks if s contains target.
+func containsString(s []string, target string) bool {
+	for _, v := range s {
+		if v == target {
+			return true
+		}
+	}
+	return false
 }
 
 // --- Task tools ---
@@ -226,7 +298,17 @@ var taskUpdateSchema = json.RawMessage(`{
 		"state": {"type": "string", "description": "New state: pending, in_progress, or completed"},
 		"owner": {"type": "string", "description": "New owner"},
 		"subject": {"type": "string", "description": "New subject"},
-		"description": {"type": "string", "description": "New description"}
+		"description": {"type": "string", "description": "New description"},
+		"blocks": {
+			"type": "array",
+			"items": {"type": "string"},
+			"description": "Task IDs that this task blocks (bidirectionally updates blocked_by on those tasks)"
+		},
+		"blocked_by": {
+			"type": "array",
+			"items": {"type": "string"},
+			"description": "Task IDs that block this task (bidirectionally updates blocks on those tasks)"
+		}
 	},
 	"required": ["task_id"]
 }`)
@@ -254,7 +336,7 @@ func (t *taskUpdateTool) Execute(ctx context.Context, args map[string]any) (*Too
 func TaskUpdateTool() Tool {
 	return &taskUpdateTool{BaseTool: BaseTool{
 		ToolName:        "task_update",
-		ToolDescription: "Update a task's state, owner, subject, or description.",
+		ToolDescription: "Update a task's state, owner, subject, description, blocks, or blocked_by.",
 		ToolSchema:      taskUpdateSchema,
 	}}
 }

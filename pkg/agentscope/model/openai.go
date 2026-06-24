@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/internal/httpx"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
@@ -82,20 +83,40 @@ func (m *OpenAIChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts ..
 		reqBody.ToolChoice = formatToolChoice(callOpts.ToolChoice)
 	}
 
+	// Retry loop
+	maxRetries := callOpts.MaxRetries
+	retryDelay := callOpts.RetryDelay
+	if retryDelay == 0 {
+		retryDelay = time.Second
+	}
+
 	var parsed openAIChatResponse
-	if err := httpx.DoJSONRequest(
-		ctx,
-		m.httpClient,
-		http.MethodPost,
-		m.baseURL+"/v1/chat/completions",
-		reqBody,
-		&parsed,
-		map[string]string{
-			"Content-Type":  "application/json",
-			"Authorization": "Bearer " + m.apiKey,
-		},
-	); err != nil {
-		return nil, fmt.Errorf("openai: %w", err)
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			time.Sleep(retryDelay)
+		}
+		lastErr = httpx.DoJSONRequest(
+			ctx,
+			m.httpClient,
+			http.MethodPost,
+			m.baseURL+"/v1/chat/completions",
+			reqBody,
+			&parsed,
+			map[string]string{
+				"Content-Type":  "application/json",
+				"Authorization": "Bearer " + m.apiKey,
+			},
+		)
+		if lastErr == nil {
+			break
+		}
+		if !IsRetryableError(lastErr) {
+			return nil, fmt.Errorf("openai: %w", lastErr)
+		}
+	}
+	if lastErr != nil {
+		return nil, fmt.Errorf("openai: %w", lastErr)
 	}
 
 	return parseOpenAIResponse(parsed, msgs)

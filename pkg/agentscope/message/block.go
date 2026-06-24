@@ -2,6 +2,7 @@ package message
 
 import (
 	"encoding/json"
+	"strings"
 )
 
 // ContentBlockType enumerates supported content block kinds.
@@ -56,9 +57,10 @@ func (b TextBlock) GetID() string             { return b.ID }
 
 // ThinkingBlock represents internal reasoning content.
 type ThinkingBlock struct {
-	Type     string `json:"type"`
-	ID       string `json:"id"`
-	Thinking string `json:"thinking"`
+	Type     string         `json:"type"`
+	ID       string         `json:"id"`
+	Thinking string         `json:"thinking"`
+	Extra    map[string]any `json:"extra,omitempty"` // provider-specific fields (e.g. Anthropic "signature", OpenAI Response "reasoning_item_id")
 }
 
 func (b ThinkingBlock) GetType() ContentBlockType { return ContentBlockThinking }
@@ -107,12 +109,13 @@ func (b DataBlock) GetMediaType() string {
 
 // ToolCallBlock represents a model's request to call a tool.
 type ToolCallBlock struct {
-	Type           string        `json:"type"`
-	ID             string        `json:"id"`
-	Name           string        `json:"name"`
-	Input          string        `json:"input"` // raw JSON string of arguments
-	State          ToolCallState `json:"state"`
-	SuggestedRules []any         `json:"suggested_rules,omitempty"`
+	Type           string         `json:"type"`
+	ID             string         `json:"id"`
+	Name           string         `json:"name"`
+	Input          string         `json:"input"` // raw JSON string of arguments
+	State          ToolCallState  `json:"state"`
+	SuggestedRules []any          `json:"suggested_rules,omitempty"`
+	Extra          map[string]any `json:"extra,omitempty"` // provider-specific fields (e.g. OpenAI Response "call_id")
 }
 
 func (b ToolCallBlock) GetType() ContentBlockType { return ContentBlockToolCall }
@@ -132,11 +135,12 @@ func (b ToolCallBlock) ParseInput() (map[string]any, error) {
 
 // ToolResultBlock represents the result of a tool execution.
 type ToolResultBlock struct {
-	Type   string          `json:"type"`
-	ID     string          `json:"id"`
-	Name   string          `json:"name"`
-	Output any             `json:"output"` // string or []ContentBlock
-	State  ToolResultState `json:"state"`
+	Type     string          `json:"type"`
+	ID       string          `json:"id"`
+	Name     string          `json:"name"`
+	Output   any             `json:"output"` // string or []ContentBlock
+	State    ToolResultState `json:"state"`
+	Metadata map[string]any  `json:"metadata,omitempty"`
 }
 
 func (b ToolResultBlock) GetType() ContentBlockType { return ContentBlockToolResult }
@@ -162,12 +166,84 @@ func (b ToolResultBlock) GetOutputText() string {
 }
 
 // HintBlock represents instructions or hints injected by middleware.
+// Hint can be a string or []ContentBlock (for multimodal hints).
 type HintBlock struct {
 	Type   string `json:"type"`
 	ID     string `json:"id"`
 	Source string `json:"source,omitempty"`
-	Hint   string `json:"hint"`
+	Hint   any    `json:"hint"` // string or []ContentBlock
 }
 
 func (b HintBlock) GetType() ContentBlockType { return ContentBlockHint }
 func (b HintBlock) GetID() string             { return b.ID }
+
+// GetHintText returns the hint as a plain string.
+// If Hint is a []ContentBlock, it concatenates all TextBlock texts.
+func (b HintBlock) GetHintText() string {
+	switch h := b.Hint.(type) {
+	case string:
+		return h
+	case []ContentBlock:
+		var texts []string
+		for _, block := range h {
+			if tb, ok := block.(TextBlock); ok {
+				texts = append(texts, tb.Text)
+			}
+		}
+		if len(texts) > 0 {
+			return strings.Join(texts, "\n")
+		}
+	}
+	return ""
+}
+
+// MarshalJSON handles the polymorphic Hint field.
+func (b HintBlock) MarshalJSON() ([]byte, error) {
+	type Alias struct {
+		Type   string `json:"type"`
+		ID     string `json:"id"`
+		Source string `json:"source,omitempty"`
+		Hint   any    `json:"hint"`
+	}
+	return json.Marshal(Alias{Type: b.Type, ID: b.ID, Source: b.Source, Hint: b.Hint})
+}
+
+// UnmarshalJSON handles the polymorphic Hint field.
+func (b *HintBlock) UnmarshalJSON(data []byte) error {
+	type Alias struct {
+		Type   string          `json:"type"`
+		ID     string          `json:"id"`
+		Source string          `json:"source,omitempty"`
+		Hint   json.RawMessage `json:"hint"`
+	}
+	var a Alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	b.Type = a.Type
+	b.ID = a.ID
+	b.Source = a.Source
+
+	if len(a.Hint) == 0 {
+		b.Hint = ""
+		return nil
+	}
+
+	// Try string first
+	var s string
+	if err := json.Unmarshal(a.Hint, &s); err == nil {
+		b.Hint = s
+		return nil
+	}
+
+	// Try []ContentBlock
+	blocks, err := UnmarshalContentBlocks(a.Hint)
+	if err == nil {
+		b.Hint = blocks
+		return nil
+	}
+
+	// Fallback to raw string
+	b.Hint = string(a.Hint)
+	return nil
+}

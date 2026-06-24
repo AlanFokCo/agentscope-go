@@ -4,245 +4,275 @@ A Go implementation of a multi-agent LLM application framework, inspired by the
 Python project [AgentScope](https://github.com/agentscope-ai/agentscope). It
 provides Go-idiomatic APIs (interfaces, `context.Context`, explicit `error`
 returns) while keeping the same core concepts: agents, messages, models,
-tools, memory, RAG, tracing, realtime, A2A, etc.
+tools, memory, middleware, RAG, tracing, and more.
+
+## Architecture Overview
+
+```
+                           +-----------+
+                           |   Agent   |  UnifiedAgent / ReActAgent / UserAgent / A2AAgent
+                           +-----+-----+
+                                 |
+               +-----------------+-----------------+
+               |                 |                 |
+        +------+------+   +-----+-----+   +-------+-------+
+        |  Middleware  |   |   Model   |   |     Tool      |
+        | (5 hooks)   |   | ChatModel |   | FunctionTool  |
+        +------+------+   +-----+-----+   +-------+-------+
+               |                 |                 |
+   +-----------+-----------+     |         +-------+-------+
+   | OnReply  | OnModelCall|     |         | ToolGroup     |
+   | OnActing | OnSystem   |     |         | Toolkit       |
+   | OnCompress            |     |         | Built-in      |
+   +-----------------------+     |         | MCP           |
+                                 |         +---------------+
+                        +--------+--------+
+                        | OpenAI     | Anthropic
+                        | DashScope  | DeepSeek
+                        | Gemini     | Ollama
+                        | Moonshot   | xAI
+                        +--------+--------+
+                                 |
+               +-----------------+-----------------+
+               |                 |                 |
+        +------+------+   +-----+-----+   +-------+-------+
+        |   Memory    |   |  Message   |   |    Event      |
+        | InMemory    |   | Msg + Blocks|  | 27 event types|
+        | Long-term   |   +-----+-----+   +-------+-------+
+        | Compress    |         |
+        +-------------+   +-----+-----+
+                          | Pipeline  |
+                          | MsgHub    |
+                          +-----------+
+```
 
 ## Features
 
-- `pkg/agentscope/config.go`: global initialization `agentscope.Init`, config and logging.
-- `pkg/agentscope/message`: `Msg` and multi-modal content blocks.
-- `pkg/agentscope/agent`: `Agent` interface, `AgentBase`, `ReActAgent`, `UserAgent`, `A2AAgent`.
-- `pkg/agentscope/model`: `ChatModel` interface with adapters for OpenAI, Anthropic and DashScope.
-- `pkg/agentscope/session`: in-memory and JSON file sessions.
-- `pkg/agentscope/tool`: tool registration and execution, per-agent `Toolkit`.
-- `pkg/agentscope/memory`: short-term memory store and simple compression configuration.
-- `pkg/agentscope/pipeline`: sequential Pipeline + `MsgHub` for multi-agent orchestration.
-- `pkg/agentscope/rag` / `tracing` / `a2a` / `realtime` / `tts` / `tune`:
-  interfaces and basic reference implementations.
+### Core
 
-## Dependencies
+| Package | Description |
+|---------|-------------|
+| `config.go` | Global `agentscope.Init()`, project config, logging (logrus) |
+| `message` | `Msg` with typed `ContentBlock` variants (text, thinking, tool_use, tool_result, image, audio, video) |
+| `event` | 27 event types for streaming and lifecycle tracking |
+| `agent` | `Agent` interface, `UnifiedAgent` (v2, native tool calling + streaming), `ReActAgent`, `UserAgent`, `A2AAgent` |
+| `model` | `ChatModel` interface (`Chat`/`ChatStream`/`CountTokens`) with 8 adapters |
+| `tool` | `Tool` interface, `FunctionTool`, `ToolGroup`, `Toolkit`, 6 built-in tools |
+| `memory` | Short-term `InMemoryStore`, structured context compression |
+| `pipeline` | Sequential `Pipeline` with `Then`/`If` combinators, `MsgHub` for multi-agent orchestration |
 
-The Go module is defined in `go.mod` and only depends on a few small libraries:
+### Middleware & Extensions
 
-- `github.com/google/uuid` for ID generation.
-- Standard library packages (`net/http`, `encoding/json`, etc.).
+| Package | Description |
+|---------|-------------|
+| `middleware` | 5-hook onion chain: `OnReply`, `OnModelCall`, `OnActing`, `OnSystemPrompt`, `OnCompressContext` |
+| `credential` | 8 credential providers (env, file, vault, keychain, etc.) |
+| `formatter` | Prompt formatting and template system |
+| `model/models/` | 44 YAML model cards with pricing, limits, and capabilities |
 
-LLM backends require API keys:
+### Advanced
 
-- OpenAI: `OPENAI_API_KEY`
-- Anthropic: `ANTHROPIC_API_KEY`
-- DashScope (Qwen): `DASHSCOPE_API_KEY` (optional `DASHSCOPE_BASE_URL`)
+| Package | Description |
+|---------|-------------|
+| `permission` | 5 permission modes + Engine + Checker for tool execution control |
+| `team` | Agent Teams with Leader/Worker pattern + 4 coordination tools |
+| `mcp` | MCP client (Stdio + HTTP) with `MCPTool` adapter |
+| `embedding` | Embedding models (4 providers) + `FileEmbeddingCache` |
+| `rag` | `Index` / `KnowledgeBase` interfaces, Qdrant integration |
+| `skill` | Reusable skill system for agents |
+| `session` | In-memory and JSON file session persistence |
+| `tracing` | `Tracer` interface + `TracingMiddleware`, OpenTelemetry support |
 
-All examples compile with `go 1.22` or newer.
+### Services
 
-## Getting Started: create your first Agent
+| Package | Description |
+|---------|-------------|
+| `workspace` | `Workspace` / `Sandbox` interfaces, `LocalWorkspace` + `Offloader` |
+| `service` | HTTP Agent Service (10 endpoints + SSE + CORS) |
+| `messagebus` | `MessageBus` interface + `InMemoryMessageBus` |
+| `storage` | `InMemoryStorage` + `FileStorage` backends |
+| `schedule` | `InMemoryScheduler` for scheduled agent tasks |
 
-The minimal example is in `examples/simple/main.go`:
+### Also included
+
+- `a2a` / `realtime` / `tts` / `tune` / `types`: agent-to-agent HTTP, realtime streaming, TTS, fine-tuning, and shared types.
+
+## Model Support
+
+8 LLM provider adapters, all with `Chat` and `ChatStream` (SSE):
+
+| Provider | Adapter | Example Models |
+|----------|---------|----------------|
+| OpenAI | `model.NewOpenAIChatModel` | gpt-4o, gpt-4o-mini |
+| Anthropic | `model.NewAnthropicChatModel` | claude-sonnet-4, claude-haiku-4 |
+| DashScope | `model.NewDashScopeChatModel` | qwen-plus, qwen-max |
+| DeepSeek | `model.NewDeepSeekChatModel` | deepseek-chat, deepseek-reasoner |
+| Gemini | `model.NewGeminiChatModel` | gemini-2.0-flash |
+| Ollama | `model.NewOllamaChatModel` | llama3, mistral |
+| Moonshot | `model.NewMoonshotChatModel` | moonshot-v1-8k |
+| xAI | `model.NewXAIChatModel` | grok-2 |
+
+LLM-backed examples need one of: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `DASHSCOPE_API_KEY` (+ optional `DASHSCOPE_BASE_URL`). The `loadChatModelFromEnv` helper picks a backend in the order Anthropic -> DashScope -> OpenAI.
+
+## Getting Started
+
+### Quick start
 
 ```bash
-export OPENAI_API_KEY=sk-...
-go run ./examples/simple
+export OPENAI_API_KEY=sk-...   # or ANTHROPIC_API_KEY / DASHSCOPE_API_KEY
+go run ./examples/agent_v2
 ```
 
-This will:
+### v2 Agent with tool calling
 
-1. Call `agentscope.Init()` to initialize global configuration and logging.
-2. Build a `ChatModel` using `loadChatModelFromEnv` (OpenAI / Anthropic / DashScope).
-3. Create a `SimpleAgent` that embeds `agent.AgentBase` and holds the `ChatModel`.
-4. Call `Reply(ctx, "Introduce yourself in one sentence.")` and print the result.
-
-### Inline usage example
-
-If you prefer to see everything in one file, here is a minimal inline example
-using the OpenAI HTTP model adapter:
+The v2 `UnifiedAgent` uses native API-level tool calling (OpenAI/Anthropic function calling), not the text-JSON parsing used by the legacy `ReActAgent`:
 
 ```go
 package main
 
 import (
-	"context"
-	"fmt"
-	"os"
+    "context"
+    "encoding/json"
+    "fmt"
 
-	as "github.com/alanfokco/agentscope-go/pkg/agentscope"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
+    as "github.com/alanfokco/agentscope-go/pkg/agentscope"
+    "github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
+    "github.com/alanfokco/agentscope-go/pkg/agentscope/model"
+    "github.com/alanfokco/agentscope-go/pkg/agentscope/tool"
 )
-
-type SimpleAgent struct {
-	agent.AgentBase
-	Model model.ChatModel
-}
-
-func (a *SimpleAgent) Reply(ctx context.Context, args ...any) (*message.Msg, error) {
-	userMsg := message.NewMsg("user", message.RoleUser, args[0].(string))
-	resp, err := a.Model.Chat(ctx, []*message.Msg{userMsg})
-	if err != nil {
-		return nil, err
-	}
-	return resp.Msg, nil
-}
 
 func main() {
-	as.Init()
+    as.Init()
 
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	if apiKey == "" {
-		panic("OPENAI_API_KEY is not set")
-	}
-	m := model.NewOpenAIChatModel(model.OpenAIConfig{
-		APIKey: apiKey,
-		Model:  "gpt-4o-mini",
-	})
+    cm, _ := model.NewOpenAIChatModel(model.OpenAIConfig{
+        APIKey: "sk-...",
+        Model:  "gpt-4o-mini",
+    })
 
-	ag := &SimpleAgent{Model: m}
-	ctx := context.Background()
-	reply, err := ag.Reply(ctx, "Introduce yourself in one sentence.")
-	if err != nil {
-		panic(err)
-	}
-	if txt := reply.GetTextContent("\n"); txt != nil {
-		fmt.Println("assistant:", *txt)
-	}
+    weatherTool := tool.NewFunctionTool(
+        "get_weather",
+        "Get current weather for a city",
+        json.RawMessage(`{
+            "type": "object",
+            "properties": {
+                "location": {"type": "string", "description": "City name"}
+            },
+            "required": ["location"]
+        }`),
+        func(ctx context.Context, input map[string]any) (any, error) {
+            loc, _ := input["location"].(string)
+            return map[string]any{"location": loc, "temp": "22°C"}, nil
+        },
+    )
+
+    a := agent.NewUnifiedAgent(
+        "weather-bot",
+        "You are a weather assistant. Use get_weather to look up weather.",
+        cm,
+        agent.WithToolkit(tool.NewToolkit(weatherTool)),
+        agent.WithReactConfig(agent.ReactConfig{MaxIters: 5}),
+    )
+
+    reply, err := a.Reply(context.Background(), "What's the weather in Shanghai?")
+    if err != nil {
+        panic(err)
+    }
+    if txt := reply.GetTextContent("\n"); txt != nil {
+        fmt.Println("Assistant:", *txt)
+    }
 }
 ```
 
-### Using Anthropic or DashScope instead of OpenAI
+### Streaming
 
-You can switch providers without changing your agent code, simply by setting
-different environment variables:
-
-```bash
-# Anthropic
-export ANTHROPIC_API_KEY=sk-ant-...
-go run ./examples/simple
-
-# DashScope (Qwen)
-export DASHSCOPE_API_KEY=sk-...
-export DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-go run ./examples/simple
-```
-
-The helper `loadChatModelFromEnv` in the examples picks a backend in this order:
-Anthropic → DashScope → OpenAI.
-
-### ReAct + tool usage example
-
-The `react_tool` example shows how to let the model call tools. The core idea is:
+Use `ReplyStream` to receive events as they arrive from the model:
 
 ```go
-// 1) Define a tool
-sumTool := &tool.Tool{
-	Name:        "sum_numbers",
-	Description: "Sum a list of numbers",
-	Execute: func(ctx context.Context, args map[string]any) (any, error) {
-		numsAny, _ := args["numbers"].([]any)
-		var sum float64
-		for _, v := range numsAny {
-			if n, ok := v.(float64); ok {
-				sum += n
-			}
-		}
-		return map[string]any{"result": sum}, nil
-	},
+ch, _ := a.ReplyStream(ctx, "Tell me a story about a robot.")
+
+for evt := range ch {
+    switch e := evt.(type) {
+    case event.TextBlockDeltaEvent:
+        fmt.Print(e.Delta)
+    case event.ModelCallEndEvent:
+        fmt.Printf("\n[Tokens: in=%d out=%d]", e.InputTokens, e.OutputTokens)
+    }
 }
-tk := tool.NewToolkit(sumTool)
-
-// 2) Create ReActAgent with a system prompt telling the model how to call the tool
-mem := memory.NewInMemoryStore()
-sysPrompt := "You are a helpful assistant. " +
-	"When the user asks for a calculation, " +
-	"respond with JSON {\"tool\":\"sum_numbers\",\"args\":{\"numbers\":[...]}}."
-react := asagent.NewReActAgent("assistant", sysPrompt, cm, tk, mem)
-
-// 3) Call Reply and let the agent decide whether to use the tool
-reply, err := react.Reply(ctx, "Please calculate the sum of [1, 2, 3.5].")
 ```
 
-### Built-in tools: execute_shell_command and view_text_file
+### Middleware
 
-The `tool` package provides two built-in tools usable by ReActAgent:
-
-- **execute_shell_command**: runs shell commands. Args: `command` (string), `timeout` (optional, seconds).
-- **view_text_file**: reads text file contents. Args: `path` or `file_path` (string).
+The middleware system uses an onion-chain pattern with 5 hooks. Embed `middleware.BaseMiddleware` and override the hooks you need:
 
 ```go
-tk := tool.NewBuiltinToolkit()
-react := asagent.NewReActAgent("assistant", sysPrompt, cm, tk, mem)
-```
+type LoggingMiddleware struct {
+    middleware.BaseMiddleware
+}
 
-Or add them to an existing toolkit:
+func (m *LoggingMiddleware) OnModelCall(
+    ctx context.Context,
+    input middleware.ModelCallInput,
+    next middleware.ModelCallHandler,
+) (*model.ChatResponse, error) {
+    start := time.Now()
+    resp, err := next(ctx, input)
+    fmt.Printf("[%v] model call for %q\n", time.Since(start), input.AgentName)
+    return resp, err
+}
 
-```go
-tk := tool.NewToolkit(
-	tool.ExecuteShellCommandTool(),
-	tool.ViewTextFileTool(),
-	myCustomTool,
+// Wire it up:
+a := agent.NewUnifiedAgent("assistant", "...", cm,
+    agent.WithMiddlewares(&LoggingMiddleware{
+        BaseMiddleware: middleware.BaseMiddleware{MiddlewareKey: "logging"},
+    }),
 )
 ```
 
-See `examples/react_builtin_tools` for a full example.
+### Legacy ReActAgent
 
-### RAG + Qdrant usage sketch
-
-For more advanced RAG scenarios, you can plug Qdrant as a vector index:
+The original `ReActAgent` is still available for text-based tool calling:
 
 ```go
-client, err := qdrant.NewClient(&qdrant.Config{
-	Host: "localhost",
-	Port: 6334,
-})
-if err != nil {
-	panic(err)
+sumTool := &tool.Tool{
+    Name:        "sum_numbers",
+    Description: "Sum a list of numbers",
+    Execute: func(ctx context.Context, args map[string]any) (any, error) {
+        // ...
+        return map[string]any{"result": sum}, nil
+    },
 }
-
-// Assume you have an Embedder implementation that calls OpenAI embeddings or another model.
-embedder := myEmbedder{}
-
-idx, err := rag.NewQdrantTextIndex(rag.QdrantTextConfig{
-	Client:        client,
-	Collection:    "agentscope_docs",
-	VectorMetaKey: "vector",
-	Embedder:      embedder,
-})
-if err != nil {
-	panic(err)
-}
-
-// Insert documents (vectors are computed internally via the Embedder)
-docs := []rag.Document{
-	{ID: "doc-1", Content: "agentscope-go is a Go multi-agent framework."},
-}
-_ = idx.AddDocuments(ctx, docs)
-
-kb := rag.NewSimpleKnowledgeBase("docs", idx)
-// Then pass kb into ReActAgent.WithKnowledge(kb) as shown in examples/rag_react.
+react := agent.NewReActAgent("assistant", sysPrompt, cm, tool.NewToolkit(sumTool), mem)
+reply, _ := react.Reply(ctx, "Calculate the sum of [1, 2, 3.5].")
 ```
 
-## More Advanced Examples
+## Examples
 
-All examples are in the `examples/` directory:
+All 20 examples are in the `examples/` directory. Run any with `go run ./examples/<name>`.
 
-- `examples/simple`: single Agent + ChatModel.
-- `examples/react_tool`: `ReActAgent` with a custom tool (`tool.Toolkit`).
-- `examples/react_builtin_tools`: `ReActAgent` with built-in tools (`execute_shell_command`, `view_text_file`).
-- `examples/rag_react`: `ReActAgent` with RAG (`rag.KnowledgeBase`) and memory compression.
-- `examples/tracing`: enable `tracing.LoggerTracer` to log spans.
-- `examples/a2a_http`: `A2AAgent` + `a2a.HTTPClient` calling a local HTTP server Agent.
-- `examples/realtime_echo`: `RealtimeAgent` using `realtime.EchoClient`.
-- `examples/pipeline_multi_agent`: multi-agent orchestration with `pipeline.Pipeline` + `MsgHub`.
-
-Run any example with:
-
-```bash
-go run ./examples/<name>
-```
-
-Make sure the corresponding API keys are set when an example depends on an LLM backend.
+| Example | Description |
+|---------|-------------|
+| `simple` | Minimal single Agent + ChatModel |
+| `agent_v2` | UnifiedAgent with native tool calling (v2) |
+| `streaming` | Streaming with `ReplyStream` + event handling |
+| `middleware` | Custom middleware with timing/logging hooks |
+| `react_tool` | Legacy ReActAgent with a custom tool |
+| `react_builtin_tools` | Legacy ReActAgent with built-in shell/file tools |
+| `multi_provider` | Same agent across multiple LLM providers |
+| `structured_output` | Structured output with JSON schema validation |
+| `pipeline_multi_agent` | Multi-agent orchestration with Pipeline + MsgHub |
+| `permission` | Permission system controlling tool execution |
+| `agent_team` | Agent Teams with Leader/Worker coordination |
+| `mcp` | MCP client integration (Stdio/HTTP) |
+| `embedding` | Embedding models and vector search |
+| `long_term_memory` | Long-term memory middleware (3 modes) |
+| `rag_react` | RAG with Qdrant + knowledge base |
+| `tracing` | OpenTelemetry tracing with TracingMiddleware |
+| `a2a_http` | Agent-to-agent HTTP communication |
+| `realtime_echo` | Realtime streaming with EchoClient |
+| `agent_service` | HTTP Agent Service (REST + SSE) |
+| `scheduled_task` | Scheduled agent task execution |
 
 ## Migrating from Python AgentScope
 
 See `docs/migration_from_python.md` for a side-by-side mapping between Python
-AgentScope modules/APIs and the Go `pkg/agentscope` equivalents, along with
-concrete migration suggestions.
-
+AgentScope modules/APIs and the Go `pkg/agentscope` equivalents.

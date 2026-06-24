@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/permission"
 )
 
 var editSchema = json.RawMessage(`{
@@ -50,10 +52,6 @@ func (t *editTool) Execute(ctx context.Context, args map[string]any) (*ToolRespo
 		return NewErrorResponse(fmt.Errorf("file_path cannot be empty")), nil
 	}
 
-	if dangerous, reason := CheckDangerousPath(path); dangerous {
-		return NewErrorResponse(fmt.Errorf("blocked: %s — this file requires explicit user approval", reason)), nil
-	}
-
 	oldStr, ok := args["old_string"].(string)
 	if !ok {
 		return NewErrorResponse(fmt.Errorf("old_string is required and must be a string")), nil
@@ -90,30 +88,116 @@ func (t *editTool) Execute(ctx context.Context, args map[string]any) (*ToolRespo
 		return NewErrorResponse(fmt.Errorf("read file: %w", err)), nil
 	}
 
-	content := string(data)
+	oldContent := string(data)
 
-	if !strings.Contains(content, oldStr) {
+	if !strings.Contains(oldContent, oldStr) {
 		return NewErrorResponse(fmt.Errorf("old_string not found in file")), nil
 	}
 
 	var count int
+	var newContent string
 	if replaceAll {
-		count = strings.Count(content, oldStr)
-		content = strings.ReplaceAll(content, oldStr, newStr)
+		count = strings.Count(oldContent, oldStr)
+		newContent = strings.ReplaceAll(oldContent, oldStr, newStr)
 	} else {
-		count = strings.Count(content, oldStr)
+		count = strings.Count(oldContent, oldStr)
 		if count > 1 {
 			return NewErrorResponse(fmt.Errorf("old_string is not unique in file (%d occurrences); use replace_all=true or provide more context", count)), nil
 		}
-		content = strings.Replace(content, oldStr, newStr, 1)
+		newContent = strings.Replace(oldContent, oldStr, newStr, 1)
 		count = 1
 	}
 
-	if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(abs, []byte(newContent), 0o644); err != nil {
 		return NewErrorResponse(fmt.Errorf("write file: %w", err)), nil
 	}
 
-	return NewTextResponse(fmt.Sprintf("Replaced %d occurrence(s) in %s", count, abs)), nil
+	resp := NewTextResponse(fmt.Sprintf("Replaced %d occurrence(s) in %s", count, abs))
+
+	// Generate diff metadata
+	diff := generateUnifiedDiff(abs, oldContent, newContent)
+	if diff != "" {
+		if resp.Metadata == nil {
+			resp.Metadata = make(map[string]any)
+		}
+		resp.Metadata["diff"] = diff
+	}
+
+	return resp, nil
+}
+
+// CheckPermissions checks for dangerous paths and defers to AcceptEdits mode.
+func (t *editTool) CheckPermissions(input map[string]any, ctx *permission.Context) permission.Decision {
+	path, _ := input["file_path"].(string)
+	if path == "" {
+		return permission.Decision{Behavior: permission.BehaviorPassthrough}
+	}
+
+	// Dangerous path -> bypass-immune ASK
+	if dangerous, reason := CheckDangerousPath(path); dangerous {
+		return permission.Decision{
+			Behavior:     permission.BehaviorAsk,
+			Message:      reason,
+			BypassImmune: true,
+		}
+	}
+
+	// AcceptEdits mode allows edits
+	if ctx != nil && ctx.Mode == permission.ModeAcceptEdits {
+		return permission.Decision{Behavior: permission.BehaviorAllow}
+	}
+
+	return permission.Decision{Behavior: permission.BehaviorPassthrough}
+}
+
+// MatchRule checks whether a permission rule's glob pattern matches the file path.
+func (t *editTool) MatchRule(ruleContent string, input map[string]any) bool {
+	if ruleContent == "" {
+		return true
+	}
+	path, _ := input["file_path"].(string)
+	if path == "" {
+		return false
+	}
+	abs, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return false
+	}
+	matched, _ := filepath.Match(ruleContent, abs)
+	if matched {
+		return true
+	}
+	matched, _ = filepath.Match(ruleContent, filepath.Base(abs))
+	return matched
+}
+
+// GenerateSuggestions produces a permission rule for the parent directory.
+func (t *editTool) GenerateSuggestions(input map[string]any) []permission.Rule {
+	path, _ := input["file_path"].(string)
+	if path == "" {
+		return []permission.Rule{{
+			ToolName: t.ToolName,
+			Behavior: permission.BehaviorAllow,
+			Source:   "suggested",
+		}}
+	}
+
+	abs, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return []permission.Rule{{
+			ToolName: t.ToolName,
+			Behavior: permission.BehaviorAllow,
+			Source:   "suggested",
+		}}
+	}
+
+	parentDir := filepath.Dir(abs)
+	return []permission.Rule{{
+		ToolName:    t.ToolName,
+		RuleContent: filepath.Join(parentDir, "**"),
+		Behavior:    permission.BehaviorAllow,
+		Source:      "suggested",
+	}}
 }
 
 // EditTool returns a tool that performs search-and-replace edits on files.
