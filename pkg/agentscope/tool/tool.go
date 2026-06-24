@@ -22,6 +22,7 @@ type Tool interface {
 	Execute(ctx context.Context, input map[string]any) (*ToolResponse, error)
 	IsConcurrencySafe() bool
 	IsReadOnly() bool
+	IsExternalTool() bool
 }
 
 // ToolResponse is the result of executing a tool.
@@ -71,6 +72,7 @@ func (b *BaseTool) Description() string         { return b.ToolDescription }
 func (b *BaseTool) InputSchema() json.RawMessage { return b.ToolSchema }
 func (b *BaseTool) IsConcurrencySafe() bool     { return b.ConcurrencySafe }
 func (b *BaseTool) IsReadOnly() bool            { return b.ReadOnly }
+func (b *BaseTool) IsExternalTool() bool        { return false }
 
 // Execute must be overridden by embedding structs.
 func (b *BaseTool) Execute(ctx context.Context, input map[string]any) (*ToolResponse, error) {

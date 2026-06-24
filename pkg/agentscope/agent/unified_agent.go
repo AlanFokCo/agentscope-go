@@ -41,8 +41,10 @@ type UnifiedAgent struct {
 	engine       *permission.Engine
 	skills       []skill.Skill
 
-	confirmCh chan event.UserConfirmResultEvent
-	mu        sync.Mutex
+	confirmCh  chan event.UserConfirmResultEvent
+	externalCh chan event.ExternalExecutionResultEvent
+	mu         sync.Mutex
+	offloader  Offloader
 }
 
 // ReactConfig controls the ReAct reasoning-acting loop.
@@ -147,6 +149,7 @@ func WithPermissionContext(ctx *permission.Context) AgentOption {
 	return func(a *UnifiedAgent) {
 		a.engine = permission.NewEngine(ctx)
 		a.confirmCh = make(chan event.UserConfirmResultEvent, 1)
+		a.externalCh = make(chan event.ExternalExecutionResultEvent, 1)
 	}
 }
 
@@ -155,6 +158,18 @@ func WithSkills(skills []skill.Skill) AgentOption {
 	return func(a *UnifiedAgent) {
 		a.skills = skills
 	}
+}
+
+// Offloader writes content to an external store and returns its path.
+type Offloader interface {
+	OffloadContent(ctx context.Context, content string, filename string) (path string, err error)
+}
+
+// WithOffloader sets the offloader used during context compression and tool
+// result truncation. Compressed context and oversized tool results are
+// offloaded to the workspace so they can be referenced later.
+func WithOffloader(o Offloader) AgentOption {
+	return func(a *UnifiedAgent) { a.offloader = o }
 }
 
 // NewUnifiedAgent creates the v2 unified agent.
@@ -242,10 +257,35 @@ func (a *UnifiedAgent) ReplyStream(ctx context.Context, input string) (<-chan ev
 }
 
 // Observe injects external messages into the agent's context.
-func (a *UnifiedAgent) Observe(ctx context.Context, msgs ...*message.Msg) {
+// It validates each message: system-role messages and messages containing
+// tool_call, tool_result, or thinking blocks are rejected.
+func (a *UnifiedAgent) Observe(ctx context.Context, msgs []*message.Msg) error {
+	for _, m := range msgs {
+		if m == nil {
+			continue
+		}
+		if m.Role == message.RoleSystem {
+			return fmt.Errorf("observe: system-role messages are not allowed")
+		}
+		if len(m.GetContentBlocks(message.ContentBlockToolCall)) > 0 {
+			return fmt.Errorf("observe: messages containing tool_call blocks are not allowed")
+		}
+		if len(m.GetContentBlocks(message.ContentBlockToolResult)) > 0 {
+			return fmt.Errorf("observe: messages containing tool_result blocks are not allowed")
+		}
+		if len(m.GetContentBlocks(message.ContentBlockThinking)) > 0 {
+			return fmt.Errorf("observe: messages containing thinking blocks are not allowed")
+		}
+	}
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.state.Context = append(a.state.Context, msgs...)
+	for _, m := range msgs {
+		if m != nil {
+			a.state.Context = append(a.state.Context, m)
+		}
+	}
+	return nil
 }
 
 // SubmitUserConfirm submits a user confirmation result for pending tool calls.
@@ -253,6 +293,14 @@ func (a *UnifiedAgent) Observe(ctx context.Context, msgs ...*message.Msg) {
 func (a *UnifiedAgent) SubmitUserConfirm(result event.UserConfirmResultEvent) {
 	if a.confirmCh != nil {
 		a.confirmCh <- result
+	}
+}
+
+// SubmitExternalResult submits results from external tool execution.
+// Call this after receiving a RequireExternalExecutionEvent from the event stream.
+func (a *UnifiedAgent) SubmitExternalResult(result event.ExternalExecutionResultEvent) {
+	if a.externalCh != nil {
+		a.externalCh <- result
 	}
 }
 
@@ -338,7 +386,7 @@ func (a *UnifiedAgent) replyLoop(ctx context.Context, input string, ch chan<- ev
 			a.state.Context = append(a.state.Context, assistantMsg)
 			a.mu.Unlock()
 
-			// Emit text/thinking events for streaming consumers
+			// Emit text/thinking/data events for streaming consumers
 			for _, b := range resp.Content {
 				switch blk := b.(type) {
 				case message.TextBlock:
@@ -349,6 +397,12 @@ func (a *UnifiedAgent) replyLoop(ctx context.Context, input string, ch chan<- ev
 					emit(ctx, ch, event.NewThinkingBlockStartEvent(replyID, blk.ID))
 					emit(ctx, ch, event.NewThinkingBlockDeltaEvent(replyID, blk.ID, blk.Thinking))
 					emit(ctx, ch, event.NewThinkingBlockEndEvent(replyID, blk.ID))
+				case message.DataBlock:
+					if src, ok := blk.Source.(message.Base64Source); ok {
+						emit(ctx, ch, event.NewDataBlockStartEvent(replyID, blk.ID, src.MediaType))
+						emit(ctx, ch, event.NewDataBlockDeltaEvent(replyID, blk.ID, src.Data, src.MediaType))
+						emit(ctx, ch, event.NewDataBlockEndEvent(replyID, blk.ID))
+					}
 				}
 			}
 			break
@@ -457,6 +511,22 @@ func (a *UnifiedAgent) executeToolCallWithPermission(
 		}
 	}
 
+	// Check if this is an external tool — pause and wait for external result.
+	t := a.toolkit.Get(tc.Name)
+	if t != nil && t.IsExternalTool() {
+		emit(ctx, ch, event.NewToolResultStartEvent(replyID, tc.ID, tc.Name))
+		emit(ctx, ch, event.NewRequireExternalExecutionEvent(replyID, []message.ToolCallBlock{tc}))
+		result := a.waitForExternalResult(ctx, tc.ID)
+		if result == nil {
+			return a.emitToolResult(ctx, ch, replyID, tc, message.ToolResultError,
+				"External execution timed out or cancelled")
+		}
+		outputText := result.GetOutputText()
+		emit(ctx, ch, event.NewToolResultTextDeltaEvent(replyID, tc.ID, outputText))
+		emit(ctx, ch, event.NewToolResultEndEvent(replyID, tc.ID, result.State))
+		return result.State, outputText
+	}
+
 	return a.executeTool(ctx, ch, replyID, tc, actingHandler)
 }
 
@@ -480,6 +550,23 @@ func (a *UnifiedAgent) waitForConfirmation(ctx context.Context, toolCallID strin
 		return false, message.ToolCallBlock{}
 	case <-ctx.Done():
 		return false, message.ToolCallBlock{}
+	}
+}
+
+func (a *UnifiedAgent) waitForExternalResult(ctx context.Context, toolCallID string) *message.ToolResultBlock {
+	if a.externalCh == nil {
+		return nil
+	}
+	select {
+	case result := <-a.externalCh:
+		for _, tr := range result.ExecutionResults {
+			if tr.ID == toolCallID {
+				return &tr
+			}
+		}
+		return nil
+	case <-ctx.Done():
+		return nil
 	}
 }
 
@@ -516,7 +603,18 @@ func (a *UnifiedAgent) executeTool(
 	}
 
 	if a.contextCfg != nil && a.contextCfg.ToolResultLimit > 0 {
-		outputText, _ = TruncateToolResult(outputText, a.contextCfg.ToolResultLimit)
+		truncated, wasTruncated := TruncateToolResult(outputText, a.contextCfg.ToolResultLimit)
+		if wasTruncated && a.offloader != nil {
+			path, offErr := a.offloader.OffloadContent(ctx, outputText,
+				fmt.Sprintf("tool_result_%s.txt", tc.ID))
+			if offErr == nil {
+				truncated += fmt.Sprintf(
+					"\n<system-reminder>The remaining content has been offloaded to '%s'.</system-reminder>",
+					path,
+				)
+			}
+		}
+		outputText = truncated
 	}
 
 	return a.emitToolResult(ctx, ch, replyID, tc, resultState, outputText)

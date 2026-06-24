@@ -60,15 +60,20 @@ func NewMCPToolkit(ctx context.Context, client Client, opts ...MCPToolkitOption)
 		if !cfg.isAllowed(s.Function.Name) {
 			continue
 		}
-		tools = append(tools, NewMCPTool(client, s))
+		t := NewMCPTool(client, s)
+		if cfg.executionTimeout > 0 {
+			t.executionTimeout = cfg.executionTimeout
+		}
+		tools = append(tools, t)
 	}
 
 	return tool.NewToolkit(tools...), nil
 }
 
 type mcpToolkitConfig struct {
-	enableTools  map[string]bool
-	disableTools map[string]bool
+	enableTools      map[string]bool
+	disableTools     map[string]bool
+	executionTimeout int // seconds; 0 = no timeout
 }
 
 func (c *mcpToolkitConfig) isAllowed(name string) bool {
@@ -101,6 +106,14 @@ func WithDisableTools(names ...string) MCPToolkitOption {
 		for _, n := range names {
 			c.disableTools[n] = true
 		}
+	}
+}
+
+// WithExecutionTimeout sets a per-tool call timeout in seconds for all tools
+// created by this toolkit.
+func WithExecutionTimeout(seconds int) MCPToolkitOption {
+	return func(c *mcpToolkitConfig) {
+		c.executionTimeout = seconds
 	}
 }
 

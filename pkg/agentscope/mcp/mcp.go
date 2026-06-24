@@ -3,10 +3,28 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"regexp"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/tool"
 )
+
+// mcpNameRegexp validates MCP server names. Names must consist of
+// alphanumeric characters, hyphens, and underscores only.
+var mcpNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+// ValidateMCPName checks whether the given name is a valid MCP server name.
+// Valid names match the pattern ^[a-zA-Z0-9_-]+$.
+func ValidateMCPName(name string) error {
+	if name == "" {
+		return fmt.Errorf("mcp: name must not be empty")
+	}
+	if !mcpNameRegexp.MatchString(name) {
+		return fmt.Errorf("mcp: name %q is invalid (must match %s)", name, mcpNameRegexp.String())
+	}
+	return nil
+}
 
 // Client defines the interface for communicating with an MCP server.
 type Client interface {

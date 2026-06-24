@@ -246,6 +246,56 @@ func TestHttpClient_MockServer(t *testing.T) {
 	}
 }
 
+func TestValidateMCPName(t *testing.T) {
+	valid := []string{
+		"my-server",
+		"server_1",
+		"MCP-Server",
+		"test123",
+		"a",
+		"A_B-C",
+	}
+	for _, name := range valid {
+		if err := ValidateMCPName(name); err != nil {
+			t.Errorf("ValidateMCPName(%q) = %v, want nil", name, err)
+		}
+	}
+
+	invalid := []string{
+		"",
+		"has space",
+		"has.dot",
+		"slash/name",
+		"emoji\U0001f600",
+		"tab\there",
+		"new\nline",
+	}
+	for _, name := range invalid {
+		if err := ValidateMCPName(name); err == nil {
+			t.Errorf("ValidateMCPName(%q) = nil, want error", name)
+		}
+	}
+}
+
+func TestWithExecutionTimeout(t *testing.T) {
+	mock := &mockMCPClient{
+		tools: []model.ToolSchema{
+			{Type: "function", Function: model.ToolFunction{Name: "slow_tool", Description: "Slow"}},
+		},
+		result: tool.NewTextResponse("ok"),
+	}
+
+	tk, err := NewMCPToolkit(context.Background(), mock, WithExecutionTimeout(10))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	schemas := tk.GetToolSchemas()
+	if len(schemas) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(schemas))
+	}
+}
+
 func TestMergeToolkits(t *testing.T) {
 	t1 := tool.NewToolkit(tool.NewFunctionTool("a", "desc a", json.RawMessage(`{}`),
 		func(ctx context.Context, input map[string]any) (any, error) { return nil, nil }))

@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/credential"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/messagebus"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/middleware"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/service"
@@ -28,30 +28,28 @@ type AppConfig struct {
 	DefaultModel      string
 	SystemPrompt      string
 	AgentMiddlewares  []middleware.Middleware
+	AgentFactory      AgentFactory
+	WorkspaceDir      string // base directory for per-session workspaces
+	MessageBus        messagebus.MessageBus
+	OnStartup         []func() // hooks run after server starts
+	OnShutdown        []func() // hooks run before server stops
 	ReadTimeout       time.Duration
 	WriteTimeout      time.Duration
 }
 
 // App is the top-level application that assembles all components.
 type App struct {
-	cfg        AppConfig
-	mux        *http.ServeMux
-	srv        *http.Server
-	credFact   *credential.Factory
-	chatSvc    *ChatService
-	bgManager  *BackgroundTaskManager
-	cancelDisp *CancelDispatcher
-
-	mu       sync.RWMutex
-	sessions map[string]*SessionRecord
-}
-
-// SessionRecord tracks a managed session.
-type SessionRecord struct {
-	ID           string    `json:"id"`
-	AgentName    string    `json:"agent_name"`
-	SystemPrompt string    `json:"system_prompt"`
-	CreatedAt    time.Time `json:"created_at"`
+	cfg          AppConfig
+	mux          *http.ServeMux
+	srv          *http.Server
+	credFact     *credential.Factory
+	sessionSvc   *SessionService
+	chatSvc      *ChatService
+	bgManager    *BackgroundTaskManager
+	cancelDisp   *CancelDispatcher
+	wakeupDisp   *WakeupDispatcher
+	chatRegistry *ChatRunRegistry
+	wsMgr        *WorkspaceManager
 }
 
 // CreateApp assembles and returns a ready-to-serve App.
@@ -73,12 +71,18 @@ func CreateApp(cfg AppConfig) (*App, error) {
 		cfg:      cfg,
 		mux:      http.NewServeMux(),
 		credFact: cfg.CredentialFactory,
-		sessions: make(map[string]*SessionRecord),
 	}
 
+	app.sessionSvc = NewSessionService(cfg.AgentFactory)
 	app.bgManager = NewBackgroundTaskManager()
 	app.cancelDisp = NewCancelDispatcher(app.bgManager)
+	app.wakeupDisp = NewWakeupDispatcher()
+	app.chatRegistry = NewChatRunRegistry()
 	app.chatSvc = NewChatService(app)
+
+	if cfg.WorkspaceDir != "" {
+		app.wsMgr = NewWorkspaceManager(cfg.WorkspaceDir, "local")
+	}
 
 	app.registerRoutes()
 	return app, nil
@@ -91,10 +95,14 @@ func (a *App) registerRoutes() {
 	a.mux.HandleFunc("GET /api/session/{id}", a.handleGetSession)
 	a.mux.HandleFunc("DELETE /api/session/{id}", a.handleDeleteSession)
 
+	// Session agents / members
+	a.mux.HandleFunc("GET /api/session/{id}/members", a.handleListMembers)
+
 	// Chat
 	a.mux.HandleFunc("POST /api/chat/{sessionID}", a.handleChat)
 	a.mux.HandleFunc("POST /api/chat/{sessionID}/stream", a.handleChatStream)
 	a.mux.HandleFunc("POST /api/chat/{sessionID}/cancel", a.handleCancelChat)
+	a.mux.HandleFunc("POST /api/chat/{sessionID}/confirm", a.handleConfirm)
 
 	// Credentials
 	a.mux.HandleFunc("GET /api/credential/schemas", a.handleListCredentialSchemas)
@@ -105,6 +113,11 @@ func (a *App) registerRoutes() {
 	// Background tasks
 	a.mux.HandleFunc("GET /api/task", a.handleListTasks)
 	a.mux.HandleFunc("DELETE /api/task/{id}", a.handleCancelTask)
+
+	// Workspace
+	if a.wsMgr != nil {
+		a.mux.HandleFunc("GET /api/workspace", a.handleListWorkspaces)
+	}
 }
 
 // Handler returns the HTTP handler.
@@ -127,8 +140,12 @@ func (a *App) ListenAndServe() error {
 	return a.srv.ListenAndServe()
 }
 
-// Shutdown gracefully shuts down the server.
+// Shutdown gracefully shuts down the server and all managed resources.
 func (a *App) Shutdown(ctx context.Context) error {
+	// Run shutdown hooks
+	for _, hook := range a.cfg.OnShutdown {
+		hook()
+	}
 	if a.srv != nil {
 		return a.srv.Shutdown(ctx)
 	}
@@ -138,76 +155,73 @@ func (a *App) Shutdown(ctx context.Context) error {
 // --- Session handlers ---
 
 func (a *App) handleCreateSession(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		AgentName    string `json:"agent_name"`
-		SystemPrompt string `json:"system_prompt"`
-	}
+	var req CreateSessionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
-	}
-	if req.AgentName == "" {
-		req.AgentName = "agent"
 	}
 	if req.SystemPrompt == "" {
 		req.SystemPrompt = a.cfg.SystemPrompt
 	}
 
-	session := &SessionRecord{
-		ID:           uuid.NewString(),
-		AgentName:    req.AgentName,
-		SystemPrompt: req.SystemPrompt,
-		CreatedAt:    time.Now(),
-	}
-
-	a.mu.Lock()
-	a.sessions[session.ID] = session
-	a.mu.Unlock()
-
-	writeJSON(w, http.StatusCreated, session)
+	session := a.sessionSvc.Create(req)
+	writeJSON(w, http.StatusCreated, session.ToResponse())
 }
 
 func (a *App) handleListSessions(w http.ResponseWriter, _ *http.Request) {
-	a.mu.RLock()
-	sessions := make([]*SessionRecord, 0, len(a.sessions))
-	for _, s := range a.sessions {
-		sessions = append(sessions, s)
+	sessions := a.sessionSvc.List()
+	result := make([]SessionResponse, len(sessions))
+	for i, s := range sessions {
+		result[i] = s.ToResponse()
 	}
-	a.mu.RUnlock()
-	writeJSON(w, http.StatusOK, sessions)
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (a *App) handleGetSession(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	a.mu.RLock()
-	session, ok := a.sessions[id]
-	a.mu.RUnlock()
+	session, ok := a.sessionSvc.Get(id)
 	if !ok {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, http.StatusOK, session)
+	writeJSON(w, http.StatusOK, session.ToResponse())
 }
 
 func (a *App) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	a.mu.Lock()
-	delete(a.sessions, id)
-	a.mu.Unlock()
+	a.sessionSvc.Delete(id)
+	if a.wsMgr != nil {
+		a.wsMgr.Remove(id)
+	}
+	a.wakeupDisp.Unregister(id)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *App) handleListMembers(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	members, err := a.sessionSvc.ListMembers(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, members)
 }
 
 // --- Chat handlers ---
 
 func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("sessionID")
-	var req struct {
-		Message string `json:"message"`
-	}
+	var req ChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+
+	if !a.chatRegistry.TryAcquire(sessionID) {
+		http.Error(w, "chat already running for this session", http.StatusConflict)
+		return
+	}
+	defer a.chatRegistry.Release(sessionID)
 
 	resp, err := a.chatSvc.Chat(r.Context(), sessionID, req.Message)
 	if err != nil {
@@ -219,22 +233,27 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleChatStream(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("sessionID")
-	var req struct {
-		Message string `json:"message"`
-	}
+	var req ChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
+	if !a.chatRegistry.TryAcquire(sessionID) {
+		http.Error(w, "chat already running for this session", http.StatusConflict)
+		return
+	}
+
 	ch, err := a.chatSvc.ChatStream(r.Context(), sessionID, req.Message)
 	if err != nil {
+		a.chatRegistry.Release(sessionID)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	sse, err2 := service.NewSSEWriter(w)
 	if err2 != nil {
+		a.chatRegistry.Release(sessionID)
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
 		return
 	}
@@ -243,11 +262,37 @@ func (a *App) handleChatStream(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+	a.chatRegistry.Release(sessionID)
 }
 
 func (a *App) handleCancelChat(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("sessionID")
 	a.cancelDisp.Cancel(sessionID)
+	w.WriteHeader(http.StatusOK)
+}
+
+func (a *App) handleConfirm(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("sessionID")
+	var req ConfirmRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ag, err := a.sessionSvc.GetOrCreateAgent(sessionID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	ag.SubmitUserConfirm(event.NewUserConfirmResultEvent(
+		"", // replyID not needed for routing
+		[]event.ConfirmResult{{
+			Confirmed: req.Confirmed,
+			ToolCall:  message.ToolCallBlock{ID: req.ToolCallID},
+		}},
+	))
+
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -283,42 +328,16 @@ func (a *App) handleCancelTask(w http.ResponseWriter, r *http.Request) {
 // ChatService manages chat interactions with agents.
 type ChatService struct {
 	app *App
-	mu  sync.RWMutex
-	// sessionID -> running agent
-	agents map[string]*agent.UnifiedAgent
 }
 
 // NewChatService creates a new chat service.
 func NewChatService(app *App) *ChatService {
-	return &ChatService{
-		app:    app,
-		agents: make(map[string]*agent.UnifiedAgent),
-	}
-}
-
-func (cs *ChatService) getOrCreateAgent(sessionID string) (*agent.UnifiedAgent, error) {
-	cs.mu.RLock()
-	a, ok := cs.agents[sessionID]
-	cs.mu.RUnlock()
-	if ok {
-		return a, nil
-	}
-
-	cs.app.mu.RLock()
-	session, ok := cs.app.sessions[sessionID]
-	cs.app.mu.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("session %s not found", sessionID)
-	}
-
-	// For now, return an error if no model is available
-	// In a full implementation, this would use the credential factory to create a model
-	return nil, fmt.Errorf("no model configured for session %s (agent=%s, prompt=%s)", sessionID, session.AgentName, session.SystemPrompt[:min(50, len(session.SystemPrompt))])
+	return &ChatService{app: app}
 }
 
 // Chat sends a message and returns the final response.
 func (cs *ChatService) Chat(ctx context.Context, sessionID, userMessage string) (*message.Msg, error) {
-	a, err := cs.getOrCreateAgent(sessionID)
+	a, err := cs.app.sessionSvc.GetOrCreateAgent(sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -327,11 +346,17 @@ func (cs *ChatService) Chat(ctx context.Context, sessionID, userMessage string) 
 
 // ChatStream sends a message and returns a channel of streaming events.
 func (cs *ChatService) ChatStream(ctx context.Context, sessionID, userMessage string) (<-chan event.Event, error) {
-	a, err := cs.getOrCreateAgent(sessionID)
+	a, err := cs.app.sessionSvc.GetOrCreateAgent(sessionID)
 	if err != nil {
 		return nil, err
 	}
 	return a.ReplyStream(ctx, userMessage)
+}
+
+// --- Workspace handler ---
+
+func (a *App) handleListWorkspaces(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, a.wsMgr.List())
 }
 
 // --- Background Task Manager ---

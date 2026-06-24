@@ -202,6 +202,19 @@ func (a *UnifiedAgent) compressContextImpl(ctx context.Context, cfg ContextConfi
 		return fmt.Errorf("agent %s: failed to format summary: %w", a.name, err)
 	}
 
+	// Offload the compressed context to workspace if offloader is set
+	if a.offloader != nil {
+		path, offErr := a.offloader.OffloadContent(ctx, newSummary, "compressed_context.txt")
+		if offErr != nil {
+			logrus.WithError(offErr).WithField("agent", a.name).Warn("failed to offload compressed context")
+		} else {
+			newSummary += fmt.Sprintf(
+				"\n<system-reminder>The compressed context is offloaded to '%s'.</system-reminder>",
+				path,
+			)
+		}
+	}
+
 	a.mu.Lock()
 	a.state.Summary = newSummary
 	a.state.Context = msgsToReserve
