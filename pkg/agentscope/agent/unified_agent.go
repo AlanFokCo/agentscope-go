@@ -61,6 +61,32 @@ type AgentState struct {
 	Summary   string
 	ReplyID   string
 	CurIter   int
+
+	PermissionCtx   *permission.Context `json:"permission_context,omitempty"`
+	ToolCtx         *ToolStateContext   `json:"tool_context,omitempty"`
+	TasksCtx        *TasksStateContext  `json:"tasks_context,omitempty"`
+	MiddlewareState map[string]any      `json:"middleware_context,omitempty"`
+}
+
+// ToolStateContext captures which tool groups are active for serialization.
+type ToolStateContext struct {
+	ActivatedGroups []string `json:"activated_groups"`
+}
+
+// TasksStateContext captures in-flight tasks for serialization.
+type TasksStateContext struct {
+	Tasks []TaskState `json:"tasks"`
+}
+
+// TaskState is the serializable form of a task.
+type TaskState struct {
+	ID          string   `json:"id"`
+	Subject     string   `json:"subject"`
+	Description string   `json:"description,omitempty"`
+	State       string   `json:"state"`
+	Owner       string   `json:"owner,omitempty"`
+	Blocks      []string `json:"blocks,omitempty"`
+	BlockedBy   []string `json:"blocked_by,omitempty"`
 }
 
 // AgentOption configures a UnifiedAgent.

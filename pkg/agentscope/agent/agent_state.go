@@ -6,25 +6,34 @@ import (
 	"fmt"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/permission"
 )
 
 // agentStateJSON is the JSON-friendly representation of AgentState.
 type agentStateJSON struct {
-	SessionID string         `json:"session_id"`
-	Context   []*message.Msg `json:"context"`
-	Summary   string         `json:"summary,omitempty"`
-	ReplyID   string         `json:"reply_id"`
-	CurIter   int            `json:"cur_iter"`
+	SessionID       string              `json:"session_id"`
+	Context         []*message.Msg      `json:"context"`
+	Summary         string              `json:"summary,omitempty"`
+	ReplyID         string              `json:"reply_id"`
+	CurIter         int                 `json:"cur_iter"`
+	PermissionCtx   *permission.Context `json:"permission_context,omitempty"`
+	ToolCtx         *ToolStateContext   `json:"tool_context,omitempty"`
+	TasksCtx        *TasksStateContext  `json:"tasks_context,omitempty"`
+	MiddlewareState map[string]any      `json:"middleware_context,omitempty"`
 }
 
 // MarshalJSON serializes AgentState to JSON.
 func (s *AgentState) MarshalJSON() ([]byte, error) {
 	return json.Marshal(agentStateJSON{
-		SessionID: s.SessionID,
-		Context:   s.Context,
-		Summary:   s.Summary,
-		ReplyID:   s.ReplyID,
-		CurIter:   s.CurIter,
+		SessionID:       s.SessionID,
+		Context:         s.Context,
+		Summary:         s.Summary,
+		ReplyID:         s.ReplyID,
+		CurIter:         s.CurIter,
+		PermissionCtx:   s.PermissionCtx,
+		ToolCtx:         s.ToolCtx,
+		TasksCtx:        s.TasksCtx,
+		MiddlewareState: s.MiddlewareState,
 	})
 }
 
@@ -39,6 +48,10 @@ func (s *AgentState) UnmarshalJSON(data []byte) error {
 	s.Summary = raw.Summary
 	s.ReplyID = raw.ReplyID
 	s.CurIter = raw.CurIter
+	s.PermissionCtx = raw.PermissionCtx
+	s.ToolCtx = raw.ToolCtx
+	s.TasksCtx = raw.TasksCtx
+	s.MiddlewareState = raw.MiddlewareState
 	return nil
 }
 
