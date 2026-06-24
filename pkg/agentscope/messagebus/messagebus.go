@@ -39,6 +39,21 @@ type MessageBus interface {
 	// Pass "" for sinceID to read from the beginning.
 	LogRead(ctx context.Context, log string, sinceID string, maxCount int) ([]LogEntry, error)
 
+	// RegistrySet sets a field in a hash-like registry key.
+	RegistrySet(key, field string, value []byte) error
+
+	// RegistryGet retrieves a single field from a registry key.
+	RegistryGet(key, field string) ([]byte, error)
+
+	// RegistryGetAll retrieves all fields from a registry key.
+	RegistryGetAll(key string) (map[string][]byte, error)
+
+	// RegistryDel removes one or more fields from a registry key.
+	RegistryDel(key string, fields ...string) error
+
+	// RegistryDrop removes an entire registry key and all its fields.
+	RegistryDrop(key string) error
+
 	// Close shuts down the bus and releases resources.
 	Close() error
 }
@@ -56,6 +71,7 @@ type InMemoryMessageBus struct {
 	subscribers map[string]map[uint64]chan []byte
 	queues      map[string][][]byte
 	logs        map[string][]LogEntry
+	registry    map[string]map[string][]byte
 	nextSubID   uint64
 	nextLogSeq  atomic.Int64
 	closed      bool
@@ -67,6 +83,7 @@ func NewInMemoryMessageBus() *InMemoryMessageBus {
 		subscribers: make(map[string]map[uint64]chan []byte),
 		queues:      make(map[string][][]byte),
 		logs:        make(map[string][]LogEntry),
+		registry:    make(map[string]map[string][]byte),
 	}
 }
 
@@ -217,6 +234,93 @@ func (b *InMemoryMessageBus) LogRead(_ context.Context, logName string, sinceID 
 	out := make([]LogEntry, len(result))
 	copy(out, result)
 	return out, nil
+}
+
+func (b *InMemoryMessageBus) RegistrySet(key, field string, value []byte) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.closed {
+		return fmt.Errorf("messagebus: closed")
+	}
+
+	if b.registry[key] == nil {
+		b.registry[key] = make(map[string][]byte)
+	}
+	b.registry[key][field] = copyBytes(value)
+	return nil
+}
+
+func (b *InMemoryMessageBus) RegistryGet(key, field string) ([]byte, error) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	if b.closed {
+		return nil, fmt.Errorf("messagebus: closed")
+	}
+
+	fields := b.registry[key]
+	if fields == nil {
+		return nil, nil
+	}
+	v, ok := fields[field]
+	if !ok {
+		return nil, nil
+	}
+	return copyBytes(v), nil
+}
+
+func (b *InMemoryMessageBus) RegistryGetAll(key string) (map[string][]byte, error) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	if b.closed {
+		return nil, fmt.Errorf("messagebus: closed")
+	}
+
+	fields := b.registry[key]
+	if fields == nil {
+		return nil, nil
+	}
+
+	result := make(map[string][]byte, len(fields))
+	for k, v := range fields {
+		result[k] = copyBytes(v)
+	}
+	return result, nil
+}
+
+func (b *InMemoryMessageBus) RegistryDel(key string, fields ...string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.closed {
+		return fmt.Errorf("messagebus: closed")
+	}
+
+	bucket := b.registry[key]
+	if bucket == nil {
+		return nil
+	}
+	for _, f := range fields {
+		delete(bucket, f)
+	}
+	if len(bucket) == 0 {
+		delete(b.registry, key)
+	}
+	return nil
+}
+
+func (b *InMemoryMessageBus) RegistryDrop(key string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.closed {
+		return fmt.Errorf("messagebus: closed")
+	}
+
+	delete(b.registry, key)
+	return nil
 }
 
 func (b *InMemoryMessageBus) Close() error {

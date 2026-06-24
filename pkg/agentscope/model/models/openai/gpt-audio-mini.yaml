@@ -1,0 +1,15 @@
+name: gpt-audio-mini
+label: GPT Audio Mini
+status: active
+
+input_types:
+  - text/plain
+  - audio/wav
+  - audio/mp3
+
+output_types:
+  - text/plain
+  - audio/wav
+
+context_size: 128000
+output_size: 16384

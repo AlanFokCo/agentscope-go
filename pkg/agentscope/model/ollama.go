@@ -14,16 +14,18 @@ const defaultOllamaBaseURL = "http://localhost:11434"
 // OllamaChatModel wraps a local Ollama instance via the OpenAI-compatible API.
 // No API key is required.
 type OllamaChatModel struct {
-	baseURL    string
-	model      string
-	httpClient *http.Client
+	baseURL        string
+	model          string
+	defaultHeaders map[string]string
+	httpClient     *http.Client
 }
 
 // OllamaConfig configures OllamaChatModel.
 type OllamaConfig struct {
 	BaseURL    string
 	Model      string
-	HTTPClient *http.Client
+	HTTPClient    *http.Client
+	ClientOptions *ClientOptions
 }
 
 // NewOllamaChatModel creates a ChatModel backed by a local Ollama instance.
@@ -35,10 +37,15 @@ func NewOllamaChatModel(cfg OllamaConfig) (*OllamaChatModel, error) {
 	if base == "" {
 		base = defaultOllamaBaseURL
 	}
+	var defHeaders map[string]string
+	if cfg.ClientOptions != nil {
+		defHeaders = cfg.ClientOptions.DefaultHeaders
+	}
 	return &OllamaChatModel{
-		baseURL:    base,
-		model:      cfg.Model,
-		httpClient: defaultHTTPClient(cfg.HTTPClient),
+		baseURL:        base,
+		model:          cfg.Model,
+		defaultHeaders: defHeaders,
+		httpClient:     defaultHTTPClient(cfg.HTTPClient, cfg.ClientOptions),
 	}, nil
 }
 
@@ -83,9 +90,9 @@ func (m *OllamaChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts ..
 		m.baseURL+"/v1/chat/completions",
 		reqBody,
 		&parsed,
-		map[string]string{
+		mergeHeaders(map[string]string{
 			"Content-Type": "application/json",
-		},
+		}, m.defaultHeaders),
 	); err != nil {
 		return nil, fmt.Errorf("ollama: %w", err)
 	}
@@ -134,9 +141,9 @@ func (m *OllamaChatModel) ChatStream(ctx context.Context, msgs []*message.Msg, o
 		"POST",
 		m.baseURL+"/v1/chat/completions",
 		reqBody,
-		map[string]string{
+		mergeHeaders(map[string]string{
 			"Content-Type": "application/json",
-		},
+		}, m.defaultHeaders),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("ollama: %w", err)

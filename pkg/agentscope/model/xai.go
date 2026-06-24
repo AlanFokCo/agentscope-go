@@ -13,10 +13,11 @@ const defaultXAIBaseURL = "https://api.x.ai"
 
 // XAIChatModel wraps the xAI/Grok API (OpenAI-compatible).
 type XAIChatModel struct {
-	apiKey     string
-	baseURL    string
-	model      string
-	httpClient *http.Client
+	apiKey         string
+	baseURL        string
+	model          string
+	defaultHeaders map[string]string
+	httpClient     *http.Client
 }
 
 // XAIConfig configures XAIChatModel.
@@ -24,7 +25,8 @@ type XAIConfig struct {
 	APIKey     string
 	BaseURL    string
 	Model      string
-	HTTPClient *http.Client
+	HTTPClient    *http.Client
+	ClientOptions *ClientOptions
 }
 
 // NewXAIChatModel creates a ChatModel backed by xAI/Grok.
@@ -39,11 +41,16 @@ func NewXAIChatModel(cfg XAIConfig) (*XAIChatModel, error) {
 	if base == "" {
 		base = defaultXAIBaseURL
 	}
+	var defHeaders map[string]string
+	if cfg.ClientOptions != nil {
+		defHeaders = cfg.ClientOptions.DefaultHeaders
+	}
 	return &XAIChatModel{
-		apiKey:     cfg.APIKey,
-		baseURL:    base,
-		model:      cfg.Model,
-		httpClient: defaultHTTPClient(cfg.HTTPClient),
+		apiKey:         cfg.APIKey,
+		baseURL:        base,
+		model:          cfg.Model,
+		defaultHeaders: defHeaders,
+		httpClient:     defaultHTTPClient(cfg.HTTPClient, cfg.ClientOptions),
 	}, nil
 }
 
@@ -88,10 +95,10 @@ func (m *XAIChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts ...Ca
 		m.baseURL+"/v1/chat/completions",
 		reqBody,
 		&parsed,
-		map[string]string{
+		mergeHeaders(map[string]string{
 			"Content-Type":  "application/json",
 			"Authorization": "Bearer " + m.apiKey,
-		},
+		}, m.defaultHeaders),
 	); err != nil {
 		return nil, fmt.Errorf("xai: %w", err)
 	}
@@ -140,10 +147,10 @@ func (m *XAIChatModel) ChatStream(ctx context.Context, msgs []*message.Msg, opts
 		"POST",
 		m.baseURL+"/v1/chat/completions",
 		reqBody,
-		map[string]string{
+		mergeHeaders(map[string]string{
 			"Content-Type":  "application/json",
 			"Authorization": "Bearer " + m.apiKey,
-		},
+		}, m.defaultHeaders),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("xai: %w", err)

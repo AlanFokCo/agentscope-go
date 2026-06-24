@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
+	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
-	"github.com/google/uuid"
 )
 
 // Agent is the public interface implemented by all agents.
@@ -75,7 +75,7 @@ var (
 // NewAgentBase constructs an initialized AgentBase.
 func NewAgentBase() AgentBase {
 	return AgentBase{
-		id:                   uuid.NewString(),
+		id:                   agentscope.GenerateID(),
 		subscribers:          make(map[string][]Agent),
 		preReplyHooks:        make(map[string]PreReplyHook),
 		postReplyHooks:       make(map[string]PostReplyHook),

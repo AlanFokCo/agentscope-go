@@ -20,11 +20,12 @@ const (
 
 // AnthropicChatModel wraps Anthropic's Messages API.
 type AnthropicChatModel struct {
-	apiKey       string
-	baseURL      string
-	model        string
-	version      string
-	maxOutputTok int
+	apiKey         string
+	baseURL        string
+	model          string
+	version        string
+	maxOutputTok   int
+	defaultHeaders map[string]string
 
 	httpClient *http.Client
 }
@@ -37,6 +38,7 @@ type AnthropicConfig struct {
 	Version         string
 	MaxOutputTokens int
 	HTTPClient      *http.Client
+	ClientOptions   *ClientOptions
 }
 
 // NewAnthropicChatModel creates a ChatModel backed by Anthropic.
@@ -59,13 +61,18 @@ func NewAnthropicChatModel(cfg AnthropicConfig) (*AnthropicChatModel, error) {
 	if maxTok <= 0 {
 		maxTok = defaultAnthropicMaxOutputTokens
 	}
+	var defHeaders map[string]string
+	if cfg.ClientOptions != nil {
+		defHeaders = cfg.ClientOptions.DefaultHeaders
+	}
 	return &AnthropicChatModel{
-		apiKey:       cfg.APIKey,
-		baseURL:      base,
-		model:        cfg.Model,
-		version:      ver,
-		maxOutputTok: maxTok,
-		httpClient:   defaultHTTPClient(cfg.HTTPClient),
+		apiKey:         cfg.APIKey,
+		baseURL:        base,
+		model:          cfg.Model,
+		version:        ver,
+		maxOutputTok:   maxTok,
+		defaultHeaders: defHeaders,
+		httpClient:     defaultHTTPClient(cfg.HTTPClient, cfg.ClientOptions),
 	}, nil
 }
 
@@ -187,11 +194,11 @@ func (m *AnthropicChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts
 			m.baseURL+"/v1/messages",
 			reqBody,
 			&parsed,
-			map[string]string{
+			mergeHeaders(map[string]string{
 				"Content-Type":      "application/json",
 				"x-api-key":         m.apiKey,
 				"anthropic-version": m.version,
-			},
+			}, m.defaultHeaders),
 		)
 		if lastErr == nil {
 			break
@@ -311,11 +318,11 @@ func (m *AnthropicChatModel) ChatStream(ctx context.Context, msgs []*message.Msg
 		"POST",
 		m.baseURL+"/v1/messages",
 		reqBody,
-		map[string]string{
+		mergeHeaders(map[string]string{
 			"Content-Type":      "application/json",
 			"x-api-key":         m.apiKey,
 			"anthropic-version": m.version,
-		},
+		}, m.defaultHeaders),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("anthropic: %w", err)

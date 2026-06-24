@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 
+	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/exception"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
@@ -184,7 +184,7 @@ func NewUnifiedAgent(name, systemPrompt string, m model.ChatModel, opts ...Agent
 		model:        m,
 		toolkit:      tool.NewToolkit(),
 		reactCfg:     ReactConfig{MaxIters: defaultUnifiedMaxIters},
-		state:        &AgentState{SessionID: uuid.New().String()},
+		state:        &AgentState{SessionID: agentscope.GenerateID()},
 	}
 	for _, opt := range opts {
 		opt(a)
@@ -312,7 +312,7 @@ func (a *UnifiedAgent) ReadCache() *tool.ReadCache {
 func (a *UnifiedAgent) replyLoop(ctx context.Context, input string, ch chan<- event.Event) {
 	defer close(ch)
 
-	replyID := uuid.New().String()
+	replyID := agentscope.GenerateID()
 
 	a.mu.Lock()
 	a.state.ReplyID = replyID

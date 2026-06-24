@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
+	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
 )
 
 // TaskStatus represents the lifecycle state of a scheduled task.
@@ -87,7 +87,7 @@ func (s *InMemoryScheduler) Schedule(ctx context.Context, task *Task, fn TaskFun
 	}
 
 	if task.ID == "" {
-		task.ID = uuid.New().String()
+		task.ID = agentscope.GenerateID()
 	}
 	task.Status = StatusPending
 	task.CreatedAt = time.Now()

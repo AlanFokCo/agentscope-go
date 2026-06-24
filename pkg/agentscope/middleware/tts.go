@@ -5,9 +5,9 @@ import (
 	"encoding/base64"
 	"strings"
 
+	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/tts"
-	"github.com/google/uuid"
 )
 
 // TTSMiddleware intercepts the agent's text output events and synthesizes
@@ -61,7 +61,7 @@ func (m *TTSMiddleware) OnReply(ctx context.Context, input ReplyInput, next Repl
 }
 
 func (m *TTSMiddleware) synthesizeAndEmit(ctx context.Context, outCh chan<- event.Event, replyID, text string) {
-	blockID := uuid.New().String()
+	blockID := agentscope.GenerateID()
 
 	streamCh, err := m.Model.SynthesizeStream(ctx, text)
 	if err == nil {

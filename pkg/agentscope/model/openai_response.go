@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/sirupsen/logrus"
 
@@ -23,10 +22,14 @@ type OpenAIResponseConfig struct {
 	BaseURL         string // default: https://api.openai.com
 	MaxOutputTokens int
 	ReasoningEffort string // "low", "medium", "high"
+	HTTPClient      *http.Client
+	ClientOptions   *ClientOptions
 }
 
 type openaiResponseModel struct {
-	cfg OpenAIResponseConfig
+	cfg            OpenAIResponseConfig
+	httpClient     *http.Client
+	defaultHeaders map[string]string
 }
 
 // NewOpenAIResponseModel creates a ChatModel that uses the OpenAI Responses API.
@@ -40,7 +43,15 @@ func NewOpenAIResponseModel(cfg OpenAIResponseConfig) (ChatModel, error) {
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = "https://api.openai.com"
 	}
-	return &openaiResponseModel{cfg: cfg}, nil
+	var defHeaders map[string]string
+	if cfg.ClientOptions != nil {
+		defHeaders = cfg.ClientOptions.DefaultHeaders
+	}
+	return &openaiResponseModel{
+		cfg:            cfg,
+		httpClient:     defaultHTTPClient(cfg.HTTPClient, cfg.ClientOptions),
+		defaultHeaders: defHeaders,
+	}, nil
 }
 
 func (m *openaiResponseModel) Chat(ctx context.Context, msgs []*message.Msg, opts ...CallOption) (*ChatResponse, error) {
@@ -206,11 +217,14 @@ func (m *openaiResponseModel) doRequest(ctx context.Context, body map[string]any
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+m.cfg.APIKey)
+	for k, v := range mergeHeaders(map[string]string{
+		"Content-Type":  "application/json",
+		"Authorization": "Bearer " + m.cfg.APIKey,
+	}, m.defaultHeaders) {
+		req.Header.Set(k, v)
+	}
 
-	client := &http.Client{Timeout: 5 * time.Minute}
-	resp, err := client.Do(req)
+	resp, err := m.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("openai response: request failed: %w", err)
 	}

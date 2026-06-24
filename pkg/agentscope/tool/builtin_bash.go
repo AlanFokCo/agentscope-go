@@ -30,8 +30,19 @@ var bashSchema = json.RawMessage(`{
 	"required": ["command"]
 }`)
 
+// BashOption configures the bash tool.
+type BashOption func(*bashTool)
+
+// WithCwd sets the working directory for command execution.
+func WithCwd(dir string) BashOption {
+	return func(t *bashTool) {
+		t.cwd = dir
+	}
+}
+
 type bashTool struct {
 	BaseTool
+	cwd string
 }
 
 func (t *bashTool) Execute(ctx context.Context, args map[string]any) (*ToolResponse, error) {
@@ -72,6 +83,9 @@ func (t *bashTool) Execute(ctx context.Context, args map[string]any) (*ToolRespo
 		cmd = exec.CommandContext(runCtx, "cmd", "/c", cmdStr)
 	} else {
 		cmd = exec.CommandContext(runCtx, "/bin/sh", "-c", cmdStr)
+	}
+	if t.cwd != "" {
+		cmd.Dir = t.cwd
 	}
 
 	out, err := cmd.CombinedOutput()
@@ -269,12 +283,16 @@ func ruleToRegex(pattern string) string {
 
 // BashTool returns a tool that executes shell commands.
 // This is the enhanced replacement for execute_shell_command.
-func BashTool() Tool {
-	return &bashTool{
+func BashTool(opts ...BashOption) Tool {
+	t := &bashTool{
 		BaseTool: BaseTool{
 			ToolName:        "Bash",
 			ToolDescription: "Execute a shell command and return stdout/stderr. Use for running programs, scripts, git commands, etc.",
 			ToolSchema:      bashSchema,
 		},
 	}
+	for _, opt := range opts {
+		opt(t)
+	}
+	return t
 }

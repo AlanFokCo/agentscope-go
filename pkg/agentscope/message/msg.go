@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
+	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/types"
-	"github.com/google/uuid"
 )
 
 // TimestampFormat is the canonical timestamp layout used throughout agentscope-go.
@@ -225,7 +225,7 @@ func NewMsg(name string, role Role, content any) *Msg {
 	var blocks []ContentBlock
 	switch c := content.(type) {
 	case string:
-		blocks = []ContentBlock{TextBlock{Type: "text", ID: uuid.NewString(), Text: c}}
+		blocks = []ContentBlock{TextBlock{Type: "text", ID: agentscope.GenerateID(), Text: c}}
 	case []ContentBlock:
 		blocks = c
 	default:
@@ -233,7 +233,7 @@ func NewMsg(name string, role Role, content any) *Msg {
 	}
 
 	return &Msg{
-		ID:        uuid.NewString(),
+		ID:        agentscope.GenerateID(),
 		Name:      name,
 		Role:      role,
 		Content:   blocks,
@@ -382,14 +382,14 @@ func FromMap(data map[string]any) *Msg {
 		msg.Metadata = meta
 	}
 	if msg.ID == "" {
-		msg.ID = uuid.NewString()
+		msg.ID = agentscope.GenerateID()
 	}
 	if msg.Timestamp == "" {
 		msg.Timestamp = time.Now().Format(TimestampFormat)
 	}
 	switch c := data["content"].(type) {
 	case string:
-		msg.Content = []ContentBlock{TextBlock{Type: "text", ID: uuid.NewString(), Text: c}}
+		msg.Content = []ContentBlock{TextBlock{Type: "text", ID: agentscope.GenerateID(), Text: c}}
 	case []ContentBlock:
 		msg.Content = c
 	default:

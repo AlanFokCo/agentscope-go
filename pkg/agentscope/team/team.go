@@ -6,8 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/google/uuid"
-
+	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 )
 
@@ -32,7 +31,7 @@ type Member struct {
 // NewTeam creates a team with the given leader.
 func NewTeam(name, description, leaderName string) *Team {
 	return &Team{
-		ID:          uuid.New().String(),
+		ID:          agentscope.GenerateID(),
 		Name:        name,
 		Description: description,
 		LeaderName:  leaderName,

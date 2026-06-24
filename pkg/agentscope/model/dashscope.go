@@ -2,11 +2,13 @@ package model
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
+	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/internal/httpx"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 )
@@ -15,10 +17,11 @@ const defaultDashScopeBaseURL = "https://dashscope.aliyuncs.com/compatible-mode/
 
 // DashScopeChatModel calls Alibaba Cloud DashScope (Qwen) models via the OpenAI-compatible API.
 type DashScopeChatModel struct {
-	apiKey     string
-	baseURL    string
-	model      string
-	httpClient *http.Client
+	apiKey         string
+	baseURL        string
+	model          string
+	defaultHeaders map[string]string
+	httpClient     *http.Client
 }
 
 // DashScopeConfig configures DashScopeChatModel.
@@ -27,7 +30,8 @@ type DashScopeConfig struct {
 	BaseURL string // Optional, defaults to DashScope compatible endpoint
 	Model   string
 
-	HTTPClient *http.Client
+	HTTPClient    *http.Client
+	ClientOptions *ClientOptions
 }
 
 // NewDashScopeChatModel creates a ChatModel using the DashScope backend.
@@ -42,11 +46,16 @@ func NewDashScopeChatModel(cfg DashScopeConfig) (*DashScopeChatModel, error) {
 	if base == "" {
 		base = defaultDashScopeBaseURL
 	}
+	var defHeaders map[string]string
+	if cfg.ClientOptions != nil {
+		defHeaders = cfg.ClientOptions.DefaultHeaders
+	}
 	return &DashScopeChatModel{
-		apiKey:     cfg.APIKey,
-		baseURL:    base,
-		model:      cfg.Model,
-		httpClient: defaultHTTPClient(cfg.HTTPClient),
+		apiKey:         cfg.APIKey,
+		baseURL:        base,
+		model:          cfg.Model,
+		defaultHeaders: defHeaders,
+		httpClient:     defaultHTTPClient(cfg.HTTPClient, cfg.ClientOptions),
 	}, nil
 }
 
@@ -82,6 +91,10 @@ func (m *DashScopeChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts
 	if callOpts.ToolChoice != nil {
 		reqBody.ToolChoice = formatToolChoice(callOpts.ToolChoice)
 	}
+	if callOpts.Voice != nil {
+		reqBody.Audio = &openAIAudioConfig{Voice: *callOpts.Voice, Format: "pcm16"}
+		reqBody.Modalities = []string{"text", "audio"}
+	}
 
 	var parsed openAIChatResponse
 	if err := httpx.DoJSONRequest(
@@ -91,10 +104,10 @@ func (m *DashScopeChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts
 		m.baseURL+"/chat/completions",
 		reqBody,
 		&parsed,
-		map[string]string{
+		mergeHeaders(map[string]string{
 			"Content-Type":  "application/json",
 			"Authorization": "Bearer " + m.apiKey,
-		},
+		}, m.defaultHeaders),
 	); err != nil {
 		return nil, fmt.Errorf("dashscope: %w", err)
 	}
@@ -136,6 +149,10 @@ func (m *DashScopeChatModel) ChatStream(ctx context.Context, msgs []*message.Msg
 	if callOpts.ToolChoice != nil {
 		reqBody.ToolChoice = formatToolChoice(callOpts.ToolChoice)
 	}
+	if callOpts.Voice != nil {
+		reqBody.Audio = &openAIAudioConfig{Voice: *callOpts.Voice, Format: "pcm16"}
+		reqBody.Modalities = []string{"text", "audio"}
+	}
 
 	sseCh, err := httpx.DoSSERequest(
 		ctx,
@@ -143,10 +160,10 @@ func (m *DashScopeChatModel) ChatStream(ctx context.Context, msgs []*message.Msg
 		"POST",
 		m.baseURL+"/chat/completions",
 		reqBody,
-		map[string]string{
+		mergeHeaders(map[string]string{
 			"Content-Type":  "application/json",
 			"Authorization": "Bearer " + m.apiKey,
-		},
+		}, m.defaultHeaders),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("dashscope: %w", err)
@@ -169,6 +186,10 @@ func processOpenAIStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, outCh
 		responseID   string
 		modelName    string
 		usage        *ChatUsage
+
+		accAudioData     []byte
+		audioBlockID     string
+		audioHeaderSent  bool
 	)
 
 	for evt := range sseCh {
@@ -238,6 +259,47 @@ func processOpenAIStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, outCh
 			}
 		}
 
+		// Accumulate audio and fold transcript into text
+		if delta.Audio != nil {
+			if delta.Audio.Data != "" {
+				pcm, _ := base64.StdEncoding.DecodeString(delta.Audio.Data)
+				accAudioData = append(accAudioData, pcm...)
+				if audioBlockID == "" {
+					audioBlockID = agentscope.GenerateID()
+				}
+				var payload []byte
+				if !audioHeaderSent {
+					payload = append(buildStreamingWAVHeader(24000, 1, 16), pcm...)
+					audioHeaderSent = true
+				} else {
+					payload = pcm
+				}
+				audioBlock := message.DataBlock{
+					Type: "data",
+					ID:   audioBlockID,
+					Source: message.Base64Source{
+						Type:      "base64",
+						MediaType: "audio/wav",
+						Data:      base64.StdEncoding.EncodeToString(payload),
+					},
+				}
+				resp := ChatResponse{
+					Content:   []message.ContentBlock{audioBlock},
+					IsLast:    false,
+					ID:        responseID,
+					ModelName: modelName,
+				}
+				select {
+				case outCh <- resp:
+				case <-ctx.Done():
+					return
+				}
+			}
+			if delta.Audio.Transcript != "" {
+				accText += delta.Audio.Transcript
+			}
+		}
+
 		// Emit delta chunk
 		var deltaContent []message.ContentBlock
 		if delta.Content != "" {
@@ -297,6 +359,18 @@ func processOpenAIStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, outCh
 			State: message.ToolCallPending,
 		})
 	}
+	if len(accAudioData) > 0 {
+		wavData := buildWAV(accAudioData, 24000, 1, 16)
+		finalContent = append(finalContent, message.DataBlock{
+			Type: "data",
+			ID:   audioBlockID,
+			Source: message.Base64Source{
+				Type:      "base64",
+				MediaType: "audio/wav",
+				Data:      base64.StdEncoding.EncodeToString(wavData),
+			},
+		})
+	}
 
 	finalResp := ChatResponse{
 		Content:   finalContent,
@@ -320,12 +394,13 @@ func (m *DashScopeChatModel) CountTokens(msgs []*message.Msg, tools []ToolSchema
 // --- shared OpenAI-compatible request/response types ---
 
 type openAIChatMessage struct {
-	Role             string      `json:"role"`
-	Content          interface{} `json:"content"`
-	Name             string      `json:"name,omitempty"`
-	ToolCalls        []openAIToolCall `json:"tool_calls,omitempty"`
-	ToolCallID       string      `json:"tool_call_id,omitempty"`
-	ReasoningContent string      `json:"reasoning_content,omitempty"`
+	Role             string              `json:"role"`
+	Content          interface{}         `json:"content"`
+	Name             string              `json:"name,omitempty"`
+	ToolCalls        []openAIToolCall    `json:"tool_calls,omitempty"`
+	ToolCallID       string              `json:"tool_call_id,omitempty"`
+	ReasoningContent string              `json:"reasoning_content,omitempty"`
+	Audio            *openAIMessageAudio `json:"audio,omitempty"`
 }
 
 type openAIToolCall struct {
@@ -335,6 +410,21 @@ type openAIToolCall struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
 	} `json:"function"`
+}
+
+type openAIAudioConfig struct {
+	Voice  string `json:"voice"`
+	Format string `json:"format"`
+}
+
+type openAIAudioDelta struct {
+	Data       string `json:"data,omitempty"`
+	Transcript string `json:"transcript,omitempty"`
+}
+
+type openAIMessageAudio struct {
+	Data       string `json:"data"`
+	Transcript string `json:"transcript"`
 }
 
 type openAIChatRequest struct {
@@ -347,6 +437,8 @@ type openAIChatRequest struct {
 	TopP          *float32            `json:"top_p,omitempty"`
 	Tools         []ToolSchema        `json:"tools,omitempty"`
 	ToolChoice    any                 `json:"tool_choice,omitempty"`
+	Audio         *openAIAudioConfig  `json:"audio,omitempty"`
+	Modalities    []string            `json:"modalities,omitempty"`
 	StreamOptions *openAIStreamOpts   `json:"stream_options,omitempty"`
 }
 
@@ -400,6 +492,7 @@ type openAIChunkDelta struct {
 	Content          string                  `json:"content,omitempty"`
 	ReasoningContent string                  `json:"reasoning_content,omitempty"`
 	ToolCalls        []openAIStreamToolCall  `json:"tool_calls,omitempty"`
+	Audio            *openAIAudioDelta       `json:"audio,omitempty"`
 }
 
 type openAIStreamToolCall struct {
@@ -473,6 +566,37 @@ func parseOpenAIResponse(parsed openAIChatResponse, msgs []*message.Msg) (*ChatR
 			Input: tc.Function.Arguments,
 			State: message.ToolCallPending,
 		})
+	}
+
+	// Extract audio
+	if choice.Message.Audio != nil && choice.Message.Audio.Data != "" {
+		pcm, _ := base64.StdEncoding.DecodeString(choice.Message.Audio.Data)
+		wavData := buildWAV(pcm, 24000, 1, 16)
+		content = append(content, message.DataBlock{
+			Type: "data",
+			ID:   fmt.Sprintf("audio_%s", parsed.ID),
+			Source: message.Base64Source{
+				Type:      "base64",
+				MediaType: "audio/wav",
+				Data:      base64.StdEncoding.EncodeToString(wavData),
+			},
+		})
+		if choice.Message.Audio.Transcript != "" && len(content) > 0 {
+			hasText := false
+			for _, b := range content {
+				if _, ok := b.(message.TextBlock); ok {
+					hasText = true
+					break
+				}
+			}
+			if !hasText {
+				content = append(content, message.TextBlock{
+					Type: "text",
+					ID:   fmt.Sprintf("text_%s", parsed.ID),
+					Text: choice.Message.Audio.Transcript,
+				})
+			}
+		}
 	}
 
 	var usage *ChatUsage

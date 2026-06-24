@@ -31,6 +31,13 @@ type RedisBusClient interface {
 	XAdd(ctx context.Context, stream string, values map[string]any) (string, error)
 	XRange(ctx context.Context, stream string, start, end string) ([]StreamEntry, error)
 
+	// Hash (registry)
+	HSet(ctx context.Context, key, field string, value []byte) error
+	HGet(ctx context.Context, key, field string) ([]byte, error)
+	HGetAll(ctx context.Context, key string) (map[string][]byte, error)
+	HDel(ctx context.Context, key string, fields ...string) error
+	Del(ctx context.Context, keys ...string) error
+
 	Close() error
 }
 
@@ -113,6 +120,33 @@ func (b *RedisMessageBus) LogRead(ctx context.Context, log string, fromID string
 		}
 	}
 	return results, nil
+}
+
+// --- Registry (hash-based key-value) ---
+
+func (b *RedisMessageBus) RegistrySet(key, field string, value []byte) error {
+	k := b.keyPrefix + ":reg:" + key
+	return b.client.HSet(context.Background(), k, field, value)
+}
+
+func (b *RedisMessageBus) RegistryGet(key, field string) ([]byte, error) {
+	k := b.keyPrefix + ":reg:" + key
+	return b.client.HGet(context.Background(), k, field)
+}
+
+func (b *RedisMessageBus) RegistryGetAll(key string) (map[string][]byte, error) {
+	k := b.keyPrefix + ":reg:" + key
+	return b.client.HGetAll(context.Background(), k)
+}
+
+func (b *RedisMessageBus) RegistryDel(key string, fields ...string) error {
+	k := b.keyPrefix + ":reg:" + key
+	return b.client.HDel(context.Background(), k, fields...)
+}
+
+func (b *RedisMessageBus) RegistryDrop(key string) error {
+	k := b.keyPrefix + ":reg:" + key
+	return b.client.Del(context.Background(), k)
 }
 
 // Close closes the underlying Redis client.

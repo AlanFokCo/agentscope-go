@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/credential"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
@@ -15,7 +16,6 @@ import (
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/middleware"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/service"
-	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
@@ -391,7 +391,7 @@ func NewBackgroundTaskManager() *BackgroundTaskManager {
 
 // Track registers a new task.
 func (m *BackgroundTaskManager) Track(sessionID string, cancel context.CancelFunc) string {
-	id := uuid.NewString()
+	id := agentscope.GenerateID()
 	m.mu.Lock()
 	m.tasks[id] = &bgTask{
 		info: TaskInfo{

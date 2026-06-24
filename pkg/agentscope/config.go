@@ -30,7 +30,30 @@ var (
 	globalCfg   Config
 	globalCfgMu sync.RWMutex
 	logger      = log.New(os.Stdout, "[agentscope] ", log.LstdFlags|log.Lmicroseconds)
+
+	idMu      sync.RWMutex
+	idFactory = func() string { return uuid.NewString() }
 )
+
+// GenerateID returns a new unique identifier using the configured ID factory.
+// By default it produces UUID v4 strings. Use SetIDFactory or WithIDFactory to
+// plug in a custom scheme (e.g. UUID v7 for time-ordered IDs).
+func GenerateID() string {
+	idMu.RLock()
+	f := idFactory
+	idMu.RUnlock()
+	return f()
+}
+
+// SetIDFactory replaces the global ID generation function.
+func SetIDFactory(f func() string) {
+	if f == nil {
+		panic("agentscope: SetIDFactory called with nil factory")
+	}
+	idMu.Lock()
+	idFactory = f
+	idMu.Unlock()
+}
 
 // Option is the functional option type for Init.
 type Option func(*Config)
@@ -72,6 +95,13 @@ func WithTracingURL(url string) Option {
 	}
 }
 
+// WithIDFactory sets the global ID generation function during Init.
+func WithIDFactory(f func() string) Option {
+	return func(c *Config) {
+		SetIDFactory(f)
+	}
+}
+
 // Init initializes the global agentscope configuration and logging.
 // It mirrors Python agentscope.init but uses Go-style options.
 func Init(opts ...Option) {
@@ -93,7 +123,7 @@ func Init(opts ...Option) {
 func defaultConfig() Config {
 	now := time.Now()
 	return Config{
-		RunID:        uuid.NewString(),
+		RunID:        GenerateID(),
 		Project:      "UnnamedProject_" + now.Format("20060102"),
 		Name:         now.Format("150405"),
 		CreatedAt:    now,

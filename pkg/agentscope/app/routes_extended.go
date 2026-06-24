@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 
+	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/storage"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/tts"
-	"github.com/google/uuid"
 )
 
 // registerExtendedRoutes adds CRUD routes for agents, credentials, schedules,
@@ -81,7 +81,7 @@ func (a *App) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	record := &storage.AgentRecord{
-		ID:           uuid.NewString(),
+		ID:           agentscope.GenerateID(),
 		UserID:       r.Header.Get("X-User-ID"),
 		Name:         req.Name,
 		SystemPrompt: req.SystemPrompt,
@@ -186,7 +186,7 @@ func (a *App) handleCreateCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	record := &storage.CredentialRecord{
-		ID:       uuid.NewString(),
+		ID:       agentscope.GenerateID(),
 		UserID:   r.Header.Get("X-User-ID"),
 		Provider: req.Provider,
 		Data:     req.Config,

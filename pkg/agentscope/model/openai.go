@@ -16,9 +16,10 @@ const defaultOpenAIBaseURL = "https://api.openai.com"
 
 // OpenAIChatModel wraps the OpenAI Chat Completions API.
 type OpenAIChatModel struct {
-	apiKey  string
-	baseURL string
-	model   string
+	apiKey         string
+	baseURL        string
+	model          string
+	defaultHeaders map[string]string
 
 	httpClient *http.Client
 }
@@ -29,7 +30,8 @@ type OpenAIConfig struct {
 	BaseURL string
 	Model   string
 
-	HTTPClient *http.Client
+	HTTPClient    *http.Client
+	ClientOptions *ClientOptions
 }
 
 // NewOpenAIChatModel creates a ChatModel backed by OpenAI.
@@ -44,11 +46,16 @@ func NewOpenAIChatModel(cfg OpenAIConfig) (*OpenAIChatModel, error) {
 	if base == "" {
 		base = defaultOpenAIBaseURL
 	}
+	var defHeaders map[string]string
+	if cfg.ClientOptions != nil {
+		defHeaders = cfg.ClientOptions.DefaultHeaders
+	}
 	return &OpenAIChatModel{
-		apiKey:     cfg.APIKey,
-		baseURL:    base,
-		model:      cfg.Model,
-		httpClient: defaultHTTPClient(cfg.HTTPClient),
+		apiKey:         cfg.APIKey,
+		baseURL:        base,
+		model:          cfg.Model,
+		defaultHeaders: defHeaders,
+		httpClient:     defaultHTTPClient(cfg.HTTPClient, cfg.ClientOptions),
 	}, nil
 }
 
@@ -84,6 +91,10 @@ func (m *OpenAIChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts ..
 	if callOpts.ToolChoice != nil {
 		reqBody.ToolChoice = formatToolChoice(callOpts.ToolChoice)
 	}
+	if callOpts.Voice != nil {
+		reqBody.Audio = &openAIAudioConfig{Voice: *callOpts.Voice, Format: "pcm16"}
+		reqBody.Modalities = []string{"text", "audio"}
+	}
 
 	// Retry loop
 	maxRetries := callOpts.MaxRetries
@@ -105,10 +116,10 @@ func (m *OpenAIChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts ..
 			m.baseURL+"/v1/chat/completions",
 			reqBody,
 			&parsed,
-			map[string]string{
+			mergeHeaders(map[string]string{
 				"Content-Type":  "application/json",
 				"Authorization": "Bearer " + m.apiKey,
-			},
+			}, m.defaultHeaders),
 		)
 		if lastErr == nil {
 			break
@@ -158,6 +169,10 @@ func (m *OpenAIChatModel) ChatStream(ctx context.Context, msgs []*message.Msg, o
 	if callOpts.ToolChoice != nil {
 		reqBody.ToolChoice = formatToolChoice(callOpts.ToolChoice)
 	}
+	if callOpts.Voice != nil {
+		reqBody.Audio = &openAIAudioConfig{Voice: *callOpts.Voice, Format: "pcm16"}
+		reqBody.Modalities = []string{"text", "audio"}
+	}
 
 	sseCh, err := httpx.DoSSERequest(
 		ctx,
@@ -165,10 +180,10 @@ func (m *OpenAIChatModel) ChatStream(ctx context.Context, msgs []*message.Msg, o
 		"POST",
 		m.baseURL+"/v1/chat/completions",
 		reqBody,
-		map[string]string{
+		mergeHeaders(map[string]string{
 			"Content-Type":  "application/json",
 			"Authorization": "Bearer " + m.apiKey,
-		},
+		}, m.defaultHeaders),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("openai: %w", err)

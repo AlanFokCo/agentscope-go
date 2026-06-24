@@ -18,25 +18,27 @@ const (
 // OpenAICompatConfig holds configuration for OpenAI-compatible embedding models.
 // Works with OpenAI, DashScope, Ollama, and other compatible providers.
 type OpenAICompatConfig struct {
-	APIKey     string
-	BaseURL    string
-	Model      string
-	Dimensions int // 0 = provider default
-	BatchSize  int // 0 = constructor-specific default
-	HTTPClient *http.Client
-	Cache      EmbeddingCache // optional
+	APIKey         string
+	BaseURL        string
+	Model          string
+	Dimensions     int  // 0 = provider default
+	PassDimensions *bool // nil or true = send dimensions if >0; false = never send
+	BatchSize      int  // 0 = constructor-specific default
+	HTTPClient     *http.Client
+	Cache          EmbeddingCache // optional
 }
 
 // OpenAICompatEmbeddingModel implements EmbeddingModel using the OpenAI-compatible
 // embedding API (/embeddings endpoint).
 type OpenAICompatEmbeddingModel struct {
-	apiKey     string
-	baseURL    string
-	model      string
-	dimensions int
-	batchSize  int
-	client     *http.Client
-	cache      EmbeddingCache
+	apiKey         string
+	baseURL        string
+	model          string
+	dimensions     int
+	passDimensions bool
+	batchSize      int
+	client         *http.Client
+	cache          EmbeddingCache
 }
 
 func newOpenAICompat(cfg OpenAICompatConfig) (*OpenAICompatEmbeddingModel, error) {
@@ -54,14 +56,16 @@ func newOpenAICompat(cfg OpenAICompatConfig) (*OpenAICompatEmbeddingModel, error
 	if batchSize <= 0 {
 		batchSize = defaultBatchSize
 	}
+	passDim := cfg.PassDimensions == nil || *cfg.PassDimensions
 	return &OpenAICompatEmbeddingModel{
-		apiKey:     cfg.APIKey,
-		baseURL:    cfg.BaseURL,
-		model:      cfg.Model,
-		dimensions: cfg.Dimensions,
-		batchSize:  batchSize,
-		client:     client,
-		cache:      cfg.Cache,
+		apiKey:         cfg.APIKey,
+		baseURL:        cfg.BaseURL,
+		model:          cfg.Model,
+		dimensions:     cfg.Dimensions,
+		passDimensions: passDim,
+		batchSize:      batchSize,
+		client:         client,
+		cache:          cfg.Cache,
 	}, nil
 }
 
@@ -149,7 +153,7 @@ func (m *OpenAICompatEmbeddingModel) callAPI(ctx context.Context, texts []string
 		Input:          texts,
 		EncodingFormat: "float",
 	}
-	if m.dimensions > 0 {
+	if m.dimensions > 0 && m.passDimensions {
 		req.Dimensions = m.dimensions
 	}
 

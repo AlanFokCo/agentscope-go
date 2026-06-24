@@ -13,10 +13,11 @@ const defaultDeepSeekBaseURL = "https://api.deepseek.com"
 
 // DeepSeekChatModel wraps the DeepSeek Chat API (OpenAI-compatible with reasoning_content).
 type DeepSeekChatModel struct {
-	apiKey     string
-	baseURL    string
-	model      string
-	httpClient *http.Client
+	apiKey         string
+	baseURL        string
+	model          string
+	defaultHeaders map[string]string
+	httpClient     *http.Client
 }
 
 // DeepSeekConfig configures DeepSeekChatModel.
@@ -24,7 +25,8 @@ type DeepSeekConfig struct {
 	APIKey     string
 	BaseURL    string
 	Model      string
-	HTTPClient *http.Client
+	HTTPClient    *http.Client
+	ClientOptions *ClientOptions
 }
 
 // NewDeepSeekChatModel creates a ChatModel backed by DeepSeek.
@@ -39,11 +41,16 @@ func NewDeepSeekChatModel(cfg DeepSeekConfig) (*DeepSeekChatModel, error) {
 	if base == "" {
 		base = defaultDeepSeekBaseURL
 	}
+	var defHeaders map[string]string
+	if cfg.ClientOptions != nil {
+		defHeaders = cfg.ClientOptions.DefaultHeaders
+	}
 	return &DeepSeekChatModel{
-		apiKey:     cfg.APIKey,
-		baseURL:    base,
-		model:      cfg.Model,
-		httpClient: defaultHTTPClient(cfg.HTTPClient),
+		apiKey:         cfg.APIKey,
+		baseURL:        base,
+		model:          cfg.Model,
+		defaultHeaders: defHeaders,
+		httpClient:     defaultHTTPClient(cfg.HTTPClient, cfg.ClientOptions),
 	}, nil
 }
 
@@ -88,10 +95,10 @@ func (m *DeepSeekChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts 
 		m.baseURL+"/v1/chat/completions",
 		reqBody,
 		&parsed,
-		map[string]string{
+		mergeHeaders(map[string]string{
 			"Content-Type":  "application/json",
 			"Authorization": "Bearer " + m.apiKey,
-		},
+		}, m.defaultHeaders),
 	); err != nil {
 		return nil, fmt.Errorf("deepseek: %w", err)
 	}
@@ -140,10 +147,10 @@ func (m *DeepSeekChatModel) ChatStream(ctx context.Context, msgs []*message.Msg,
 		"POST",
 		m.baseURL+"/v1/chat/completions",
 		reqBody,
-		map[string]string{
+		mergeHeaders(map[string]string{
 			"Content-Type":  "application/json",
 			"Authorization": "Bearer " + m.apiKey,
-		},
+		}, m.defaultHeaders),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("deepseek: %w", err)

@@ -13,10 +13,11 @@ const defaultMoonshotBaseURL = "https://api.moonshot.cn"
 
 // MoonshotChatModel wraps the Moonshot/Kimi API (OpenAI-compatible).
 type MoonshotChatModel struct {
-	apiKey     string
-	baseURL    string
-	model      string
-	httpClient *http.Client
+	apiKey         string
+	baseURL        string
+	model          string
+	defaultHeaders map[string]string
+	httpClient     *http.Client
 }
 
 // MoonshotConfig configures MoonshotChatModel.
@@ -24,7 +25,8 @@ type MoonshotConfig struct {
 	APIKey     string
 	BaseURL    string
 	Model      string
-	HTTPClient *http.Client
+	HTTPClient    *http.Client
+	ClientOptions *ClientOptions
 }
 
 // NewMoonshotChatModel creates a ChatModel backed by Moonshot/Kimi.
@@ -39,11 +41,16 @@ func NewMoonshotChatModel(cfg MoonshotConfig) (*MoonshotChatModel, error) {
 	if base == "" {
 		base = defaultMoonshotBaseURL
 	}
+	var defHeaders map[string]string
+	if cfg.ClientOptions != nil {
+		defHeaders = cfg.ClientOptions.DefaultHeaders
+	}
 	return &MoonshotChatModel{
-		apiKey:     cfg.APIKey,
-		baseURL:    base,
-		model:      cfg.Model,
-		httpClient: defaultHTTPClient(cfg.HTTPClient),
+		apiKey:         cfg.APIKey,
+		baseURL:        base,
+		model:          cfg.Model,
+		defaultHeaders: defHeaders,
+		httpClient:     defaultHTTPClient(cfg.HTTPClient, cfg.ClientOptions),
 	}, nil
 }
 
@@ -88,10 +95,10 @@ func (m *MoonshotChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts 
 		m.baseURL+"/v1/chat/completions",
 		reqBody,
 		&parsed,
-		map[string]string{
+		mergeHeaders(map[string]string{
 			"Content-Type":  "application/json",
 			"Authorization": "Bearer " + m.apiKey,
-		},
+		}, m.defaultHeaders),
 	); err != nil {
 		return nil, fmt.Errorf("moonshot: %w", err)
 	}
@@ -140,10 +147,10 @@ func (m *MoonshotChatModel) ChatStream(ctx context.Context, msgs []*message.Msg,
 		"POST",
 		m.baseURL+"/v1/chat/completions",
 		reqBody,
-		map[string]string{
+		mergeHeaders(map[string]string{
 			"Content-Type":  "application/json",
 			"Authorization": "Bearer " + m.apiKey,
-		},
+		}, m.defaultHeaders),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("moonshot: %w", err)

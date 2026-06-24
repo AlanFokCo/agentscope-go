@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
+	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
-	"github.com/google/uuid"
 )
 
 // AgentRecord tracks a named agent within a session.
@@ -50,7 +50,7 @@ func NewSessionService(factory AgentFactory) *SessionService {
 // Create creates a new session.
 func (s *SessionService) Create(req CreateSessionRequest) *SessionRecord {
 	session := &SessionRecord{
-		ID:           uuid.NewString(),
+		ID:           agentscope.GenerateID(),
 		AgentName:    req.AgentName,
 		SystemPrompt: req.SystemPrompt,
 		ModelName:    req.ModelName,

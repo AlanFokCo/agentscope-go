@@ -131,6 +131,7 @@ type CallOptions struct {
 	ThinkingEnable  *bool
 	ThinkingBudget  *int
 	ReasoningEffort *string // "low", "medium", "high"
+	Voice           *string // audio output voice (e.g. "alloy"); enables audio modality
 	MaxRetries      int
 	RetryDelay      time.Duration
 }
@@ -184,6 +185,14 @@ func WithThinking(enable bool, budget int) CallOption {
 func WithReasoningEffort(effort string) CallOption {
 	return func(o *CallOptions) {
 		o.ReasoningEffort = &effort
+	}
+}
+
+// WithVoice enables audio output with the specified voice (e.g. "alloy", "coral").
+// When set, the model request includes audio modality and PCM16 format.
+func WithVoice(voice string) CallOption {
+	return func(o *CallOptions) {
+		o.Voice = &voice
 	}
 }
 

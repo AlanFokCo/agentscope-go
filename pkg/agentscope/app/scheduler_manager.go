@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
+	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/schedule"
-	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
@@ -43,7 +43,7 @@ func NewSchedulerManager(scheduler schedule.Scheduler, chatSvc *ChatService) *Sc
 // Create creates a new scheduled task.
 func (m *SchedulerManager) Create(ctx context.Context, req CreateScheduleRequest) (*ScheduleRecord, error) {
 	record := &ScheduleRecord{
-		ID:        uuid.NewString(),
+		ID:        agentscope.GenerateID(),
 		SessionID: req.SessionID,
 		CronExpr:  req.CronExpr,
 		Input:     req.Input,

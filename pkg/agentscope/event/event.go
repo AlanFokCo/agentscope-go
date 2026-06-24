@@ -3,8 +3,8 @@ package event
 import (
 	"time"
 
+	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
-	"github.com/google/uuid"
 )
 
 // EventType enumerates all event types in the agent lifecycle.
@@ -78,7 +78,7 @@ type Base struct {
 
 func newBase() Base {
 	return Base{
-		ID:        uuid.NewString(),
+		ID:        agentscope.GenerateID(),
 		CreatedAt: time.Now().Format(message.TimestampFormat),
 	}
 }

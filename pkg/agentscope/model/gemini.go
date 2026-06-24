@@ -15,10 +15,11 @@ const defaultGeminiBaseURL = "https://generativelanguage.googleapis.com/v1beta"
 
 // GeminiChatModel wraps the Google Gemini generateContent API.
 type GeminiChatModel struct {
-	apiKey     string
-	baseURL    string
-	model      string
-	httpClient *http.Client
+	apiKey         string
+	baseURL        string
+	model          string
+	defaultHeaders map[string]string
+	httpClient     *http.Client
 }
 
 // GeminiConfig configures GeminiChatModel.
@@ -26,7 +27,8 @@ type GeminiConfig struct {
 	APIKey     string
 	BaseURL    string
 	Model      string
-	HTTPClient *http.Client
+	HTTPClient    *http.Client
+	ClientOptions *ClientOptions
 }
 
 // NewGeminiChatModel creates a ChatModel backed by Google Gemini.
@@ -41,11 +43,16 @@ func NewGeminiChatModel(cfg GeminiConfig) (*GeminiChatModel, error) {
 	if base == "" {
 		base = defaultGeminiBaseURL
 	}
+	var defHeaders map[string]string
+	if cfg.ClientOptions != nil {
+		defHeaders = cfg.ClientOptions.DefaultHeaders
+	}
 	return &GeminiChatModel{
-		apiKey:     cfg.APIKey,
-		baseURL:    base,
-		model:      cfg.Model,
-		httpClient: defaultHTTPClient(cfg.HTTPClient),
+		apiKey:         cfg.APIKey,
+		baseURL:        base,
+		model:          cfg.Model,
+		defaultHeaders: defHeaders,
+		httpClient:     defaultHTTPClient(cfg.HTTPClient, cfg.ClientOptions),
 	}, nil
 }
 
@@ -72,9 +79,9 @@ func (m *GeminiChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts ..
 		url,
 		reqBody,
 		&parsed,
-		map[string]string{
+		mergeHeaders(map[string]string{
 			"Content-Type": "application/json",
-		},
+		}, m.defaultHeaders),
 	); err != nil {
 		return nil, fmt.Errorf("gemini: %w", err)
 	}
@@ -103,9 +110,9 @@ func (m *GeminiChatModel) ChatStream(ctx context.Context, msgs []*message.Msg, o
 		"POST",
 		url,
 		reqBody,
-		map[string]string{
+		mergeHeaders(map[string]string{
 			"Content-Type": "application/json",
-		},
+		}, m.defaultHeaders),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("gemini: %w", err)
