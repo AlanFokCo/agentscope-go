@@ -93,7 +93,7 @@ func (u *UserAgent) Reply(ctx context.Context, _ ...any) (*message.Msg, error) {
 	if text == "" {
 		text = ""
 	}
-	msg := message.NewMsg(u.Name, message.RoleUser, text)
+	msg := message.UserMsg(u.Name, text)
 	if structured != nil {
 		if msg.Metadata == nil {
 			msg.Metadata = types.JSONObject{}

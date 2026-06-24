@@ -115,8 +115,8 @@ func (b *AgentBase) Print(ctx context.Context, msg *message.Msg) error {
 	if !b.consoleOutputDisabled() {
 		if t := msg.GetTextContent("\n"); t != nil {
 			fmt.Printf("%s: %s\n", msg.Name, *t)
-		} else {
-			fmt.Printf("%s: %#v\n", msg.Name, msg.Content)
+		} else if len(msg.Content) > 0 {
+			fmt.Printf("%s: [%d content blocks]\n", msg.Name, len(msg.Content))
 		}
 	}
 

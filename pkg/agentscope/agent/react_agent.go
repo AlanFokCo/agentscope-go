@@ -109,7 +109,7 @@ func (a *ReActAgent) Reply(ctx context.Context, args ...any) (*message.Msg, erro
 	memKey := a.ID()
 	history, _ := a.Memory.Load(ctx, memKey)
 
-	userMsg := message.NewMsg(a.Name, message.RoleUser, userText)
+	userMsg := message.UserMsg(a.Name, userText)
 	history = append(history, userMsg)
 
 	// ReAct iteration loop.
@@ -133,14 +133,14 @@ func (a *ReActAgent) Reply(ctx context.Context, args ...any) (*message.Msg, erro
 			}
 		}
 
-		systemMsg := message.NewMsg(a.Name, message.RoleSystem, sysPrompt)
+		systemMsg := message.SystemMsg(a.Name, sysPrompt)
 		chatHistory := append([]*message.Msg{systemMsg}, history...)
 
 		resp, err := a.Model.Chat(ctx, chatHistory)
 		if err != nil {
 			return nil, err
 		}
-		assistantMsg := resp.Msg
+		assistantMsg := resp.ToMsg(a.Name)
 		if assistantMsg == nil {
 			return nil, fmt.Errorf("react agent: nil response message")
 		}
@@ -154,16 +154,20 @@ func (a *ReActAgent) Reply(ctx context.Context, args ...any) (*message.Msg, erro
 				history = append(history, assistantMsg)
 				break
 			}
-			result, err := t.Execute(ctx, call.Args)
+			resp, err := t.Execute(ctx, call.Args)
+			var resultText string
 			if err != nil {
-				result = fmt.Sprintf("tool %s error: %v", t.Name, err)
+				resultText = fmt.Sprintf("tool %s error: %v", t.Name(), err)
+			} else if resp != nil {
+				for _, b := range resp.Content {
+					if tb, ok := b.(message.TextBlock); ok {
+						resultText += tb.Text
+					}
+				}
 			}
-			// Append tool result to context so the model can reason over it.
-			resultBytes, _ := json.Marshal(result)
-			toolMsg := message.NewMsg(
+			toolMsg := message.AssistantMsg(
 				a.Name,
-				message.RoleAssistant,
-				fmt.Sprintf("TOOL[%s] RESULT: %s", t.Name, string(resultBytes)),
+				fmt.Sprintf("TOOL[%s] RESULT: %s", t.Name(), resultText),
 			)
 			history = append(history, assistantMsg, toolMsg)
 			continue

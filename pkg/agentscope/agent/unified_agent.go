@@ -1,0 +1,582 @@
+package agent
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
+
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/middleware"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/permission"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/tool"
+)
+
+const (
+	defaultUnifiedMaxIters = 20
+	defaultTriggerRatio    = 0.8
+)
+
+// UnifiedAgent is the v2 agent that uses native tool calling and supports streaming.
+// It aligns with the Python AgentScope v2.0+ single Agent class design.
+type UnifiedAgent struct {
+	name         string
+	systemPrompt string
+	model        model.ChatModel
+	toolkit      *tool.Toolkit
+	state        *AgentState
+	middlewares  []middleware.Middleware
+	reactCfg     ReactConfig
+	modelCfg     ModelConfig
+	contextCfg   *ContextConfig
+	readCache    *tool.ReadCache
+	engine       *permission.Engine
+
+	confirmCh chan event.UserConfirmResultEvent
+	mu        sync.Mutex
+}
+
+// ReactConfig controls the ReAct reasoning-acting loop.
+type ReactConfig struct {
+	MaxIters     int
+	StopOnReject bool
+}
+
+// ModelConfig controls model call behavior.
+type ModelConfig struct {
+	MaxRetries    int
+	FallbackModel model.ChatModel
+}
+
+// AgentState holds conversation state for a session.
+type AgentState struct {
+	SessionID string
+	Context   []*message.Msg
+	Summary   string
+	ReplyID   string
+	CurIter   int
+}
+
+// AgentOption configures a UnifiedAgent.
+type AgentOption func(*UnifiedAgent)
+
+// WithToolkit sets the agent's toolkit.
+func WithToolkit(tk *tool.Toolkit) AgentOption {
+	return func(a *UnifiedAgent) { a.toolkit = tk }
+}
+
+// WithReactConfig sets the ReAct loop configuration.
+func WithReactConfig(cfg ReactConfig) AgentOption {
+	return func(a *UnifiedAgent) { a.reactCfg = cfg }
+}
+
+// WithModelConfig sets model call configuration.
+func WithModelConfig(cfg ModelConfig) AgentOption {
+	return func(a *UnifiedAgent) { a.modelCfg = cfg }
+}
+
+// WithState sets an initial agent state (for session recovery).
+func WithState(state *AgentState) AgentOption {
+	return func(a *UnifiedAgent) { a.state = state }
+}
+
+// WithMiddlewares sets the middleware chain for the agent.
+// Middlewares are applied in order: middlewares[0] is outermost.
+func WithMiddlewares(mws ...middleware.Middleware) AgentOption {
+	return func(a *UnifiedAgent) { a.middlewares = mws }
+}
+
+// WithContextConfig enables structured context compression.
+// When set, the agent compresses its context window when token count exceeds
+// the trigger ratio, using a model-generated structured summary.
+// Also creates a ReadCache for file caching if none is already set.
+func WithContextConfig(cfg ContextConfig) AgentOption {
+	return func(a *UnifiedAgent) {
+		c := cfg.withDefaults()
+		a.contextCfg = &c
+		if a.readCache == nil {
+			a.readCache = tool.NewReadCache(0, 0)
+		}
+	}
+}
+
+// WithReadCache sets a custom ReadCache for the agent.
+// The cache is injected into the context for built-in tools.
+func WithReadCache(rc *tool.ReadCache) AgentOption {
+	return func(a *UnifiedAgent) { a.readCache = rc }
+}
+
+// WithPermissionContext configures a permission engine for the agent.
+// When set, tool calls are checked against the engine before execution.
+func WithPermissionContext(ctx *permission.Context) AgentOption {
+	return func(a *UnifiedAgent) {
+		a.engine = permission.NewEngine(ctx)
+		a.confirmCh = make(chan event.UserConfirmResultEvent, 1)
+	}
+}
+
+// NewUnifiedAgent creates the v2 unified agent.
+func NewUnifiedAgent(name, systemPrompt string, m model.ChatModel, opts ...AgentOption) *UnifiedAgent {
+	a := &UnifiedAgent{
+		name:         name,
+		systemPrompt: systemPrompt,
+		model:        m,
+		toolkit:      tool.NewToolkit(),
+		reactCfg:     ReactConfig{MaxIters: defaultUnifiedMaxIters},
+		state:        &AgentState{SessionID: uuid.New().String()},
+	}
+	for _, opt := range opts {
+		opt(a)
+	}
+	return a
+}
+
+// Name returns the agent name.
+func (a *UnifiedAgent) Name() string { return a.name }
+
+// Reply processes input and returns the final assistant message (synchronous).
+func (a *UnifiedAgent) Reply(ctx context.Context, input string) (*message.Msg, error) {
+	ch, err := a.ReplyStream(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	// Consume all events
+	for range ch {
+	}
+
+	// After stream ends, the state.Context has the full message
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if len(a.state.Context) > 0 {
+		last := a.state.Context[len(a.state.Context)-1]
+		if last.Role == message.RoleAssistant {
+			// Check if it's a final text response (not a tool result)
+			hasToolResult := false
+			for _, b := range last.GetContentBlocks(message.ContentBlockToolResult) {
+				_ = b
+				hasToolResult = true
+				break
+			}
+			if !hasToolResult {
+				return last, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("agent %s: no response generated", a.name)
+}
+
+// ReplyStream processes input and returns a channel of events (streaming).
+func (a *UnifiedAgent) ReplyStream(ctx context.Context, input string) (<-chan event.Event, error) {
+	if input == "" {
+		return nil, fmt.Errorf("agent %s: empty input", a.name)
+	}
+
+	// Attach MiddleContext to the Go context for middleware state storage.
+	mc := middleware.MiddleContext{}
+	ctx = middleware.WithMiddleContext(ctx, mc)
+
+	if a.readCache != nil {
+		ctx = tool.WithReadCache(ctx, a.readCache)
+	}
+
+	if len(a.middlewares) == 0 {
+		ch := make(chan event.Event, 32)
+		go a.replyLoop(ctx, input, ch)
+		return ch, nil
+	}
+
+	// Wrap replyLoop through the OnReply middleware chain.
+	core := func(ctx context.Context, ri middleware.ReplyInput) <-chan event.Event {
+		ch := make(chan event.Event, 32)
+		go a.replyLoop(ctx, ri.UserInput, ch)
+		return ch
+	}
+	chain := middleware.BuildReplyChain(a.middlewares, core)
+	return chain(ctx, middleware.ReplyInput{
+		AgentName: a.name,
+		UserInput: input,
+	}), nil
+}
+
+// Observe injects external messages into the agent's context.
+func (a *UnifiedAgent) Observe(ctx context.Context, msgs ...*message.Msg) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.state.Context = append(a.state.Context, msgs...)
+}
+
+// SubmitUserConfirm submits a user confirmation result for pending tool calls.
+// Call this after receiving a RequireUserConfirmEvent from the event stream.
+func (a *UnifiedAgent) SubmitUserConfirm(result event.UserConfirmResultEvent) {
+	if a.confirmCh != nil {
+		a.confirmCh <- result
+	}
+}
+
+// PermissionEngine returns the agent's permission engine, or nil if not configured.
+func (a *UnifiedAgent) PermissionEngine() *permission.Engine {
+	return a.engine
+}
+
+// ReadCache returns the agent's file read cache, or nil if not configured.
+func (a *UnifiedAgent) ReadCache() *tool.ReadCache {
+	return a.readCache
+}
+
+func (a *UnifiedAgent) replyLoop(ctx context.Context, input string, ch chan<- event.Event) {
+	defer close(ch)
+
+	replyID := uuid.New().String()
+
+	a.mu.Lock()
+	a.state.ReplyID = replyID
+	a.state.CurIter = 0
+	a.mu.Unlock()
+
+	// Emit ReplyStart
+	emit(ctx, ch, event.NewReplyStartEvent(a.state.SessionID, replyID, a.name, message.RoleAssistant))
+
+	// Add user message to context
+	userMsg := message.UserMsg(a.name, input)
+	a.mu.Lock()
+	a.state.Context = append(a.state.Context, userMsg)
+	a.mu.Unlock()
+
+	// Build middleware-wrapped model call handler
+	modelCallHandler := a.buildModelCallHandler()
+	// Build middleware-wrapped acting handler
+	actingHandler := a.buildActingHandler()
+
+	// ReAct loop
+	for iter := 0; iter < a.reactCfg.MaxIters; iter++ {
+		a.mu.Lock()
+		a.state.CurIter = iter
+		a.mu.Unlock()
+
+		if err := a.compressContext(ctx); err != nil {
+			logrus.WithError(err).WithField("agent", a.name).Warn("context compression failed")
+		}
+
+		// Prepare messages for model call
+		modelMsgs := a.prepareModelInput(ctx)
+
+		// Get tool schemas
+		schemas := a.toolkit.GetToolSchemas()
+
+		// Call model (through middleware chain)
+		emit(ctx, ch, event.NewModelCallStartEvent(replyID, ""))
+
+		resp, err := modelCallHandler(ctx, middleware.ModelCallInput{
+			AgentName: a.name,
+			Messages:  modelMsgs,
+			Tools:     schemas,
+		})
+		if err != nil {
+			logrus.WithError(err).Error("agent: model call failed")
+			emit(ctx, ch, event.NewModelCallEndEvent(replyID, 0, 0))
+			break
+		}
+
+		var inputTok, outputTok int
+		if resp.Usage != nil {
+			inputTok = resp.Usage.InputTokens
+			outputTok = resp.Usage.OutputTokens
+		}
+		emit(ctx, ch, event.NewModelCallEndEvent(replyID, inputTok, outputTok))
+
+		// Check for tool calls in response
+		toolCalls := extractToolCalls(resp.Content)
+
+		if len(toolCalls) == 0 {
+			// No tool calls — this is the final answer
+			assistantMsg := resp.ToMsg(a.name)
+			a.mu.Lock()
+			a.state.Context = append(a.state.Context, assistantMsg)
+			a.mu.Unlock()
+
+			// Emit text/thinking events for streaming consumers
+			for _, b := range resp.Content {
+				switch blk := b.(type) {
+				case message.TextBlock:
+					emit(ctx, ch, event.NewTextBlockStartEvent(replyID, blk.ID))
+					emit(ctx, ch, event.NewTextBlockDeltaEvent(replyID, blk.ID, blk.Text))
+					emit(ctx, ch, event.NewTextBlockEndEvent(replyID, blk.ID))
+				case message.ThinkingBlock:
+					emit(ctx, ch, event.NewThinkingBlockStartEvent(replyID, blk.ID))
+					emit(ctx, ch, event.NewThinkingBlockDeltaEvent(replyID, blk.ID, blk.Thinking))
+					emit(ctx, ch, event.NewThinkingBlockEndEvent(replyID, blk.ID))
+				}
+			}
+			break
+		}
+
+		// Has tool calls — add assistant msg to context and execute tools
+		assistantMsg := resp.ToMsg(a.name)
+		a.mu.Lock()
+		a.state.Context = append(a.state.Context, assistantMsg)
+		a.mu.Unlock()
+
+		for _, tc := range toolCalls {
+			emit(ctx, ch, event.NewToolCallStartEvent(replyID, tc.ID, tc.Name))
+			emit(ctx, ch, event.NewToolCallEndEvent(replyID, tc.ID))
+
+			resultState, outputText := a.executeToolCallWithPermission(
+				ctx, ch, replyID, tc, actingHandler,
+			)
+
+			// Add tool result to context
+			toolResultMsg := message.NewMsg(a.name, message.RoleAssistant, []message.ContentBlock{
+				message.ToolResultBlock{
+					Type:   "tool_result",
+					ID:     tc.ID,
+					Name:   tc.Name,
+					Output: outputText,
+					State:  resultState,
+				},
+			})
+			a.mu.Lock()
+			a.state.Context = append(a.state.Context, toolResultMsg)
+			a.mu.Unlock()
+		}
+	}
+
+	emit(ctx, ch, event.NewReplyEndEvent(a.state.SessionID, replyID))
+}
+
+// buildModelCallHandler returns a ModelCallHandler wrapped with middleware.
+func (a *UnifiedAgent) buildModelCallHandler() middleware.ModelCallHandler {
+	core := func(ctx context.Context, input middleware.ModelCallInput) (*model.ChatResponse, error) {
+		var opts []model.CallOption
+		if len(input.Tools) > 0 {
+			opts = append(opts, model.WithTools(input.Tools))
+		}
+		if input.ToolChoice != nil {
+			opts = append(opts, model.WithToolChoice(input.ToolChoice))
+		}
+		return a.callModel(ctx, input.Messages, opts)
+	}
+	if len(a.middlewares) == 0 {
+		return core
+	}
+	return middleware.BuildModelCallChain(a.middlewares, core)
+}
+
+// buildActingHandler returns an ActingHandler wrapped with middleware.
+func (a *UnifiedAgent) buildActingHandler() middleware.ActingHandler {
+	core := func(ctx context.Context, input middleware.ActingInput) (*tool.ToolResponse, error) {
+		return a.toolkit.CallToolFromBlock(ctx, input.ToolCall)
+	}
+	if len(a.middlewares) == 0 {
+		return core
+	}
+	return middleware.BuildActingChain(a.middlewares, core)
+}
+
+// executeToolCallWithPermission checks permissions before executing a tool call.
+// Returns the result state and output text.
+func (a *UnifiedAgent) executeToolCallWithPermission(
+	ctx context.Context,
+	ch chan<- event.Event,
+	replyID string,
+	tc message.ToolCallBlock,
+	actingHandler middleware.ActingHandler,
+) (message.ToolResultState, string) {
+	if a.engine != nil && tc.State != message.ToolCallAllowed {
+		t := a.toolkit.Get(tc.Name)
+		if t == nil {
+			return a.emitToolResult(ctx, ch, replyID, tc, message.ToolResultError,
+				fmt.Sprintf("tool %q not found or not active", tc.Name))
+		}
+
+		input, err := tc.ParseInput()
+		if err != nil {
+			return a.emitToolResult(ctx, ch, replyID, tc, message.ToolResultError,
+				fmt.Sprintf("parse tool input: %v", err))
+		}
+
+		decision, err := a.engine.CheckPermission(t, input)
+		if err != nil {
+			return a.emitToolResult(ctx, ch, replyID, tc, message.ToolResultError,
+				fmt.Sprintf("permission check error: %v", err))
+		}
+
+		switch decision.Behavior {
+		case permission.BehaviorDeny:
+			return a.emitToolResult(ctx, ch, replyID, tc, message.ToolResultDenied,
+				decision.Message)
+
+		case permission.BehaviorAsk, permission.BehaviorPassthrough:
+			tc.SuggestedRules = rulesToAny(decision.SuggestedRules)
+			emit(ctx, ch, event.NewRequireUserConfirmEvent(replyID, []message.ToolCallBlock{tc}))
+
+			// Block waiting for user confirmation
+			confirmed, resultTC := a.waitForConfirmation(ctx, tc.ID)
+			if !confirmed {
+				return a.emitToolResult(ctx, ch, replyID, tc, message.ToolResultDenied,
+					"Permission denied by user")
+			}
+			tc = resultTC
+		}
+	}
+
+	return a.executeTool(ctx, ch, replyID, tc, actingHandler)
+}
+
+func (a *UnifiedAgent) waitForConfirmation(ctx context.Context, toolCallID string) (bool, message.ToolCallBlock) {
+	select {
+	case result := <-a.confirmCh:
+		for _, cr := range result.ConfirmResults {
+			if cr.ToolCall.ID == toolCallID {
+				if cr.Confirmed {
+					// Add any user-provided rules to the engine
+					for _, r := range cr.Rules {
+						if rule, ok := r.(permission.Rule); ok {
+							a.engine.AddRule(rule)
+						}
+					}
+					return true, cr.ToolCall
+				}
+				return false, cr.ToolCall
+			}
+		}
+		return false, message.ToolCallBlock{}
+	case <-ctx.Done():
+		return false, message.ToolCallBlock{}
+	}
+}
+
+func (a *UnifiedAgent) executeTool(
+	ctx context.Context,
+	ch chan<- event.Event,
+	replyID string,
+	tc message.ToolCallBlock,
+	actingHandler middleware.ActingHandler,
+) (message.ToolResultState, string) {
+	toolResp, execErr := actingHandler(ctx, middleware.ActingInput{
+		AgentName: a.name,
+		ToolCall:  tc,
+	})
+
+	var resultState message.ToolResultState
+	var outputText string
+	if execErr != nil {
+		resultState = message.ToolResultError
+		outputText = execErr.Error()
+	} else if toolResp != nil {
+		resultState = toolResp.State
+		for _, b := range toolResp.Content {
+			if tb, ok := b.(message.TextBlock); ok {
+				outputText += tb.Text
+			}
+		}
+	} else {
+		resultState = message.ToolResultSuccess
+	}
+
+	if a.contextCfg != nil && a.contextCfg.ToolResultLimit > 0 {
+		outputText, _ = TruncateToolResult(outputText, a.contextCfg.ToolResultLimit)
+	}
+
+	return a.emitToolResult(ctx, ch, replyID, tc, resultState, outputText)
+}
+
+func (a *UnifiedAgent) emitToolResult(
+	ctx context.Context,
+	ch chan<- event.Event,
+	replyID string,
+	tc message.ToolCallBlock,
+	state message.ToolResultState,
+	text string,
+) (message.ToolResultState, string) {
+	emit(ctx, ch, event.NewToolResultStartEvent(replyID, tc.ID, tc.Name))
+	if text != "" {
+		emit(ctx, ch, event.NewToolResultTextDeltaEvent(replyID, tc.ID, text))
+	}
+	emit(ctx, ch, event.NewToolResultEndEvent(replyID, tc.ID, state))
+	return state, text
+}
+
+func rulesToAny(rules []permission.Rule) []any {
+	if len(rules) == 0 {
+		return nil
+	}
+	out := make([]any, len(rules))
+	for i, r := range rules {
+		out[i] = r
+	}
+	return out
+}
+
+func (a *UnifiedAgent) prepareModelInput(ctx context.Context) []*message.Msg {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Apply OnSystemPrompt pipeline through middleware
+	prompt := a.systemPrompt
+	if len(a.middlewares) > 0 {
+		prompt = middleware.ApplySystemPromptPipeline(ctx, a.middlewares, a.name, prompt)
+	}
+
+	sysMsg := message.SystemMsg(a.name, prompt)
+	msgs := make([]*message.Msg, 0, len(a.state.Context)+2)
+	msgs = append(msgs, sysMsg)
+
+	if a.state.Summary != "" {
+		msgs = append(msgs, message.UserMsg(a.name, "[Previous context summary]: "+a.state.Summary))
+	}
+
+	msgs = append(msgs, a.state.Context...)
+	return msgs
+}
+
+func (a *UnifiedAgent) callModel(ctx context.Context, msgs []*message.Msg, opts []model.CallOption) (*model.ChatResponse, error) {
+	retries := a.modelCfg.MaxRetries
+	if retries <= 0 {
+		retries = 1
+	}
+
+	var lastErr error
+	for i := 0; i < retries; i++ {
+		if i > 0 {
+			time.Sleep(time.Duration(i) * time.Second)
+		}
+		resp, err := a.model.Chat(ctx, msgs, opts...)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+	}
+
+	if a.modelCfg.FallbackModel != nil {
+		resp, err := a.modelCfg.FallbackModel.Chat(ctx, msgs, opts...)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+	}
+
+	return nil, lastErr
+}
+
+func extractToolCalls(content []message.ContentBlock) []message.ToolCallBlock {
+	var calls []message.ToolCallBlock
+	for _, b := range content {
+		if tc, ok := b.(message.ToolCallBlock); ok {
+			calls = append(calls, tc)
+		}
+	}
+	return calls
+}
+
+func emit(ctx context.Context, ch chan<- event.Event, evt event.Event) {
+	select {
+	case ch <- evt:
+	case <-ctx.Done():
+	}
+}
