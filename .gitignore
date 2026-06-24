@@ -4,3 +4,6 @@
 vendor
 coverage.out
 .DS_Store
+
+CLAUDE.md
+.remember

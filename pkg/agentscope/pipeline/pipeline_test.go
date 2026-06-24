@@ -56,12 +56,12 @@ func TestMsgHubBroadcastAndRequestReply(t *testing.T) {
 	h := NewMsgHub()
 	assistant := &fakeAgent{
 		id:    "assistant",
-		reply: message.NewMsg("assistant", message.RoleAssistant, "ok"),
+		reply: message.AssistantMsg("assistant", "ok"),
 	}
 	h.Register("assistant", assistant)
 
 	ctx := context.Background()
-	msg := message.NewMsg("user", message.RoleUser, "hi")
+	msg := message.UserMsg("user", "hi")
 
 	if err := h.Broadcast(ctx, msg); err != nil {
 		t.Fatalf("Broadcast: %v", err)
