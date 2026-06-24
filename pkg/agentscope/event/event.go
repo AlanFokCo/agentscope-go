@@ -401,14 +401,17 @@ type HintBlockEvent struct {
 	ReplyID string `json:"reply_id"`
 	BlockID string `json:"block_id"`
 	Source  string `json:"source,omitempty"`
-	Hint    string `json:"hint"`
+	Hint    any    `json:"hint"` // string or []message.ContentBlock
 }
 
 func (e HintBlockEvent) GetEventType() EventType { return EventHintBlock }
 func (e HintBlockEvent) GetEventID() string       { return e.ID }
 func (e HintBlockEvent) GetReplyID() string       { return e.ReplyID }
 
-func NewHintBlockEvent(replyID, blockID, source, hint string) HintBlockEvent {
+// NewHintBlockEvent creates a HintBlockEvent. The hint parameter accepts
+// either a plain string or any value (e.g. []message.ContentBlock for
+// multimodal hints).
+func NewHintBlockEvent(replyID, blockID, source string, hint any) HintBlockEvent {
 	return HintBlockEvent{Base: newBase(), ReplyID: replyID, BlockID: blockID, Source: source, Hint: hint}
 }
 

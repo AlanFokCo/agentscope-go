@@ -53,8 +53,8 @@ func TestFactory_ListSchemas(t *testing.T) {
 	f := NewFactory()
 	schemas := f.ListSchemas()
 
-	if len(schemas) != 8 {
-		t.Fatalf("expected 8 schemas, got %d", len(schemas))
+	if len(schemas) != 9 {
+		t.Fatalf("expected 9 schemas, got %d", len(schemas))
 	}
 
 	// Should be sorted by provider name

@@ -178,7 +178,7 @@ func (t *writeTool) GenerateSuggestions(input map[string]any) []permission.Rule 
 func WriteTool() Tool {
 	return &writeTool{
 		BaseTool: BaseTool{
-			ToolName:        "write",
+			ToolName:        "Write",
 			ToolDescription: "Write content to a file, creating directories as needed. Completely overwrites existing content.",
 			ToolSchema:      writeSchema,
 		},

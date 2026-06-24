@@ -20,6 +20,7 @@ type agentStateJSON struct {
 	ToolCtx         *ToolStateContext   `json:"tool_context,omitempty"`
 	TasksCtx        *TasksStateContext  `json:"tasks_context,omitempty"`
 	MiddlewareState map[string]any      `json:"middleware_context,omitempty"`
+	ReadCacheData   json.RawMessage     `json:"read_cache_data,omitempty"`
 }
 
 // MarshalJSON serializes AgentState to JSON.
@@ -34,6 +35,7 @@ func (s *AgentState) MarshalJSON() ([]byte, error) {
 		ToolCtx:         s.ToolCtx,
 		TasksCtx:        s.TasksCtx,
 		MiddlewareState: s.MiddlewareState,
+		ReadCacheData:   s.ReadCacheData,
 	})
 }
 
@@ -52,6 +54,7 @@ func (s *AgentState) UnmarshalJSON(data []byte) error {
 	s.ToolCtx = raw.ToolCtx
 	s.TasksCtx = raw.TasksCtx
 	s.MiddlewareState = raw.MiddlewareState
+	s.ReadCacheData = raw.ReadCacheData
 	return nil
 }
 

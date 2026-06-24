@@ -104,11 +104,50 @@ func (m *DashScopeMultimodalEmbeddingModel) ModelName() string { return m.model 
 
 // EmbedMultimodal embeds a batch of multimodal inputs.
 // Each input can be text, an image DataBlock, or a video DataBlock.
+// If the input exceeds the model's element limits, it is automatically
+// split into sub-batches, each processed separately, and the results merged.
 func (m *DashScopeMultimodalEmbeddingModel) EmbedMultimodal(ctx context.Context, inputs []MultimodalInput) (*EmbeddingResponse, error) {
 	if len(inputs) == 0 {
 		return &EmbeddingResponse{}, nil
 	}
 
+	limits := getLimits(m.model)
+	if len(inputs) <= limits.maxElements {
+		return m.embedMultimodalBatch(ctx, inputs)
+	}
+
+	// Split into sub-batches that respect maxElements.
+	allEmbeddings := make([][]float32, len(inputs))
+	totalTokens := 0
+
+	for start := 0; start < len(inputs); start += limits.maxElements {
+		end := start + limits.maxElements
+		if end > len(inputs) {
+			end = len(inputs)
+		}
+		batch := inputs[start:end]
+
+		resp, err := m.embedMultimodalBatch(ctx, batch)
+		if err != nil {
+			return nil, fmt.Errorf("batch [%d:%d]: %w", start, end, err)
+		}
+
+		for i, emb := range resp.Embeddings {
+			allEmbeddings[start+i] = emb
+		}
+		if resp.Usage != nil {
+			totalTokens += resp.Usage.Tokens
+		}
+	}
+
+	return &EmbeddingResponse{
+		Embeddings: allEmbeddings,
+		Usage:      &EmbeddingUsage{Tokens: totalTokens},
+	}, nil
+}
+
+// embedMultimodalBatch sends a single batch of inputs to the API.
+func (m *DashScopeMultimodalEmbeddingModel) embedMultimodalBatch(ctx context.Context, inputs []MultimodalInput) (*EmbeddingResponse, error) {
 	contents := make([]map[string]any, 0, len(inputs))
 	for _, inp := range inputs {
 		if inp.Text != "" {

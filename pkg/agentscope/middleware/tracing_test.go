@@ -10,6 +10,7 @@ import (
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/tool"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/tracing"
 )
 
 // recordingTracer records span names and their nesting via context propagation.
@@ -22,6 +23,7 @@ type spanRecord struct {
 	name   string
 	parent string // parent span name if nested, empty for root
 	ended  bool
+	attrs  []tracing.SpanAttribute // only populated by attributedRecordingTracer
 }
 
 type spanCtxKey struct{}
@@ -43,6 +45,46 @@ func (t *recordingTracer) StartSpan(ctx context.Context, name string) (context.C
 		defer t.mu.Unlock()
 		t.spans[idx].ended = true
 	}
+}
+
+// attributedRecordingTracer extends recordingTracer to capture span attributes.
+// It implements tracing.AttributedTracer.
+type attributedRecordingTracer struct {
+	mu    sync.Mutex
+	spans []spanRecord
+}
+
+func (t *attributedRecordingTracer) StartSpan(ctx context.Context, name string) (context.Context, func()) {
+	return t.StartSpanWithAttrs(ctx, name)
+}
+
+func (t *attributedRecordingTracer) StartSpanWithAttrs(ctx context.Context, name string, attrs ...tracing.SpanAttribute) (context.Context, func()) {
+	t.mu.Lock()
+
+	parent := ""
+	if p, ok := ctx.Value(spanCtxKey{}).(string); ok {
+		parent = p
+	}
+	idx := len(t.spans)
+	t.spans = append(t.spans, spanRecord{name: name, parent: parent, attrs: attrs})
+	t.mu.Unlock()
+
+	ctx = context.WithValue(ctx, spanCtxKey{}, name)
+	return ctx, func() {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		t.spans[idx].ended = true
+	}
+}
+
+// findAttr returns the value of an attribute by key from a span record.
+func findAttr(s spanRecord, key string) (any, bool) {
+	for _, a := range s.attrs {
+		if a.Key == key {
+			return a.Value, true
+		}
+	}
+	return nil, false
 }
 
 func TestTracingMiddleware_ReplySpan(t *testing.T) {
@@ -212,5 +254,243 @@ func TestTracingMiddleware_EventsPassthrough(t *testing.T) {
 	}
 	if count != 3 {
 		t.Errorf("expected 3 pass-through events, got %d", count)
+	}
+}
+
+// ==================== GenAI Semantic Convention Attributes ====================
+
+func TestTracingMiddleware_OnReply_GenAIAttributes(t *testing.T) {
+	tracer := &attributedRecordingTracer{}
+	mw := NewTracingMiddleware(tracer)
+
+	// Set up MiddleContext with session_id.
+	mc := MiddleContext{}
+	mc.Set("tracing", "session_id", "sess-42")
+	ctx := WithMiddleContext(context.Background(), mc)
+
+	next := func(ctx context.Context, _ ReplyInput) <-chan event.Event {
+		ch := make(chan event.Event)
+		close(ch)
+		return ch
+	}
+
+	ch := mw.OnReply(ctx, ReplyInput{AgentName: "TestAgent"}, next)
+	for range ch {
+	}
+
+	if len(tracer.spans) < 1 {
+		t.Fatalf("expected at least 1 span, got %d", len(tracer.spans))
+	}
+	s := tracer.spans[0]
+
+	if v, ok := findAttr(s, "gen_ai.agent.name"); !ok || v != "TestAgent" {
+		t.Errorf("gen_ai.agent.name = %v, want TestAgent", v)
+	}
+	if v, ok := findAttr(s, "agentscope.session_id"); !ok || v != "sess-42" {
+		t.Errorf("agentscope.session_id = %v, want sess-42", v)
+	}
+}
+
+func TestTracingMiddleware_OnReply_NoSessionID(t *testing.T) {
+	tracer := &attributedRecordingTracer{}
+	mw := NewTracingMiddleware(tracer)
+
+	next := func(ctx context.Context, _ ReplyInput) <-chan event.Event {
+		ch := make(chan event.Event)
+		close(ch)
+		return ch
+	}
+
+	// No MiddleContext at all.
+	ch := mw.OnReply(context.Background(), ReplyInput{AgentName: "Agent"}, next)
+	for range ch {
+	}
+
+	s := tracer.spans[0]
+	if _, ok := findAttr(s, "agentscope.session_id"); ok {
+		t.Error("should not have session_id when not in MiddleContext")
+	}
+}
+
+func TestTracingMiddleware_OnModelCall_GenAIAttributes(t *testing.T) {
+	tracer := &attributedRecordingTracer{}
+	mw := NewTracingMiddleware(tracer)
+
+	temp := 0.7
+	maxTok := 1024
+
+	core := func(_ context.Context, _ ModelCallInput) (*model.ChatResponse, error) {
+		return &model.ChatResponse{
+			ID:        "resp-123",
+			ModelName: "gpt-4.1",
+			Content:   []message.ContentBlock{message.TextBlock{Type: "text", Text: "hi"}},
+			Usage: &model.ChatUsage{
+				InputTokens:     100,
+				OutputTokens:    50,
+				CacheInputTokens: 25,
+			},
+		}, nil
+	}
+
+	_, err := mw.OnModelCall(context.Background(), ModelCallInput{
+		AgentName:    "test",
+		ModelName:    "gpt-4.1",
+		ProviderName: "openai",
+		Temperature:  &temp,
+		MaxTokens:    &maxTok,
+		Tools: []model.ToolSchema{
+			{Type: "function", Function: model.ToolFunction{Name: "tool1"}},
+			{Type: "function", Function: model.ToolFunction{Name: "tool2"}},
+		},
+	}, core)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should have 2 spans: "chat" and "chat.response"
+	if len(tracer.spans) < 2 {
+		t.Fatalf("expected at least 2 spans (chat + chat.response), got %d", len(tracer.spans))
+	}
+
+	chat := tracer.spans[0]
+	if v, ok := findAttr(chat, "gen_ai.system"); !ok || v != "openai" {
+		t.Errorf("gen_ai.system = %v, want openai", v)
+	}
+	if v, ok := findAttr(chat, "gen_ai.request.model"); !ok || v != "gpt-4.1" {
+		t.Errorf("gen_ai.request.model = %v, want gpt-4.1", v)
+	}
+	if v, ok := findAttr(chat, "gen_ai.tool.count"); !ok || v != 2 {
+		t.Errorf("gen_ai.tool.count = %v, want 2", v)
+	}
+	if v, ok := findAttr(chat, "gen_ai.request.temperature"); !ok {
+		t.Error("gen_ai.request.temperature missing")
+	} else if f, ok := v.(float64); !ok || f != 0.7 {
+		t.Errorf("gen_ai.request.temperature = %v, want 0.7", v)
+	}
+	if v, ok := findAttr(chat, "gen_ai.request.max_tokens"); !ok || v != 1024 {
+		t.Errorf("gen_ai.request.max_tokens = %v, want 1024", v)
+	}
+
+	resp := tracer.spans[1]
+	if v, ok := findAttr(resp, "gen_ai.response.id"); !ok || v != "resp-123" {
+		t.Errorf("gen_ai.response.id = %v, want resp-123", v)
+	}
+	if v, ok := findAttr(resp, "gen_ai.usage.input_tokens"); !ok || v != 100 {
+		t.Errorf("gen_ai.usage.input_tokens = %v, want 100", v)
+	}
+	if v, ok := findAttr(resp, "gen_ai.usage.output_tokens"); !ok || v != 50 {
+		t.Errorf("gen_ai.usage.output_tokens = %v, want 50", v)
+	}
+	if v, ok := findAttr(resp, "gen_ai.usage.cache_read_input_tokens"); !ok || v != 25 {
+		t.Errorf("gen_ai.usage.cache_read_input_tokens = %v, want 25", v)
+	}
+}
+
+func TestTracingMiddleware_OnModelCall_NoCacheTokens_NoAttribute(t *testing.T) {
+	tracer := &attributedRecordingTracer{}
+	mw := NewTracingMiddleware(tracer)
+
+	core := func(_ context.Context, _ ModelCallInput) (*model.ChatResponse, error) {
+		return &model.ChatResponse{
+			Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: "hi"}},
+			Usage: &model.ChatUsage{
+				InputTokens:  100,
+				OutputTokens: 50,
+				// CacheInputTokens is 0 (default)
+			},
+		}, nil
+	}
+
+	_, _ = mw.OnModelCall(context.Background(), ModelCallInput{}, core)
+
+	// Find the response span
+	if len(tracer.spans) < 2 {
+		t.Fatalf("expected 2 spans, got %d", len(tracer.spans))
+	}
+	resp := tracer.spans[1]
+	if _, ok := findAttr(resp, "gen_ai.usage.cache_read_input_tokens"); ok {
+		t.Error("should not include cache_read_input_tokens when value is 0")
+	}
+}
+
+func TestTracingMiddleware_OnModelCall_NilResponse_NoResponseSpan(t *testing.T) {
+	tracer := &attributedRecordingTracer{}
+	mw := NewTracingMiddleware(tracer)
+
+	core := func(_ context.Context, _ ModelCallInput) (*model.ChatResponse, error) {
+		return nil, context.Canceled
+	}
+
+	_, _ = mw.OnModelCall(context.Background(), ModelCallInput{}, core)
+
+	// Only the "chat" span should exist (no response span).
+	if len(tracer.spans) != 1 {
+		t.Errorf("expected 1 span for nil response, got %d", len(tracer.spans))
+	}
+}
+
+func TestTracingMiddleware_OnActing_GenAIAttributes(t *testing.T) {
+	tracer := &attributedRecordingTracer{}
+	mw := NewTracingMiddleware(tracer)
+
+	core := func(_ context.Context, _ ActingInput) (*tool.ToolResponse, error) {
+		return tool.NewTextResponse("done"), nil
+	}
+
+	_, err := mw.OnActing(context.Background(), ActingInput{
+		AgentName: "test",
+		ToolCall: message.ToolCallBlock{
+			ID:    "call-456",
+			Name:  "search",
+			Input: `{"query": "hello world"}`,
+		},
+	}, core)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(tracer.spans) != 1 {
+		t.Fatalf("expected 1 span, got %d", len(tracer.spans))
+	}
+	s := tracer.spans[0]
+
+	if v, ok := findAttr(s, "gen_ai.tool.name"); !ok || v != "search" {
+		t.Errorf("gen_ai.tool.name = %v, want search", v)
+	}
+	if v, ok := findAttr(s, "gen_ai.tool.call_id"); !ok || v != "call-456" {
+		t.Errorf("gen_ai.tool.call_id = %v, want call-456", v)
+	}
+	if v, ok := findAttr(s, "gen_ai.tool.input_length"); !ok || v != 24 {
+		t.Errorf("gen_ai.tool.input_length = %v, want 24", v)
+	}
+}
+
+func TestTracingMiddleware_OnReasoning_Iteration(t *testing.T) {
+	tracer := &attributedRecordingTracer{}
+	mw := NewTracingMiddleware(tracer)
+
+	next := func(ctx context.Context, _ ReasoningInput) <-chan event.Event {
+		ch := make(chan event.Event)
+		close(ch)
+		return ch
+	}
+
+	ch := mw.OnReasoning(context.Background(), ReasoningInput{
+		AgentName: "ReAct",
+		Iteration: 3,
+	}, next)
+	for range ch {
+	}
+
+	if len(tracer.spans) != 1 {
+		t.Fatalf("expected 1 span, got %d", len(tracer.spans))
+	}
+	s := tracer.spans[0]
+
+	if !strings.Contains(s.name, "agent_reasoning ReAct") {
+		t.Errorf("expected reasoning span name, got %q", s.name)
+	}
+	if v, ok := findAttr(s, "agentscope.iteration"); !ok || v != 3 {
+		t.Errorf("agentscope.iteration = %v, want 3", v)
 	}
 }

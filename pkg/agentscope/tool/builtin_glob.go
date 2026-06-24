@@ -137,7 +137,7 @@ func formatGlobResult(matches []string) *ToolResponse {
 func GlobTool() Tool {
 	return &globTool{
 		BaseTool: BaseTool{
-			ToolName:        "glob",
+			ToolName:        "Glob",
 			ToolDescription: "Find files matching a glob pattern. Supports ** for recursive matching. Returns matching file paths.",
 			ToolSchema:      globSchema,
 			ReadOnly:        true,

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/formatter"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/internal/httpx"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 )
@@ -74,12 +75,18 @@ type anthropicMessage struct {
 }
 
 type anthropicRequest struct {
-	Model     string             `json:"model"`
-	Messages  []anthropicMessage `json:"messages"`
-	MaxTokens int                `json:"max_tokens"`
-	System    string             `json:"system,omitempty"`
-	Tools     []anthropicTool    `json:"tools,omitempty"`
-	Thinking  *anthropicThinking `json:"thinking,omitempty"`
+	Model      string              `json:"model"`
+	Messages   []anthropicMessage  `json:"messages"`
+	MaxTokens  int                 `json:"max_tokens"`
+	System     string              `json:"system,omitempty"`
+	Tools      []anthropicTool     `json:"tools,omitempty"`
+	ToolChoice *anthropicToolChoice `json:"tool_choice,omitempty"`
+	Thinking   *anthropicThinking  `json:"thinking,omitempty"`
+}
+
+type anthropicToolChoice struct {
+	Type string `json:"type"`           // "auto", "any", "tool", "none"
+	Name string `json:"name,omitempty"` // only for type="tool"
 }
 
 type anthropicThinking struct {
@@ -154,6 +161,10 @@ func (m *AnthropicChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts
 				InputSchema: ts.Function.Parameters,
 			})
 		}
+	}
+
+	if callOpts.ToolChoice != nil && len(reqBody.Tools) > 0 {
+		reqBody.ToolChoice = formatToolChoiceAnthropic(callOpts.ToolChoice)
 	}
 
 	// Retry loop
@@ -290,6 +301,10 @@ func (m *AnthropicChatModel) ChatStream(ctx context.Context, msgs []*message.Msg
 		}
 	}
 
+	if callOpts.ToolChoice != nil && len(reqBody.Tools) > 0 {
+		reqBody.ToolChoice = formatToolChoiceAnthropic(callOpts.ToolChoice)
+	}
+
 	sseCh, err := httpx.DoSSERequest(
 		ctx,
 		m.httpClient,
@@ -312,13 +327,14 @@ func (m *AnthropicChatModel) ChatStream(ctx context.Context, msgs []*message.Msg
 }
 
 type anthropicStreamRequest struct {
-	Model     string             `json:"model"`
-	Messages  []anthropicMessage `json:"messages"`
-	MaxTokens int                `json:"max_tokens"`
-	System    string             `json:"system,omitempty"`
-	Tools     []anthropicTool    `json:"tools,omitempty"`
-	Thinking  *anthropicThinking `json:"thinking,omitempty"`
-	Stream    bool               `json:"stream"`
+	Model      string              `json:"model"`
+	Messages   []anthropicMessage  `json:"messages"`
+	MaxTokens  int                 `json:"max_tokens"`
+	System     string              `json:"system,omitempty"`
+	Tools      []anthropicTool     `json:"tools,omitempty"`
+	ToolChoice *anthropicToolChoice `json:"tool_choice,omitempty"`
+	Thinking   *anthropicThinking  `json:"thinking,omitempty"`
+	Stream     bool                `json:"stream"`
 }
 
 // Anthropic SSE event data types
@@ -563,17 +579,34 @@ func (m *AnthropicChatModel) CountTokens(msgs []*message.Msg, tools []ToolSchema
 }
 
 // convertMessagesToAnthropic converts internal Msg instances into Anthropic messages.
-// It extracts system messages separately (Anthropic uses a top-level system field).
+// It uses the AnthropicFormatter for full block-type support (thinking signatures,
+// multimodal DataBlocks, HintBlocks, tool results), then converts from
+// []map[string]any to []anthropicMessage.
 func convertMessagesToAnthropic(msgs []*message.Msg) ([]anthropicMessage, string) {
+	f := formatter.NewAnthropicFormatter()
+	system := formatter.ExtractSystemPrompt(msgs)
+
+	formatted, err := f.Format(msgs)
+	if err != nil {
+		// Fallback to simple text extraction
+		return convertMessagesToAnthropicFallback(msgs)
+	}
+
+	out := make([]anthropicMessage, 0, len(formatted))
+	for _, m := range formatted {
+		role, _ := m["role"].(string)
+		out = append(out, anthropicMessage{Role: role, Content: m["content"]})
+	}
+	return out, system
+}
+
+func convertMessagesToAnthropicFallback(msgs []*message.Msg) ([]anthropicMessage, string) {
 	var system string
 	out := make([]anthropicMessage, 0, len(msgs))
-
 	for _, m := range msgs {
 		if m == nil {
 			continue
 		}
-
-		// System messages go to the system field
 		if m.Role == message.RoleSystem {
 			if txt := m.GetTextContent("\n"); txt != nil {
 				if system != "" {
@@ -583,28 +616,10 @@ func convertMessagesToAnthropic(msgs []*message.Msg) ([]anthropicMessage, string
 			}
 			continue
 		}
-
 		role := string(m.Role)
 		if role == "" {
 			role = "user"
 		}
-
-		// Tool results → user message with tool_result content
-		toolResults := m.GetContentBlocks(message.ContentBlockToolResult)
-		if len(toolResults) > 0 {
-			var contentBlocks []map[string]any
-			for _, tr := range toolResults {
-				trb := tr.(message.ToolResultBlock)
-				contentBlocks = append(contentBlocks, map[string]any{
-					"type":        "tool_result",
-					"tool_use_id": trb.ID,
-					"content":     trb.GetOutputText(),
-				})
-			}
-			out = append(out, anthropicMessage{Role: "user", Content: contentBlocks})
-			continue
-		}
-
 		if txt := m.GetTextContent("\n"); txt != nil {
 			out = append(out, anthropicMessage{Role: role, Content: *txt})
 		} else {
@@ -612,4 +627,25 @@ func convertMessagesToAnthropic(msgs []*message.Msg) ([]anthropicMessage, string
 		}
 	}
 	return out, system
+}
+
+// formatToolChoiceAnthropic converts a generic ToolChoice to Anthropic's format.
+// "required" → {"type":"any"}, "auto" → {"type":"auto"}, name → {"type":"tool","name":"..."}
+func formatToolChoiceAnthropic(tc *ToolChoice) *anthropicToolChoice {
+	if tc == nil {
+		return nil
+	}
+	switch tc.Mode {
+	case "auto":
+		return &anthropicToolChoice{Type: "auto"}
+	case "none":
+		return nil
+	case "required":
+		return &anthropicToolChoice{Type: "any"}
+	default:
+		if tc.Mode != "" {
+			return &anthropicToolChoice{Type: "tool", Name: tc.Mode}
+		}
+		return nil
+	}
 }

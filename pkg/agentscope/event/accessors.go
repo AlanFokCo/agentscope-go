@@ -68,5 +68,10 @@ func (e ToolResultDataDeltaEvent) GetMediaType_() string { return e.MediaType }
 
 // --- Hint accessors ---
 
-func (e HintBlockEvent) GetHint() string   { return e.Hint }
+func (e HintBlockEvent) GetHint() string {
+	if s, ok := e.Hint.(string); ok {
+		return s
+	}
+	return ""
+}
 func (e HintBlockEvent) GetSource() string { return e.Source }

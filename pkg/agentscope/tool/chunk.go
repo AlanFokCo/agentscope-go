@@ -76,14 +76,32 @@ func IsStreamingTool(t Tool) bool {
 }
 
 // CollectStream reads all chunks from a streaming tool execution and assembles
-// them into a single ToolResponse. Useful when callers don't need streaming.
+// them into a single ToolResponse. TextBlocks with the same ID are merged
+// (text appended) rather than kept as separate blocks. This produces a cleaner
+// result when a tool streams incremental text deltas for the same logical block.
 func CollectStream(ch <-chan ToolChunk) *ToolResponse {
 	var allContent []message.ContentBlock
+	// Track TextBlock positions by ID so we can merge subsequent deltas.
+	textBlockIndex := make(map[string]int) // ID -> index in allContent
 	var lastMeta map[string]any
 	var lastState message.ToolResultState
 
 	for chunk := range ch {
-		allContent = append(allContent, chunk.Content...)
+		for _, block := range chunk.Content {
+			tb, isText := block.(message.TextBlock)
+			if isText && tb.ID != "" {
+				if idx, exists := textBlockIndex[tb.ID]; exists {
+					// Merge: append text to existing block with same ID
+					existing := allContent[idx].(message.TextBlock)
+					existing.Text += tb.Text
+					allContent[idx] = existing
+					continue
+				}
+				// First time seeing this ID; record its position
+				textBlockIndex[tb.ID] = len(allContent)
+			}
+			allContent = append(allContent, block)
+		}
 		if chunk.Metadata != nil {
 			lastMeta = chunk.Metadata
 		}

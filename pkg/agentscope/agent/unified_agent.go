@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -56,6 +57,7 @@ type ReactConfig struct {
 // ModelConfig controls model call behavior.
 type ModelConfig struct {
 	MaxRetries    int
+	RetryDelay    time.Duration
 	FallbackModel model.ChatModel
 }
 
@@ -71,6 +73,7 @@ type AgentState struct {
 	ToolCtx         *ToolStateContext   `json:"tool_context,omitempty"`
 	TasksCtx        *TasksStateContext  `json:"tasks_context,omitempty"`
 	MiddlewareState map[string]any      `json:"middleware_context,omitempty"`
+	ReadCacheData   json.RawMessage     `json:"read_cache_data,omitempty"`
 }
 
 // ToolStateContext captures which tool groups are active for serialization.
@@ -163,6 +166,7 @@ func WithSkills(skills []skill.Skill) AgentOption {
 // Offloader writes content to an external store and returns its path.
 type Offloader interface {
 	OffloadContent(ctx context.Context, content string, filename string) (path string, err error)
+	OffloadToolResult(ctx context.Context, content string, toolCallID string) (path string, err error)
 }
 
 // WithOffloader sets the offloader used during context compression and tool
@@ -202,22 +206,13 @@ func (a *UnifiedAgent) Reply(ctx context.Context, input string) (*message.Msg, e
 	for range ch {
 	}
 
-	// After stream ends, the state.Context has the full message
+	// After stream ends, find the last assistant message with text content
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if len(a.state.Context) > 0 {
-		last := a.state.Context[len(a.state.Context)-1]
-		if last.Role == message.RoleAssistant {
-			// Check if it's a final text response (not a tool result)
-			hasToolResult := false
-			for _, b := range last.GetContentBlocks(message.ContentBlockToolResult) {
-				_ = b
-				hasToolResult = true
-				break
-			}
-			if !hasToolResult {
-				return last, nil
-			}
+	for i := len(a.state.Context) - 1; i >= 0; i-- {
+		msg := a.state.Context[i]
+		if msg.Role == message.RoleAssistant && msg.Name == a.name {
+			return msg, nil
 		}
 	}
 	return nil, fmt.Errorf("agent %s: no response generated", a.name)
@@ -324,115 +319,131 @@ func (a *UnifiedAgent) replyLoop(ctx context.Context, input string, ch chan<- ev
 	a.state.CurIter = 0
 	a.mu.Unlock()
 
-	// Emit ReplyStart
 	emit(ctx, ch, event.NewReplyStartEvent(a.state.SessionID, replyID, a.name, message.RoleAssistant))
 
-	// Add user message to context
 	userMsg := message.UserMsg(a.name, input)
 	a.mu.Lock()
 	a.state.Context = append(a.state.Context, userMsg)
 	a.mu.Unlock()
 
-	// Build middleware-wrapped model call handler
 	modelCallHandler := a.buildModelCallHandler()
-	// Build middleware-wrapped acting handler
 	actingHandler := a.buildActingHandler()
 
-	// ReAct loop
+reactLoop:
 	for iter := 0; iter < a.reactCfg.MaxIters; iter++ {
 		a.mu.Lock()
 		a.state.CurIter = iter
 		a.mu.Unlock()
 
-		if err := a.compressContext(ctx); err != nil {
-			logrus.WithError(err).WithField("agent", a.name).Warn("context compression failed")
-		}
+		// State machine: decide next action based on tool call states
+		action, exitMsg := a.checkNextAction()
 
-		// Prepare messages for model call
-		modelMsgs := a.prepareModelInput(ctx)
+		switch action {
+		case actionExit:
+			// Waiting for external events — exit the loop
+			if exitMsg != nil {
+				a.saveToContext(exitMsg.Content, nil)
+			}
+			emit(ctx, ch, event.NewReplyEndEvent(a.state.SessionID, replyID))
+			return
 
-		// Get tool schemas
-		schemas := a.toolkit.GetToolSchemas()
-
-		// Call model (through middleware chain)
-		emit(ctx, ch, event.NewModelCallStartEvent(replyID, ""))
-
-		resp, err := modelCallHandler(ctx, middleware.ModelCallInput{
-			AgentName: a.name,
-			Messages:  modelMsgs,
-			Tools:     schemas,
-		})
-		if err != nil {
-			logrus.WithError(err).Error("agent: model call failed")
-			emit(ctx, ch, event.NewModelCallEndEvent(replyID, 0, 0))
-			break
-		}
-
-		var inputTok, outputTok int
-		if resp.Usage != nil {
-			inputTok = resp.Usage.InputTokens
-			outputTok = resp.Usage.OutputTokens
-		}
-		emit(ctx, ch, event.NewModelCallEndEvent(replyID, inputTok, outputTok))
-
-		// Check for tool calls in response
-		toolCalls := extractToolCalls(resp.Content)
-
-		if len(toolCalls) == 0 {
-			// No tool calls — this is the final answer
-			assistantMsg := resp.ToMsg(a.name)
-			assistantMsg.Content = filterAudioBlocks(assistantMsg.Content)
-			a.mu.Lock()
-			a.state.Context = append(a.state.Context, assistantMsg)
-			a.mu.Unlock()
-
-			// Emit text/thinking/data events for streaming consumers
-			for _, b := range resp.Content {
-				switch blk := b.(type) {
-				case message.TextBlock:
-					emit(ctx, ch, event.NewTextBlockStartEvent(replyID, blk.ID))
-					emit(ctx, ch, event.NewTextBlockDeltaEvent(replyID, blk.ID, blk.Text))
-					emit(ctx, ch, event.NewTextBlockEndEvent(replyID, blk.ID))
-				case message.ThinkingBlock:
-					emit(ctx, ch, event.NewThinkingBlockStartEvent(replyID, blk.ID))
-					emit(ctx, ch, event.NewThinkingBlockDeltaEvent(replyID, blk.ID, blk.Thinking))
-					emit(ctx, ch, event.NewThinkingBlockEndEvent(replyID, blk.ID))
-				case message.DataBlock:
-					if src, ok := blk.Source.(message.Base64Source); ok {
-						emit(ctx, ch, event.NewDataBlockStartEvent(replyID, blk.ID, src.MediaType))
-						emit(ctx, ch, event.NewDataBlockDeltaEvent(replyID, blk.ID, src.Data, src.MediaType))
-						emit(ctx, ch, event.NewDataBlockEndEvent(replyID, blk.ID))
+		case actionActing:
+			// Execute pending tool calls from prior iteration
+			toolCalls := a.getExecutableToolCalls()
+			batches := batchToolCalls(toolCalls, a.toolkit)
+			for _, batch := range batches {
+				if batch.concurrent && len(batch.calls) > 1 {
+					a.executeConcurrentBatch(ctx, ch, replyID, batch.calls, actingHandler)
+				} else {
+					for _, tc := range batch.calls {
+						a.executeAndRecord(ctx, ch, replyID, tc, actingHandler)
 					}
 				}
 			}
-			break
-		}
+			continue
 
-		// Has tool calls — add assistant msg to context and execute tools
-		assistantMsg := resp.ToMsg(a.name)
-		assistantMsg.Content = filterAudioBlocks(assistantMsg.Content)
-		a.mu.Lock()
-		a.state.Context = append(a.state.Context, assistantMsg)
-		a.mu.Unlock()
+		case actionReasoning:
+			// Compress context before model call
+			if err := a.compressContext(ctx); err != nil {
+				logrus.WithError(err).WithField("agent", a.name).Warn("context compression failed")
+			}
 
-		batches := batchToolCalls(toolCalls, a.toolkit)
-		for _, batch := range batches {
-			if batch.concurrent && len(batch.calls) > 1 {
-				a.executeConcurrentBatch(ctx, ch, replyID, batch.calls, actingHandler)
-			} else {
-				for _, tc := range batch.calls {
-					a.executeAndRecord(ctx, ch, replyID, tc, actingHandler)
+			modelMsgs := a.prepareModelInput(ctx)
+			schemas := a.toolkit.GetToolSchemas()
+
+			emit(ctx, ch, event.NewModelCallStartEvent(replyID, ""))
+
+			resp, err := modelCallHandler(ctx, middleware.ModelCallInput{
+				AgentName: a.name,
+				Messages:  modelMsgs,
+				Tools:     schemas,
+			})
+			if err != nil {
+				logrus.WithError(err).Error("agent: model call failed")
+				emit(ctx, ch, event.NewModelCallEndEvent(replyID, 0, 0))
+				break reactLoop
+			}
+
+			var inputTok, outputTok int
+			if resp.Usage != nil {
+				inputTok = resp.Usage.InputTokens
+				outputTok = resp.Usage.OutputTokens
+			}
+			emit(ctx, ch, event.NewModelCallEndEvent(replyID, inputTok, outputTok))
+
+			// Save response to context (merges into last assistant msg)
+			a.saveToContext(resp.Content, resp.Usage)
+
+			// Emit streaming events for consumers
+			emitContentEvents(ctx, ch, replyID, resp.Content)
+
+			// If no tool calls, this is the final answer
+			toolCalls := extractToolCalls(resp.Content)
+			if len(toolCalls) == 0 {
+				break reactLoop
+			}
+
+			// Execute tool calls
+			batches := batchToolCalls(toolCalls, a.toolkit)
+			for _, batch := range batches {
+				if batch.concurrent && len(batch.calls) > 1 {
+					a.executeConcurrentBatch(ctx, ch, replyID, batch.calls, actingHandler)
+				} else {
+					for _, tc := range batch.calls {
+						a.executeAndRecord(ctx, ch, replyID, tc, actingHandler)
+					}
 				}
 			}
 		}
 
-		// If this was the last iteration, emit ExceedMaxIters
 		if iter == a.reactCfg.MaxIters-1 {
 			emit(ctx, ch, event.NewExceedMaxItersEvent(replyID, a.name))
 		}
 	}
 
 	emit(ctx, ch, event.NewReplyEndEvent(a.state.SessionID, replyID))
+}
+
+// emitContentEvents emits streaming events for content blocks.
+func emitContentEvents(ctx context.Context, ch chan<- event.Event, replyID string, content []message.ContentBlock) {
+	for _, b := range content {
+		switch blk := b.(type) {
+		case message.TextBlock:
+			emit(ctx, ch, event.NewTextBlockStartEvent(replyID, blk.ID))
+			emit(ctx, ch, event.NewTextBlockDeltaEvent(replyID, blk.ID, blk.Text))
+			emit(ctx, ch, event.NewTextBlockEndEvent(replyID, blk.ID))
+		case message.ThinkingBlock:
+			emit(ctx, ch, event.NewThinkingBlockStartEvent(replyID, blk.ID))
+			emit(ctx, ch, event.NewThinkingBlockDeltaEvent(replyID, blk.ID, blk.Thinking))
+			emit(ctx, ch, event.NewThinkingBlockEndEvent(replyID, blk.ID))
+		case message.DataBlock:
+			if src, ok := blk.Source.(message.Base64Source); ok {
+				emit(ctx, ch, event.NewDataBlockStartEvent(replyID, blk.ID, src.MediaType))
+				emit(ctx, ch, event.NewDataBlockDeltaEvent(replyID, blk.ID, src.Data, src.MediaType))
+				emit(ctx, ch, event.NewDataBlockEndEvent(replyID, blk.ID))
+			}
+		}
+	}
 }
 
 // buildModelCallHandler returns a ModelCallHandler wrapped with middleware.
@@ -498,15 +509,18 @@ func (a *UnifiedAgent) executeToolCallWithPermission(
 				decision.Message)
 
 		case permission.BehaviorAsk, permission.BehaviorPassthrough:
+			a.updateToolCallState(tc.ID, message.ToolCallAsking)
 			tc.SuggestedRules = rulesToAny(decision.SuggestedRules)
 			emit(ctx, ch, event.NewRequireUserConfirmEvent(replyID, []message.ToolCallBlock{tc}))
 
 			// Block waiting for user confirmation
 			confirmed, resultTC := a.waitForConfirmation(ctx, tc.ID)
 			if !confirmed {
+				a.updateToolCallState(tc.ID, message.ToolCallFinished)
 				return a.emitToolResult(ctx, ch, replyID, tc, message.ToolResultDenied,
 					"Permission denied by user")
 			}
+			a.updateToolCallState(tc.ID, message.ToolCallAllowed)
 			tc = resultTC
 		}
 	}
@@ -514,6 +528,7 @@ func (a *UnifiedAgent) executeToolCallWithPermission(
 	// Check if this is an external tool — pause and wait for external result.
 	t := a.toolkit.Get(tc.Name)
 	if t != nil && t.IsExternalTool() {
+		a.updateToolCallState(tc.ID, message.ToolCallSubmitted)
 		emit(ctx, ch, event.NewToolResultStartEvent(replyID, tc.ID, tc.Name))
 		emit(ctx, ch, event.NewRequireExternalExecutionEvent(replyID, []message.ToolCallBlock{tc}))
 		result := a.waitForExternalResult(ctx, tc.ID)
@@ -682,11 +697,15 @@ func (a *UnifiedAgent) callModel(ctx context.Context, msgs []*message.Msg, opts 
 	if retries <= 0 {
 		retries = 1
 	}
+	delay := a.modelCfg.RetryDelay
+	if delay == 0 {
+		delay = time.Second
+	}
 
 	var lastErr error
 	for i := 0; i < retries; i++ {
 		if i > 0 {
-			time.Sleep(time.Duration(i) * time.Second)
+			time.Sleep(delay)
 		}
 		resp, err := a.model.Chat(ctx, msgs, opts...)
 		if err == nil {
@@ -776,7 +795,7 @@ func batchToolCalls(calls []message.ToolCallBlock, tk *tool.Toolkit) []toolBatch
 	return batches
 }
 
-// executeAndRecord runs a single tool call, emits events, and appends the result to context.
+// executeAndRecord runs a single tool call, emits events, and merges the result into context.
 func (a *UnifiedAgent) executeAndRecord(
 	ctx context.Context,
 	ch chan<- event.Event,
@@ -789,18 +808,15 @@ func (a *UnifiedAgent) executeAndRecord(
 
 	resultState, outputText := a.executeToolCallWithPermission(ctx, ch, replyID, tc, actingHandler)
 
-	toolResultMsg := message.NewMsg(a.name, message.RoleAssistant, []message.ContentBlock{
-		message.ToolResultBlock{
-			Type:   "tool_result",
-			ID:     tc.ID,
-			Name:   tc.Name,
-			Output: outputText,
-			State:  resultState,
-		},
-	})
-	a.mu.Lock()
-	a.state.Context = append(a.state.Context, toolResultMsg)
-	a.mu.Unlock()
+	resultBlock := message.ToolResultBlock{
+		Type:   "tool_result",
+		ID:     tc.ID,
+		Name:   tc.Name,
+		Output: outputText,
+		State:  resultState,
+	}
+	a.saveToContext([]message.ContentBlock{resultBlock}, nil)
+	a.updateToolCallState(tc.ID, message.ToolCallFinished)
 }
 
 // executeConcurrentBatch runs all tool calls in the batch concurrently, then
@@ -825,7 +841,7 @@ func (a *UnifiedAgent) executeConcurrentBatch(
 	}
 	wg.Wait()
 
-	// Emit events and record results in original order
+	// Emit events and merge results into context in original order
 	for i, tc := range calls {
 		emit(ctx, ch, event.NewToolCallStartEvent(replyID, tc.ID, tc.Name))
 		emit(ctx, ch, event.NewToolCallEndEvent(replyID, tc.ID))
@@ -837,18 +853,15 @@ func (a *UnifiedAgent) executeConcurrentBatch(
 		}
 		emit(ctx, ch, event.NewToolResultEndEvent(replyID, tc.ID, r.state))
 
-		toolResultMsg := message.NewMsg(a.name, message.RoleAssistant, []message.ContentBlock{
-			message.ToolResultBlock{
-				Type:   "tool_result",
-				ID:     tc.ID,
-				Name:   tc.Name,
-				Output: r.text,
-				State:  r.state,
-			},
-		})
-		a.mu.Lock()
-		a.state.Context = append(a.state.Context, toolResultMsg)
-		a.mu.Unlock()
+		resultBlock := message.ToolResultBlock{
+			Type:   "tool_result",
+			ID:     tc.ID,
+			Name:   tc.Name,
+			Output: r.text,
+			State:  r.state,
+		}
+		a.saveToContext([]message.ContentBlock{resultBlock}, nil)
+		a.updateToolCallState(tc.ID, message.ToolCallFinished)
 	}
 }
 

@@ -15,7 +15,8 @@ import (
 // span), and OnActing (execute_tool span).
 //
 // When the tracer implements tracing.AttributedTracer, richer span attributes
-// are attached: agent name, model name, token counts, tool name, etc.
+// are attached following the GenAI semantic conventions: model system, model
+// name, token usage, tool name, agent name, session ID, etc.
 type TracingMiddleware struct {
 	BaseMiddleware
 	Tracer tracing.Tracer
@@ -34,12 +35,23 @@ func NewTracingMiddleware(tracer tracing.Tracer) *TracingMiddleware {
 }
 
 // OnReply creates an "invoke_agent" span that wraps the entire reply lifecycle.
+// GenAI attributes: gen_ai.agent.name, agentscope.session_id, agentscope.iteration.
 func (m *TracingMiddleware) OnReply(ctx context.Context, input ReplyInput, next ReplyHandler) <-chan event.Event {
 	spanName := fmt.Sprintf("invoke_agent %s", input.AgentName)
 
 	attrs := []tracing.SpanAttribute{
 		{Key: "agentscope.agent_name", Value: input.AgentName},
 		{Key: "agentscope.message_count", Value: len(input.Messages)},
+		{Key: "gen_ai.agent.name", Value: input.AgentName},
+	}
+
+	// Attach session ID from MiddleContext if available.
+	if mc := GetMiddleContext(ctx); mc != nil {
+		if sid, ok := mc.Get("tracing", "session_id"); ok {
+			if s, ok := sid.(string); ok && s != "" {
+				attrs = append(attrs, tracing.SpanAttribute{Key: "agentscope.session_id", Value: s})
+			}
+		}
 	}
 
 	ctx, endSpan := m.startSpan(ctx, spanName, attrs...)
@@ -58,14 +70,58 @@ func (m *TracingMiddleware) OnReply(ctx context.Context, input ReplyInput, next 
 	return outCh
 }
 
-// OnModelCall creates a "chat" span for each model API call with token
-// usage attributes.
+// OnReasoning creates an "agent_reasoning" span for each reasoning step,
+// attaching the current iteration number.
+func (m *TracingMiddleware) OnReasoning(ctx context.Context, input ReasoningInput, next ReasoningHandler) <-chan event.Event {
+	spanName := fmt.Sprintf("agent_reasoning %s", input.AgentName)
+
+	attrs := []tracing.SpanAttribute{
+		{Key: "agentscope.agent_name", Value: input.AgentName},
+		{Key: "agentscope.iteration", Value: input.Iteration},
+	}
+
+	ctx, endSpan := m.startSpan(ctx, spanName, attrs...)
+
+	innerCh := next(ctx, input)
+	outCh := make(chan event.Event, 16)
+
+	go func() {
+		defer close(outCh)
+		defer endSpan()
+		for ev := range innerCh {
+			outCh <- ev
+		}
+	}()
+
+	return outCh
+}
+
+// OnModelCall creates a "chat" span for each model API call with GenAI
+// semantic convention attributes for the request and response.
 func (m *TracingMiddleware) OnModelCall(ctx context.Context, input ModelCallInput, next ModelCallHandler) (*model.ChatResponse, error) {
 	spanName := "chat"
 
 	attrs := []tracing.SpanAttribute{
 		{Key: "agentscope.agent_name", Value: input.AgentName},
-		{Key: "agentscope.tool_count", Value: len(input.Tools)},
+		{Key: "gen_ai.tool.count", Value: len(input.Tools)},
+	}
+
+	// Add model name from input if available.
+	if input.ModelName != "" {
+		attrs = append(attrs, tracing.SpanAttribute{Key: "gen_ai.request.model", Value: input.ModelName})
+	}
+
+	// Add provider name from input if available.
+	if input.ProviderName != "" {
+		attrs = append(attrs, tracing.SpanAttribute{Key: "gen_ai.system", Value: input.ProviderName})
+	}
+
+	// Add request-time call options if available.
+	if input.MaxTokens != nil {
+		attrs = append(attrs, tracing.SpanAttribute{Key: "gen_ai.request.max_tokens", Value: *input.MaxTokens})
+	}
+	if input.Temperature != nil {
+		attrs = append(attrs, tracing.SpanAttribute{Key: "gen_ai.request.temperature", Value: *input.Temperature})
 	}
 
 	ctx, endSpan := m.startSpan(ctx, spanName, attrs...)
@@ -73,25 +129,47 @@ func (m *TracingMiddleware) OnModelCall(ctx context.Context, input ModelCallInpu
 
 	resp, err := next(ctx, input)
 
-	// After the call, try to attach usage attributes via the attributed tracer.
-	// Since we already ended/are about to end the span, we just log them in
-	// the span name is a common pattern. For a real OTEL implementation,
-	// attributes should be set on the span object before End().
-	// This is a best-effort enrichment since our Tracer interface is minimal.
-	if resp != nil && resp.Usage != nil {
-		_ = resp.Usage // usage is available for attributed tracers
+	// Enrich span with response attributes via a supplementary span if the
+	// tracer supports attributes. We create a zero-duration child span to
+	// attach post-call attributes since the parent span is about to end.
+	if resp != nil {
+		var postAttrs []tracing.SpanAttribute
+
+		if resp.ID != "" {
+			postAttrs = append(postAttrs, tracing.SpanAttribute{Key: "gen_ai.response.id", Value: resp.ID})
+		}
+		if resp.ModelName != "" {
+			postAttrs = append(postAttrs, tracing.SpanAttribute{Key: "gen_ai.request.model", Value: resp.ModelName})
+		}
+
+		if resp.Usage != nil {
+			postAttrs = append(postAttrs, tracing.SpanAttribute{Key: "gen_ai.usage.input_tokens", Value: resp.Usage.InputTokens})
+			postAttrs = append(postAttrs, tracing.SpanAttribute{Key: "gen_ai.usage.output_tokens", Value: resp.Usage.OutputTokens})
+			if resp.Usage.CacheInputTokens > 0 {
+				postAttrs = append(postAttrs, tracing.SpanAttribute{Key: "gen_ai.usage.cache_read_input_tokens", Value: resp.Usage.CacheInputTokens})
+			}
+		}
+
+		if len(postAttrs) > 0 {
+			_, endPost := m.startSpan(ctx, "chat.response", postAttrs...)
+			endPost()
+		}
 	}
 
 	return resp, err
 }
 
-// OnActing creates an "execute_tool" span for each tool execution.
+// OnActing creates an "execute_tool" span for each tool execution with GenAI
+// tool semantic convention attributes.
 func (m *TracingMiddleware) OnActing(ctx context.Context, input ActingInput, next ActingHandler) (*tool.ToolResponse, error) {
 	spanName := fmt.Sprintf("execute_tool %s", input.ToolCall.Name)
 
 	attrs := []tracing.SpanAttribute{
 		{Key: "agentscope.tool_name", Value: input.ToolCall.Name},
 		{Key: "agentscope.agent_name", Value: input.AgentName},
+		{Key: "gen_ai.tool.name", Value: input.ToolCall.Name},
+		{Key: "gen_ai.tool.call_id", Value: input.ToolCall.ID},
+		{Key: "gen_ai.tool.input_length", Value: len(input.ToolCall.Input)},
 	}
 
 	ctx, endSpan := m.startSpan(ctx, spanName, attrs...)

@@ -21,7 +21,7 @@ var readSchema = json.RawMessage(`{
 		},
 		"offset": {
 			"type": "integer",
-			"description": "Line number to start reading from (0-based, default 0)"
+			"description": "1-based line number to start reading from (default 1, i.e. the first line)"
 		},
 		"limit": {
 			"type": "integer",
@@ -76,7 +76,8 @@ func (t *readTool) Execute(ctx context.Context, args map[string]any) (*ToolRespo
 
 	offset := 0
 	if v, ok := args["offset"]; ok {
-		offset = toInt(v)
+		// User provides 1-based offset; convert to 0-based internally.
+		offset = toInt(v) - 1
 	}
 	if offset < 0 {
 		offset = 0
@@ -169,7 +170,7 @@ func (t *readTool) MatchRule(ruleContent string, input map[string]any) bool {
 func ReadTool() Tool {
 	return &readTool{
 		BaseTool: BaseTool{
-			ToolName:        "read",
+			ToolName:        "Read",
 			ToolDescription: "Read a text file's contents with line numbers. Supports offset and limit for large files (max 1MB).",
 			ToolSchema:      readSchema,
 			ReadOnly:        true,

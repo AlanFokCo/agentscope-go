@@ -272,7 +272,7 @@ func ruleToRegex(pattern string) string {
 func BashTool() Tool {
 	return &bashTool{
 		BaseTool: BaseTool{
-			ToolName:        "bash",
+			ToolName:        "Bash",
 			ToolDescription: "Execute a shell command and return stdout/stderr. Use for running programs, scripts, git commands, etc.",
 			ToolSchema:      bashSchema,
 		},

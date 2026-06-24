@@ -50,6 +50,7 @@ type App struct {
 	wakeupDisp   *WakeupDispatcher
 	chatRegistry *ChatRunRegistry
 	wsMgr        *WorkspaceManager
+	schedulerMgr *SchedulerManager
 }
 
 // CreateApp assembles and returns a ready-to-serve App.
@@ -85,6 +86,7 @@ func CreateApp(cfg AppConfig) (*App, error) {
 	}
 
 	app.registerRoutes()
+	app.registerExtendedRoutes()
 	return app, nil
 }
 

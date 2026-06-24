@@ -204,7 +204,7 @@ func (t *editTool) GenerateSuggestions(input map[string]any) []permission.Rule {
 func EditTool() Tool {
 	return &editTool{
 		BaseTool: BaseTool{
-			ToolName:        "edit",
+			ToolName:        "Edit",
 			ToolDescription: "Edit a file by replacing exact text matches. By default requires old_string to be unique; use replace_all=true for multiple occurrences.",
 			ToolSchema:      editSchema,
 		},

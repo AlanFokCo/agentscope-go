@@ -206,8 +206,8 @@ func TestWriteTool_GenerateSuggestions(t *testing.T) {
 	if len(rules) == 0 {
 		t.Fatal("expected suggestion")
 	}
-	if rules[0].ToolName != "write" {
-		t.Errorf("tool_name = %q, want 'write'", rules[0].ToolName)
+	if rules[0].ToolName != "Write" {
+		t.Errorf("tool_name = %q, want 'Write'", rules[0].ToolName)
 	}
 	if rules[0].RuleContent == "" {
 		t.Error("rule_content should contain parent dir pattern")

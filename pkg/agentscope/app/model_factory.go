@@ -5,8 +5,79 @@ import (
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/credential"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/embedding"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/tts"
 )
+
+// GetChatModelForCredential maps a credential's provider to the correct model
+// constructor and returns a configured ChatModel for the given model name.
+func GetChatModelForCredential(cred credential.Credential, modelName string) (model.ChatModel, error) {
+	if cred == nil {
+		return nil, fmt.Errorf("credential is nil")
+	}
+	if modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	switch cred.Provider() {
+	case "openai":
+		return model.NewOpenAIChatModel(model.OpenAIConfig{
+			APIKey:  cred.APIKey(),
+			BaseURL: cred.BaseURL(),
+			Model:   modelName,
+		})
+	case "anthropic":
+		return model.NewAnthropicChatModel(model.AnthropicConfig{
+			APIKey:  cred.APIKey(),
+			BaseURL: cred.BaseURL(),
+			Model:   modelName,
+		})
+	case "dashscope":
+		return model.NewDashScopeChatModel(model.DashScopeConfig{
+			APIKey:  cred.APIKey(),
+			BaseURL: cred.BaseURL(),
+			Model:   modelName,
+		})
+	case "deepseek":
+		return model.NewDeepSeekChatModel(model.DeepSeekConfig{
+			APIKey:  cred.APIKey(),
+			BaseURL: cred.BaseURL(),
+			Model:   modelName,
+		})
+	case "gemini":
+		return model.NewGeminiChatModel(model.GeminiConfig{
+			APIKey:  cred.APIKey(),
+			BaseURL: cred.BaseURL(),
+			Model:   modelName,
+		})
+	case "moonshot":
+		return model.NewMoonshotChatModel(model.MoonshotConfig{
+			APIKey:  cred.APIKey(),
+			BaseURL: cred.BaseURL(),
+			Model:   modelName,
+		})
+	case "ollama":
+		return model.NewOllamaChatModel(model.OllamaConfig{
+			BaseURL: cred.BaseURL(),
+			Model:   modelName,
+		})
+	case "xai":
+		return model.NewXAIChatModel(model.XAIConfig{
+			APIKey:  cred.APIKey(),
+			BaseURL: cred.BaseURL(),
+			Model:   modelName,
+		})
+	case "kimi":
+		// Kimi uses the Moonshot API with a different default base URL.
+		return model.NewMoonshotChatModel(model.MoonshotConfig{
+			APIKey:  cred.APIKey(),
+			BaseURL: cred.BaseURL(),
+			Model:   modelName,
+		})
+	default:
+		return nil, fmt.Errorf("chat model provider %q not supported", cred.Provider())
+	}
+}
 
 // EmbeddingModelConfig describes which embedding model to create.
 type EmbeddingModelConfig struct {

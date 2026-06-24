@@ -44,6 +44,7 @@ type ExecResult struct {
 // Offloader converts content into a workspace-stored file, returning its path.
 type Offloader interface {
 	OffloadContent(ctx context.Context, content string, filename string) (path string, err error)
+	OffloadToolResult(ctx context.Context, content string, toolCallID string) (path string, err error)
 }
 
 // LocalWorkspace restricts file operations to a base directory on the local
@@ -204,6 +205,13 @@ func (w *LocalWorkspace) OffloadContent(ctx context.Context, content string, fil
 		return "", err
 	}
 	return path, nil
+}
+
+// OffloadToolResult writes a tool result to a file in the workspace, using
+// the tool call ID to derive a unique filename.
+func (w *LocalWorkspace) OffloadToolResult(ctx context.Context, content string, toolCallID string) (string, error) {
+	filename := fmt.Sprintf("tool_result_%s.txt", toolCallID)
+	return w.OffloadContent(ctx, content, filename)
 }
 
 // resolve converts a relative path to an absolute path under the workspace,

@@ -86,7 +86,7 @@ func toStringSlice(v any) []string {
 func ResetToolsTool(tk *Toolkit) Tool {
 	return &resetToolsTool{
 		BaseTool: BaseTool{
-			ToolName:        "reset_tools",
+			ToolName:        "ResetTools",
 			ToolDescription: "Activate or deactivate tool groups to change available tools. Use when you need different capabilities.",
 			ToolSchema:      resetToolsSchema,
 		},

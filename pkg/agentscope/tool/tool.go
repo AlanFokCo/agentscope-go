@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/exception"
@@ -64,6 +65,7 @@ type BaseTool struct {
 	ToolSchema      json.RawMessage
 	ConcurrencySafe bool
 	ReadOnly        bool
+	StateInjected   bool
 	Middlewares     []ToolMiddleware
 }
 
@@ -145,9 +147,13 @@ func (f *FunctionTool) Execute(ctx context.Context, input map[string]any) (*Tool
 
 // ToolGroup is a named collection of tools that can be activated/deactivated.
 type ToolGroup struct {
-	GroupName string
-	Tools     []Tool
-	Active    bool
+	GroupName    string
+	Description  string
+	Instructions string
+	Skills       []string
+	MCPs         []string
+	Tools        []Tool
+	Active       bool
 }
 
 // --- Toolkit ---
@@ -317,6 +323,9 @@ func (tk *Toolkit) findTool(name string) Tool {
 
 // findToolWithGroup returns the tool and, if the tool exists but its group is
 // inactive, the group name (so the caller can produce a specific error).
+// It tries an exact name match first, then falls back to case-insensitive
+// matching (comparing lowercased names) so that callers using the old
+// lowercase names (e.g. "bash") still find the renamed tools (e.g. "Bash").
 func (tk *Toolkit) findToolWithGroup(name string) (Tool, string) {
 	inactiveGroup := ""
 	for _, g := range tk.groups {
@@ -329,7 +338,71 @@ func (tk *Toolkit) findToolWithGroup(name string) (Tool, string) {
 			}
 		}
 	}
+	if inactiveGroup != "" {
+		return nil, inactiveGroup
+	}
+
+	// Case-insensitive fallback: compare lowercased names
+	lowerName := strings.ToLower(name)
+	for _, g := range tk.groups {
+		for _, t := range g.Tools {
+			if strings.ToLower(t.Name()) == lowerName {
+				if g.Active {
+					return t, ""
+				}
+				inactiveGroup = g.GroupName
+			}
+		}
+	}
 	return nil, inactiveGroup
+}
+
+// CheckToolAvailable returns true if the named tool exists and its group is active.
+func (tk *Toolkit) CheckToolAvailable(name string) bool {
+	tk.mu.RLock()
+	defer tk.mu.RUnlock()
+	t, _ := tk.findToolWithGroup(name)
+	return t != nil
+}
+
+// Clear removes all groups and tools from the toolkit.
+func (tk *Toolkit) Clear() {
+	tk.mu.Lock()
+	defer tk.mu.Unlock()
+	tk.groups = make(map[string]*ToolGroup)
+}
+
+// GetToolSchemasForGroups returns ToolSchemas only for the specified active groups.
+func (tk *Toolkit) GetToolSchemasForGroups(groups ...string) []model.ToolSchema {
+	tk.mu.RLock()
+	defer tk.mu.RUnlock()
+
+	want := make(map[string]bool, len(groups))
+	for _, g := range groups {
+		want[g] = true
+	}
+
+	var schemas []model.ToolSchema
+	for _, g := range tk.groups {
+		if !g.Active || !want[g.GroupName] {
+			continue
+		}
+		for _, t := range g.Tools {
+			schema := t.InputSchema()
+			if schema == nil {
+				schema = json.RawMessage(`{"type":"object","properties":{}}`)
+			}
+			schemas = append(schemas, model.ToolSchema{
+				Type: "function",
+				Function: model.ToolFunction{
+					Name:        t.Name(),
+					Description: t.Description(),
+					Parameters:  schema,
+				},
+			})
+		}
+	}
+	return schemas
 }
 
 // AddMiddleware appends a tool-level middleware to the BaseTool.

@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
 )
 
@@ -34,6 +35,16 @@ func NewReplyBudgetControl(tokenBudget float64) *ReplyBudgetControlMiddleware {
 		OutputTokenWeight: 1,
 		HintMessage:       DefaultBudgetHintMessage,
 	}
+}
+
+// OnReply resets the budget counter at the start of each reply to ensure
+// per-reply isolation. Without this, budget from a previous reply (with a
+// different MiddleContext) could leak if the same context were reused.
+func (m *ReplyBudgetControlMiddleware) OnReply(ctx context.Context, input ReplyInput, next ReplyHandler) <-chan event.Event {
+	if mc := GetMiddleContext(ctx); mc != nil {
+		mc.Set(m.Key(), "used", float64(0))
+	}
+	return next(ctx, input)
 }
 
 // OnModelCall tracks token usage after each model call and enforces the budget

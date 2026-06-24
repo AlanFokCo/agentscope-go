@@ -346,6 +346,49 @@ func TruncateToolResult(text string, tokenLimit int) (string, bool) {
 	return text[:charLimit] + "\n<<<TRUNCATED>>>", true
 }
 
+// SplitToolResultForCompression performs token-aware binary search to split
+// a tool result into (reserved, offloaded) portions. It uses the model's
+// CountTokens to find the largest prefix that fits under tokenLimit.
+// Falls back to character-based truncation if no model is available.
+func SplitToolResultForCompression(text string, tokenLimit int, counter TokenCounter) (reserved, offloaded string, wasSplit bool) {
+	if counter == nil {
+		r, split := TruncateToolResult(text, tokenLimit)
+		if split {
+			return r, text[len(r)-len("\n<<<TRUNCATED>>>"):], true
+		}
+		return text, "", false
+	}
+
+	probe := []*message.Msg{message.UserMsg("_", text)}
+	tokens := counter.CountTokens(probe, nil)
+	if tokens <= tokenLimit {
+		return text, "", false
+	}
+
+	// Binary search for the split point
+	lo, hi := 0, len(text)
+	for lo < hi {
+		mid := (lo + hi + 1) / 2
+		probe = []*message.Msg{message.UserMsg("_", text[:mid])}
+		t := counter.CountTokens(probe, nil)
+		if t <= tokenLimit {
+			lo = mid
+		} else {
+			hi = mid - 1
+		}
+	}
+
+	if lo == 0 {
+		lo = 1
+	}
+	return text[:lo] + "\n<<<TRUNCATED>>>", text[lo:], true
+}
+
+// TokenCounter is the subset of model.ChatModel needed for token counting.
+type TokenCounter interface {
+	CountTokens(msgs []*message.Msg, tools []model.ToolSchema) int
+}
+
 // TruncateToolResultBlocks truncates individual blocks within a multi-block tool result.
 // Text blocks are truncated by character limit. Data blocks with Base64Source
 // have their data replaced with a placeholder.
@@ -452,7 +495,7 @@ func cleanReadCacheForReserved(rc *tool.ReadCache, reservedMsgs []*message.Msg) 
 	for _, m := range reservedMsgs {
 		for _, b := range m.GetContentBlocks(message.ContentBlockToolCall) {
 			tc, ok := b.(message.ToolCallBlock)
-			if !ok || tc.Name != "read" {
+			if !ok || tc.Name != "Read" {
 				continue
 			}
 			var args struct {

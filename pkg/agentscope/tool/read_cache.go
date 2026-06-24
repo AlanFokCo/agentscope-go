@@ -2,6 +2,7 @@ package tool
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"sync"
 	"time"
@@ -160,6 +161,44 @@ func (rc *ReadCache) totalBytes() int {
 		total += e.Bytes
 	}
 	return total
+}
+
+// readCacheJSON is the JSON-friendly representation of ReadCache.
+type readCacheJSON struct {
+	Entries       []ReadCacheEntry `json:"entries"`
+	MaxCacheFiles int              `json:"max_cache_files"`
+	MaxCacheBytes int              `json:"max_cache_bytes"`
+}
+
+// MarshalJSON serializes ReadCache to JSON.
+func (rc *ReadCache) MarshalJSON() ([]byte, error) {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	return json.Marshal(readCacheJSON{
+		Entries:       rc.entries,
+		MaxCacheFiles: rc.maxCacheFiles,
+		MaxCacheBytes: rc.maxCacheBytes,
+	})
+}
+
+// UnmarshalJSON deserializes ReadCache from JSON.
+func (rc *ReadCache) UnmarshalJSON(data []byte) error {
+	var raw readCacheJSON
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	rc.entries = raw.Entries
+	rc.maxCacheFiles = raw.MaxCacheFiles
+	if rc.maxCacheFiles <= 0 {
+		rc.maxCacheFiles = DefaultMaxCacheFiles
+	}
+	rc.maxCacheBytes = raw.MaxCacheBytes
+	if rc.maxCacheBytes <= 0 {
+		rc.maxCacheBytes = DefaultMaxCacheBytes
+	}
+	return nil
 }
 
 type readCacheKey struct{}

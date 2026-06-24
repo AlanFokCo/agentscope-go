@@ -388,6 +388,14 @@ func (o *mockOffloader) OffloadContent(_ context.Context, content string, filena
 	return "/workspace/" + filename, nil
 }
 
+func (o *mockOffloader) OffloadToolResult(_ context.Context, content string, toolCallID string) (string, error) {
+	filename := "tool_result_" + toolCallID + ".txt"
+	o.offloadedContent = content
+	o.offloadedName = filename
+	o.callCount++
+	return "/workspace/" + filename, nil
+}
+
 func TestCompressContext_OffloaderIntegration(t *testing.T) {
 	// When an offloader is set, compression should offload the summary.
 	mock := &compressionMockModel{

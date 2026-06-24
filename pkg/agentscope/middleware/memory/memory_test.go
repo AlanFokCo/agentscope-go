@@ -2,9 +2,11 @@ package memory
 
 import (
 	"context"
+	"math"
 	"strings"
 	"testing"
 
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/embedding"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/middleware"
@@ -580,5 +582,271 @@ func TestMatchesAny(t *testing.T) {
 	}
 	if matchesAny("hello world", nil) {
 		t.Error("nil words should not match")
+	}
+}
+
+// ==================== fakeEmbedder ====================
+
+// fakeEmbedder produces deterministic embeddings for testing. Each text is
+// hashed into a 3-dimensional unit vector so that similar strings produce
+// similar (but not identical) vectors.
+type fakeEmbedder struct {
+	callCount int
+}
+
+func (f *fakeEmbedder) Embed(_ context.Context, texts []string) (*embedding.EmbeddingResponse, error) {
+	f.callCount++
+	vecs := make([][]float32, len(texts))
+	for i, text := range texts {
+		vecs[i] = fakeVector(text)
+	}
+	return &embedding.EmbeddingResponse{Embeddings: vecs, Source: "fake"}, nil
+}
+
+func (f *fakeEmbedder) ModelName() string { return "fake-embedding" }
+
+// fakeVector creates a simple deterministic 3D vector from text. Texts
+// sharing a common prefix will have higher cosine similarity.
+func fakeVector(text string) []float32 {
+	var x, y, z float32
+	for i, c := range text {
+		f := float32(c)
+		switch i % 3 {
+		case 0:
+			x += f
+		case 1:
+			y += f
+		case 2:
+			z += f
+		}
+	}
+	// Normalize to unit vector.
+	norm := float32(math.Sqrt(float64(x*x + y*y + z*z)))
+	if norm == 0 {
+		return []float32{0, 0, 0}
+	}
+	return []float32{x / norm, y / norm, z / norm}
+}
+
+// ==================== VectorMemoryStore ====================
+
+func TestVectorMemoryStore_AddAndList(t *testing.T) {
+	store := NewVectorMemoryStore(&fakeEmbedder{})
+	ctx := context.Background()
+
+	if err := store.Add(ctx, "likes coffee", "user1", "agent1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Add(ctx, "prefers dark mode", "user1", "agent1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Add(ctx, "other user data", "user2", "agent1"); err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := store.List(ctx, "user1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 2 {
+		t.Errorf("expected 2 memories for user1, got %d", len(list))
+	}
+
+	list2, _ := store.List(ctx, "user2")
+	if len(list2) != 1 {
+		t.Errorf("expected 1 memory for user2, got %d", len(list2))
+	}
+}
+
+func TestVectorMemoryStore_AddEmpty(t *testing.T) {
+	store := NewVectorMemoryStore(&fakeEmbedder{})
+	if err := store.Add(context.Background(), "", "user1", ""); err != nil {
+		t.Fatal(err)
+	}
+	list, _ := store.List(context.Background(), "user1")
+	if len(list) != 0 {
+		t.Error("empty text should not be stored")
+	}
+}
+
+func TestVectorMemoryStore_Search(t *testing.T) {
+	store := NewVectorMemoryStore(&fakeEmbedder{})
+	ctx := context.Background()
+
+	_ = store.Add(ctx, "The user likes coffee in the morning", "u1", "a1")
+	_ = store.Add(ctx, "The user prefers dark mode for coding", "u1", "a1")
+	_ = store.Add(ctx, "completely unrelated xyz fact 999", "u1", "a1")
+
+	results, err := store.Search(ctx, "The user likes coffee in the morning", "u1", &SearchOptions{TopK: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	// The most similar result to the exact query should be the exact match.
+	if results[0].Text != "The user likes coffee in the morning" {
+		t.Errorf("expected exact match first, got %q", results[0].Text)
+	}
+}
+
+func TestVectorMemoryStore_Search_UserFilter(t *testing.T) {
+	store := NewVectorMemoryStore(&fakeEmbedder{})
+	ctx := context.Background()
+
+	_ = store.Add(ctx, "shared keyword data", "u1", "")
+	_ = store.Add(ctx, "shared keyword data", "u2", "")
+
+	results, _ := store.Search(ctx, "shared keyword data", "u1", nil)
+	if len(results) != 1 {
+		t.Errorf("expected 1 result for u1, got %d", len(results))
+	}
+}
+
+func TestVectorMemoryStore_Search_AgentScope(t *testing.T) {
+	store := NewVectorMemoryStore(&fakeEmbedder{})
+	ctx := context.Background()
+
+	_ = store.Add(ctx, "from agent1 data", "u1", "a1")
+	_ = store.Add(ctx, "from agent2 data", "u1", "a2")
+
+	results, _ := store.Search(ctx, "from agent", "u1", &SearchOptions{AgentID: "a1"})
+	if len(results) != 1 {
+		t.Errorf("expected 1 result scoped to a1, got %d", len(results))
+	}
+	if results[0].AgentID != "a1" {
+		t.Errorf("expected agent a1, got %s", results[0].AgentID)
+	}
+}
+
+func TestVectorMemoryStore_Search_TopK(t *testing.T) {
+	store := NewVectorMemoryStore(&fakeEmbedder{})
+	ctx := context.Background()
+
+	for i := 0; i < 10; i++ {
+		_ = store.Add(ctx, "similar item with keyword data", "u1", "")
+	}
+
+	results, _ := store.Search(ctx, "similar item", "u1", &SearchOptions{TopK: 3})
+	if len(results) != 3 {
+		t.Errorf("expected 3 results with TopK=3, got %d", len(results))
+	}
+}
+
+func TestVectorMemoryStore_Search_Threshold(t *testing.T) {
+	store := NewVectorMemoryStore(&fakeEmbedder{})
+	ctx := context.Background()
+
+	_ = store.Add(ctx, "The user likes coffee in the morning regularly", "u1", "")
+	_ = store.Add(ctx, "zzz 999 completely different xyz unrelated", "u1", "")
+
+	// With a very high threshold, only the near-exact match should pass.
+	results, _ := store.Search(ctx, "The user likes coffee in the morning regularly", "u1", &SearchOptions{Threshold: 0.9999})
+	// Only the exact match (cosine sim = 1.0) should pass.
+	if len(results) != 1 {
+		t.Errorf("expected 1 result above threshold, got %d", len(results))
+	}
+}
+
+func TestVectorMemoryStore_Search_SortedByRelevance(t *testing.T) {
+	store := NewVectorMemoryStore(&fakeEmbedder{})
+	ctx := context.Background()
+
+	_ = store.Add(ctx, "The user likes coffee in the morning", "u1", "")
+	_ = store.Add(ctx, "completely different xyz 999", "u1", "")
+	_ = store.Add(ctx, "The user likes coffee every day", "u1", "")
+
+	results, _ := store.Search(ctx, "The user likes coffee in the morning", "u1", nil)
+	if len(results) < 2 {
+		t.Fatalf("expected at least 2 results, got %d", len(results))
+	}
+	// The exact match should be first.
+	if results[0].Text != "The user likes coffee in the morning" {
+		t.Errorf("first result should be exact match, got %q", results[0].Text)
+	}
+}
+
+func TestVectorMemoryStore_Delete(t *testing.T) {
+	store := NewVectorMemoryStore(&fakeEmbedder{})
+	ctx := context.Background()
+
+	_ = store.Add(ctx, "to delete", "u1", "")
+	list, _ := store.List(ctx, "u1")
+	if len(list) != 1 {
+		t.Fatal("setup failed")
+	}
+
+	if err := store.Delete(ctx, list[0].ID); err != nil {
+		t.Fatal(err)
+	}
+
+	list2, _ := store.List(ctx, "u1")
+	if len(list2) != 0 {
+		t.Error("memory should be deleted")
+	}
+}
+
+func TestVectorMemoryStore_DeleteNotFound(t *testing.T) {
+	store := NewVectorMemoryStore(&fakeEmbedder{})
+	err := store.Delete(context.Background(), "nonexistent")
+	if err == nil {
+		t.Error("expected error for non-existent id")
+	}
+}
+
+func TestVectorMemoryStore_IDPrefix(t *testing.T) {
+	store := NewVectorMemoryStore(&fakeEmbedder{})
+	_ = store.Add(context.Background(), "test entry", "u1", "")
+
+	list, _ := store.List(context.Background(), "u1")
+	if len(list) != 1 {
+		t.Fatal("expected 1 entry")
+	}
+	if !strings.HasPrefix(list[0].ID, "vmem_") {
+		t.Errorf("expected vmem_ prefix, got %q", list[0].ID)
+	}
+}
+
+// ==================== cosineSimilarity ====================
+
+func TestCosineSimilarity_IdenticalVectors(t *testing.T) {
+	a := []float32{1, 2, 3}
+	sim := cosineSimilarity(a, a)
+	if math.Abs(sim-1.0) > 1e-6 {
+		t.Errorf("identical vectors should have similarity 1.0, got %f", sim)
+	}
+}
+
+func TestCosineSimilarity_OrthogonalVectors(t *testing.T) {
+	a := []float32{1, 0, 0}
+	b := []float32{0, 1, 0}
+	sim := cosineSimilarity(a, b)
+	if math.Abs(sim) > 1e-6 {
+		t.Errorf("orthogonal vectors should have similarity 0, got %f", sim)
+	}
+}
+
+func TestCosineSimilarity_DifferentLengths(t *testing.T) {
+	a := []float32{1, 2}
+	b := []float32{1, 2, 3}
+	sim := cosineSimilarity(a, b)
+	if sim != 0 {
+		t.Errorf("different length vectors should return 0, got %f", sim)
+	}
+}
+
+func TestCosineSimilarity_ZeroVector(t *testing.T) {
+	a := []float32{0, 0, 0}
+	b := []float32{1, 2, 3}
+	sim := cosineSimilarity(a, b)
+	if sim != 0 {
+		t.Errorf("zero vector should return 0, got %f", sim)
+	}
+}
+
+func TestCosineSimilarity_EmptyVectors(t *testing.T) {
+	sim := cosineSimilarity(nil, nil)
+	if sim != 0 {
+		t.Errorf("empty vectors should return 0, got %f", sim)
 	}
 }

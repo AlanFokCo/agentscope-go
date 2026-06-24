@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
 )
@@ -269,5 +270,59 @@ func TestBudget_PerReplyIsolation(t *testing.T) {
 	prompt2 := m.OnSystemPrompt(ctx2, "agent", "Base.")
 	if strings.Contains(prompt2, "maximum token budget") {
 		t.Error("reply 2 should start fresh, not inherit reply 1's budget")
+	}
+}
+
+func TestBudget_OnReply_ResetsBudget(t *testing.T) {
+	m := NewReplyBudgetControl(100)
+	ctx := budgetCtx()
+
+	// Accumulate cost past the budget.
+	_, _ = m.OnModelCall(ctx, ModelCallInput{}, modelCallCore(60, 60))
+	mc := GetMiddleContext(ctx)
+	if m.getUsed(mc) == 0 {
+		t.Fatal("expected non-zero usage after model call")
+	}
+
+	// OnReply should reset the counter.
+	next := func(ctx context.Context, _ ReplyInput) <-chan event.Event {
+		// Verify that usage is reset inside the reply handler.
+		innerMC := GetMiddleContext(ctx)
+		if m.getUsed(innerMC) != 0 {
+			t.Error("budget should be reset to 0 inside OnReply")
+		}
+		ch := make(chan event.Event)
+		close(ch)
+		return ch
+	}
+
+	ch := m.OnReply(ctx, ReplyInput{AgentName: "test"}, next)
+	for range ch {
+	}
+
+	// After OnReply, the budget should be reset.
+	if m.getUsed(mc) != 0 {
+		t.Errorf("budget should be 0 after OnReply reset, got %f", m.getUsed(mc))
+	}
+}
+
+func TestBudget_OnReply_NoMiddleContext_Passthrough(t *testing.T) {
+	m := NewReplyBudgetControl(100)
+	ctx := context.Background() // no MiddleContext
+
+	called := false
+	next := func(_ context.Context, _ ReplyInput) <-chan event.Event {
+		called = true
+		ch := make(chan event.Event)
+		close(ch)
+		return ch
+	}
+
+	ch := m.OnReply(ctx, ReplyInput{}, next)
+	for range ch {
+	}
+
+	if !called {
+		t.Error("next should be called even without MiddleContext")
 	}
 }

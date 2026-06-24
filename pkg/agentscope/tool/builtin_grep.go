@@ -27,6 +27,14 @@ var grepSchema = json.RawMessage(`{
 			"type": "string",
 			"description": "File glob filter (e.g. '*.go', '*.ts')"
 		},
+		"glob": {
+			"type": "string",
+			"description": "File glob filter (alternative to include)"
+		},
+		"type": {
+			"type": "string",
+			"description": "File type filter (e.g. 'go', 'py', 'js'). Maps to ripgrep --type."
+		},
 		"output_mode": {
 			"type": "string",
 			"description": "Output mode: 'content' (default, show matching lines), 'files_with_matches' (only file names), 'count' (match count per file)"
@@ -34,6 +42,34 @@ var grepSchema = json.RawMessage(`{
 		"context_lines": {
 			"type": "integer",
 			"description": "Number of context lines to show before and after each match (default 0)"
+		},
+		"before_context": {
+			"type": "integer",
+			"description": "Number of lines to show before each match (-B flag, default 0)"
+		},
+		"after_context": {
+			"type": "integer",
+			"description": "Number of lines to show after each match (-A flag, default 0)"
+		},
+		"combined_context": {
+			"type": "integer",
+			"description": "Number of lines to show around each match (-C flag, default 0). Overrides before_context/after_context."
+		},
+		"max_count": {
+			"type": "integer",
+			"description": "Maximum number of matches per file (-m flag)"
+		},
+		"case_sensitive": {
+			"type": "boolean",
+			"description": "If false, search case-insensitively (default true)"
+		},
+		"word_regexp": {
+			"type": "boolean",
+			"description": "If true, match only whole words (-w flag)"
+		},
+		"fixed_strings": {
+			"type": "boolean",
+			"description": "If true, treat pattern as a literal string, not a regex (-F flag)"
 		},
 		"page": {
 			"type": "integer",
@@ -55,13 +91,22 @@ type grepTool struct {
 
 // grepOptions holds parsed grep parameters.
 type grepOptions struct {
-	pattern      string
-	searchPath   string
-	include      string
-	outputMode   string // "content", "files_with_matches", "count"
-	contextLines int
-	page         int
-	pageSize     int
+	pattern         string
+	searchPath      string
+	include         string
+	glob            string
+	fileType        string
+	outputMode      string // "content", "files_with_matches", "count"
+	contextLines    int
+	beforeContext   int
+	afterContext    int
+	combinedContext int
+	maxCount        int
+	caseSensitive   bool
+	wordRegexp      bool
+	fixedStrings    bool
+	page            int
+	pageSize        int
 }
 
 func parseGrepOptions(args map[string]any) (*grepOptions, error) {
@@ -89,6 +134,13 @@ func parseGrepOptions(args map[string]any) (*grepOptions, error) {
 
 	include, _ := args["include"].(string)
 
+	globFilter, _ := args["glob"].(string)
+	if include == "" && globFilter != "" {
+		include = globFilter
+	}
+
+	fileType, _ := args["type"].(string)
+
 	outputMode := "content"
 	if v, ok := args["output_mode"].(string); ok && v != "" {
 		switch v {
@@ -107,6 +159,68 @@ func parseGrepOptions(args map[string]any) (*grepOptions, error) {
 		}
 		if contextLines > 10 {
 			contextLines = 10
+		}
+	}
+
+	beforeContext := 0
+	if v, ok := args["before_context"]; ok {
+		beforeContext = toInt(v)
+		if beforeContext < 0 {
+			beforeContext = 0
+		}
+		if beforeContext > 10 {
+			beforeContext = 10
+		}
+	}
+
+	afterContext := 0
+	if v, ok := args["after_context"]; ok {
+		afterContext = toInt(v)
+		if afterContext < 0 {
+			afterContext = 0
+		}
+		if afterContext > 10 {
+			afterContext = 10
+		}
+	}
+
+	combinedContext := 0
+	if v, ok := args["combined_context"]; ok {
+		combinedContext = toInt(v)
+		if combinedContext < 0 {
+			combinedContext = 0
+		}
+		if combinedContext > 10 {
+			combinedContext = 10
+		}
+	}
+
+	maxCount := 0
+	if v, ok := args["max_count"]; ok {
+		maxCount = toInt(v)
+		if maxCount < 0 {
+			maxCount = 0
+		}
+	}
+
+	caseSensitive := true
+	if v, ok := args["case_sensitive"]; ok {
+		if b, ok := v.(bool); ok {
+			caseSensitive = b
+		}
+	}
+
+	wordRegexp := false
+	if v, ok := args["word_regexp"]; ok {
+		if b, ok := v.(bool); ok {
+			wordRegexp = b
+		}
+	}
+
+	fixedStrings := false
+	if v, ok := args["fixed_strings"]; ok {
+		if b, ok := v.(bool); ok {
+			fixedStrings = b
 		}
 	}
 
@@ -130,13 +244,22 @@ func parseGrepOptions(args map[string]any) (*grepOptions, error) {
 	}
 
 	return &grepOptions{
-		pattern:      pattern,
-		searchPath:   searchPath,
-		include:      include,
-		outputMode:   outputMode,
-		contextLines: contextLines,
-		page:         page,
-		pageSize:     pageSize,
+		pattern:         pattern,
+		searchPath:      searchPath,
+		include:         include,
+		glob:            globFilter,
+		fileType:        fileType,
+		outputMode:      outputMode,
+		contextLines:    contextLines,
+		beforeContext:   beforeContext,
+		afterContext:    afterContext,
+		combinedContext: combinedContext,
+		maxCount:        maxCount,
+		caseSensitive:   caseSensitive,
+		wordRegexp:      wordRegexp,
+		fixedStrings:    fixedStrings,
+		page:            page,
+		pageSize:        pageSize,
 	}, nil
 }
 
@@ -166,6 +289,21 @@ func (t *grepTool) tryRipgrep(ctx context.Context, opts *grepOptions) (*ToolResp
 		"--max-filesize", "1M",
 	}
 
+	// Case sensitivity
+	if !opts.caseSensitive {
+		args = append(args, "--ignore-case")
+	}
+
+	// Word regexp
+	if opts.wordRegexp {
+		args = append(args, "--word-regexp")
+	}
+
+	// Fixed strings
+	if opts.fixedStrings {
+		args = append(args, "--fixed-strings")
+	}
+
 	switch opts.outputMode {
 	case "files_with_matches":
 		args = append(args, "--files-with-matches")
@@ -173,14 +311,34 @@ func (t *grepTool) tryRipgrep(ctx context.Context, opts *grepOptions) (*ToolResp
 		args = append(args, "--count")
 	default:
 		args = append(args, "--line-number")
-		if opts.contextLines > 0 {
+		// Context lines: combined_context (-C) takes priority, then before/after, then context_lines
+		if opts.combinedContext > 0 {
+			args = append(args, fmt.Sprintf("-C%d", opts.combinedContext))
+		} else if opts.beforeContext > 0 || opts.afterContext > 0 {
+			if opts.beforeContext > 0 {
+				args = append(args, fmt.Sprintf("-B%d", opts.beforeContext))
+			}
+			if opts.afterContext > 0 {
+				args = append(args, fmt.Sprintf("-A%d", opts.afterContext))
+			}
+		} else if opts.contextLines > 0 {
 			args = append(args, fmt.Sprintf("-C%d", opts.contextLines))
 		}
-		args = append(args, "--max-count", "5")
+		// Per-file max count
+		if opts.maxCount > 0 {
+			args = append(args, "--max-count", fmt.Sprintf("%d", opts.maxCount))
+		} else {
+			args = append(args, "--max-count", "5")
+		}
 	}
 
 	if opts.include != "" {
 		args = append(args, "--glob", opts.include)
+	}
+
+	// File type filter
+	if opts.fileType != "" {
+		args = append(args, "--type", opts.fileType)
 	}
 
 	// Collect more results than needed for pagination
@@ -207,7 +365,24 @@ func (t *grepTool) tryRipgrep(ctx context.Context, opts *grepOptions) (*ToolResp
 }
 
 func (t *grepTool) goGrep(opts *grepOptions) (*ToolResponse, error) {
-	re, err := regexp.Compile(opts.pattern)
+	patternStr := opts.pattern
+
+	// Fixed strings: escape regex metacharacters
+	if opts.fixedStrings {
+		patternStr = regexp.QuoteMeta(patternStr)
+	}
+
+	// Word regexp: wrap in word boundary anchors
+	if opts.wordRegexp {
+		patternStr = `\b` + patternStr + `\b`
+	}
+
+	// Case sensitivity
+	if !opts.caseSensitive {
+		patternStr = "(?i)" + patternStr
+	}
+
+	re, err := regexp.Compile(patternStr)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("invalid regex: %w", err)), nil
 	}
@@ -216,6 +391,21 @@ func (t *grepTool) goGrep(opts *grepOptions) (*ToolResponse, error) {
 	if opts.include != "" {
 		globRe := globToRegex(opts.include)
 		includeRe, _ = regexp.Compile(globRe)
+	}
+
+	// Resolve effective context lines
+	beforeCtx, afterCtx := opts.beforeContext, opts.afterContext
+	if opts.combinedContext > 0 {
+		beforeCtx = opts.combinedContext
+		afterCtx = opts.combinedContext
+	} else if beforeCtx == 0 && afterCtx == 0 && opts.contextLines > 0 {
+		beforeCtx = opts.contextLines
+		afterCtx = opts.contextLines
+	}
+
+	maxPerFile := opts.maxCount
+	if maxPerFile <= 0 {
+		maxPerFile = 5
 	}
 
 	// Collect more results than needed for pagination
@@ -228,7 +418,7 @@ func (t *grepTool) goGrep(opts *grepOptions) (*ToolResponse, error) {
 	case "count":
 		results = t.goGrepCount(re, includeRe, opts.searchPath, maxCollect)
 	default:
-		results = t.goGrepContent(re, includeRe, opts.searchPath, opts.contextLines, maxCollect)
+		results = t.goGrepContent(re, includeRe, opts.searchPath, beforeCtx, afterCtx, maxPerFile, maxCollect)
 	}
 
 	if len(results) == 0 {
@@ -238,7 +428,7 @@ func (t *grepTool) goGrep(opts *grepOptions) (*ToolResponse, error) {
 	return t.paginateResults(results, opts), nil
 }
 
-func (t *grepTool) goGrepContent(re *regexp.Regexp, includeRe *regexp.Regexp, searchPath string, contextLines, maxResults int) []string {
+func (t *grepTool) goGrepContent(re *regexp.Regexp, includeRe *regexp.Regexp, searchPath string, beforeCtx, afterCtx, maxPerFile, maxResults int) []string {
 	var results []string
 	_ = filepath.Walk(searchPath, func(fpath string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || len(results) >= maxResults {
@@ -268,17 +458,17 @@ func (t *grepTool) goGrepContent(re *regexp.Regexp, includeRe *regexp.Regexp, se
 
 		matchesInFile := 0
 		for lineNo, line := range allLines {
-			if matchesInFile >= 5 || len(results) >= maxResults {
+			if matchesInFile >= maxPerFile || len(results) >= maxResults {
 				break
 			}
 			if re.MatchString(line) {
-				if contextLines > 0 {
+				if beforeCtx > 0 || afterCtx > 0 {
 					// Add context lines
-					start := lineNo - contextLines
+					start := lineNo - beforeCtx
 					if start < 0 {
 						start = 0
 					}
-					end := lineNo + contextLines + 1
+					end := lineNo + afterCtx + 1
 					if end > len(allLines) {
 						end = len(allLines)
 					}
@@ -419,7 +609,7 @@ func globToRegex(glob string) string {
 func GrepTool() Tool {
 	return &grepTool{
 		BaseTool: BaseTool{
-			ToolName:        "grep",
+			ToolName:        "Grep",
 			ToolDescription: "Search file contents for a regex pattern. Uses ripgrep if available. Returns matching lines with file path and line number.",
 			ToolSchema:      grepSchema,
 			ReadOnly:        true,

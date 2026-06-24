@@ -34,6 +34,12 @@ type ModelCallInput struct {
 	Messages   []*message.Msg
 	Tools      []model.ToolSchema
 	ToolChoice *model.ToolChoice
+
+	// Optional fields populated by the agent for observability middleware.
+	ModelName    string   // model name (e.g. "gpt-4.1", "claude-sonnet-4-20250514")
+	ProviderName string   // provider system (e.g. "openai", "anthropic", "dashscope")
+	MaxTokens    *int     // max_tokens if set on the call
+	Temperature  *float64 // temperature if set on the call
 }
 
 // ActingInput is passed to OnActing hooks.

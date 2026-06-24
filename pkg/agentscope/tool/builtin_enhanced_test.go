@@ -14,8 +14,8 @@ import (
 
 func TestBashTool_Success(t *testing.T) {
 	bt := BashTool()
-	if bt.Name() != "bash" {
-		t.Fatalf("name = %q, want %q", bt.Name(), "bash")
+	if bt.Name() != "Bash" {
+		t.Fatalf("name = %q, want %q", bt.Name(), "Bash")
 	}
 
 	resp, err := bt.Execute(context.Background(), map[string]any{"command": "echo hello"})
@@ -95,7 +95,7 @@ func TestReadTool_OffsetAndLimit(t *testing.T) {
 	rt := ReadTool()
 	resp, err := rt.Execute(context.Background(), map[string]any{
 		"file_path": tmp,
-		"offset":    2.0,
+		"offset":    3.0, // 1-based: line 3 = "c"
 		"limit":     2.0,
 	})
 	if err != nil {
@@ -408,7 +408,7 @@ func TestGrepTool_WithInclude(t *testing.T) {
 
 func TestNewEnhancedToolkit(t *testing.T) {
 	tk := NewEnhancedToolkit()
-	expected := []string{"bash", "read", "write", "edit", "glob", "grep"}
+	expected := []string{"Bash", "Read", "Write", "Edit", "Glob", "Grep"}
 	for _, name := range expected {
 		if tk.Get(name) == nil {
 			t.Errorf("tool %q not found in enhanced toolkit", name)
@@ -417,6 +417,17 @@ func TestNewEnhancedToolkit(t *testing.T) {
 	schemas := tk.GetToolSchemas()
 	if len(schemas) != 6 {
 		t.Fatalf("expected 6 schemas, got %d", len(schemas))
+	}
+}
+
+func TestNewEnhancedToolkit_CaseInsensitiveFallback(t *testing.T) {
+	tk := NewEnhancedToolkit()
+	// Old lowercase names should still resolve via case-insensitive fallback
+	oldNames := []string{"bash", "read", "write", "edit", "glob", "grep"}
+	for _, name := range oldNames {
+		if tk.Get(name) == nil {
+			t.Errorf("tool %q not found via case-insensitive fallback", name)
+		}
 	}
 }
 

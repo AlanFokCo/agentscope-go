@@ -2,10 +2,12 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/formatter"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/internal/httpx"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 )
@@ -183,7 +185,50 @@ func (m *OpenAIChatModel) CountTokens(msgs []*message.Msg, tools []ToolSchema) i
 }
 
 // convertMessagesToOpenAI maps internal Msg instances to OpenAI messages.
+// Uses the OpenAI formatter for full block-type support, then converts to typed structs.
 func convertMessagesToOpenAI(msgs []*message.Msg) []openAIChatMessage {
+	f := formatter.NewOpenAIFormatter()
+	formatted, err := f.Format(msgs)
+	if err != nil {
+		return convertMessagesToOpenAIFallback(msgs)
+	}
+
+	out := make([]openAIChatMessage, 0, len(formatted))
+	for _, m := range formatted {
+		msg := openAIChatMessage{}
+		if role, ok := m["role"].(string); ok {
+			msg.Role = role
+		}
+		if name, ok := m["name"].(string); ok {
+			msg.Name = name
+		}
+		if content, ok := m["content"].(string); ok {
+			msg.Content = content
+		} else if content, ok := m["content"].([]map[string]any); ok {
+			b, _ := json.Marshal(content)
+			msg.Content = string(b)
+		}
+		if tcid, ok := m["tool_call_id"].(string); ok {
+			msg.ToolCallID = tcid
+		}
+		if tcs, ok := m["tool_calls"].([]map[string]any); ok {
+			for _, tc := range tcs {
+				otc := openAIToolCall{}
+				otc.ID, _ = tc["id"].(string)
+				otc.Type, _ = tc["type"].(string)
+				if fn, ok := tc["function"].(map[string]any); ok {
+					otc.Function.Name, _ = fn["name"].(string)
+					otc.Function.Arguments, _ = fn["arguments"].(string)
+				}
+				msg.ToolCalls = append(msg.ToolCalls, otc)
+			}
+		}
+		out = append(out, msg)
+	}
+	return out
+}
+
+func convertMessagesToOpenAIFallback(msgs []*message.Msg) []openAIChatMessage {
 	out := make([]openAIChatMessage, 0, len(msgs))
 	for _, m := range msgs {
 		if m == nil {
@@ -193,44 +238,10 @@ func convertMessagesToOpenAI(msgs []*message.Msg) []openAIChatMessage {
 		if role == "" {
 			role = "user"
 		}
-
 		msg := openAIChatMessage{Role: role, Name: m.Name}
-
-		// Check for tool result blocks (need special handling)
-		toolResults := m.GetContentBlocks(message.ContentBlockToolResult)
-		if len(toolResults) > 0 {
-			tr := toolResults[0].(message.ToolResultBlock)
-			msg.Role = "tool"
-			msg.ToolCallID = tr.ID
-			msg.Content = tr.GetOutputText()
-			msg.Name = tr.Name
-			out = append(out, msg)
-			continue
-		}
-
-		// Check for tool call blocks
-		toolCalls := m.GetContentBlocks(message.ContentBlockToolCall)
-		if len(toolCalls) > 0 {
-			for _, tc := range toolCalls {
-				tcb := tc.(message.ToolCallBlock)
-				msg.ToolCalls = append(msg.ToolCalls, openAIToolCall{
-					ID:   tcb.ID,
-					Type: "function",
-					Function: struct {
-						Name      string `json:"name"`
-						Arguments string `json:"arguments"`
-					}{Name: tcb.Name, Arguments: tcb.Input},
-				})
-			}
-		}
-
-		// Text content
 		if txt := m.GetTextContent("\n"); txt != nil {
 			msg.Content = *txt
-		} else if msg.ToolCalls == nil {
-			msg.Content = ""
 		}
-
 		out = append(out, msg)
 	}
 	return out

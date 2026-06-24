@@ -134,6 +134,21 @@ func (c *XAICredential) BaseURL() string {
 	return "https://api.x.ai"
 }
 
+// KimiCredential authenticates with Kimi (Moonshot's consumer brand).
+type KimiCredential struct {
+	Key string
+	URL string
+}
+
+func (c *KimiCredential) Provider() string { return "kimi" }
+func (c *KimiCredential) APIKey() string   { return c.Key }
+func (c *KimiCredential) BaseURL() string {
+	if c.URL != "" {
+		return c.URL
+	}
+	return "https://api.moonshot.cn/v1"
+}
+
 // --- Environment auto-loading ---
 
 // FromEnv attempts to load credentials from environment variables.
@@ -160,6 +175,9 @@ func FromEnv() Credential {
 	}
 	if key := os.Getenv("XAI_API_KEY"); key != "" {
 		return &XAICredential{Key: key, URL: os.Getenv("XAI_BASE_URL")}
+	}
+	if key := os.Getenv("KIMI_API_KEY"); key != "" {
+		return &KimiCredential{Key: key, URL: os.Getenv("KIMI_BASE_URL")}
 	}
 	return nil
 }
@@ -196,6 +214,10 @@ func FromEnvForProvider(provider string) Credential {
 	case "xai":
 		if key := os.Getenv("XAI_API_KEY"); key != "" {
 			return &XAICredential{Key: key, URL: os.Getenv("XAI_BASE_URL")}
+		}
+	case "kimi":
+		if key := os.Getenv("KIMI_API_KEY"); key != "" {
+			return &KimiCredential{Key: key, URL: os.Getenv("KIMI_BASE_URL")}
 		}
 	}
 	return nil
@@ -267,6 +289,8 @@ func FromMap(m map[string]string) (Credential, error) {
 		return &MoonshotCredential{Key: key, URL: url}, nil
 	case "xai":
 		return &XAICredential{Key: key, URL: url}, nil
+	case "kimi":
+		return &KimiCredential{Key: key, URL: url}, nil
 	default:
 		return nil, fmt.Errorf("unknown provider: %q", provider)
 	}

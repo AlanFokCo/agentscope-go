@@ -209,4 +209,16 @@ func (f *Factory) registerBuiltins() {
 			{Name: "base_url", Description: "Server URL", Required: false},
 		},
 	}
+
+	f.constructors["kimi"] = func(m map[string]string) (Credential, error) {
+		return &KimiCredential{Key: m["api_key"], URL: m["base_url"]}, nil
+	}
+	f.schemas["kimi"] = CredentialSchema{
+		Provider:    "kimi",
+		Description: "Kimi API credentials",
+		Fields: []FieldSchema{
+			{Name: "api_key", Description: "API key", Required: true, Secret: true},
+			{Name: "base_url", Description: "Base URL override", Required: false},
+		},
+	}
 }
