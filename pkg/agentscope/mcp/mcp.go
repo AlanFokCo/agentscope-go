@@ -21,6 +21,11 @@ type StdioConfig struct {
 	Args    []string
 	Env     []string
 	WorkDir string
+
+	Stateful         bool   // true = keep subprocess alive across calls; false = ephemeral per CallTool
+	EnableTools      []string // whitelist; empty = all tools
+	DisableTools     []string // blacklist; applied after EnableTools
+	ExecutionTimeout int      // per-tool call timeout in seconds; 0 = no timeout
 }
 
 // HttpConfig configures an HTTP/SSE-based MCP connection.
@@ -28,6 +33,11 @@ type HttpConfig struct {
 	URL     string
 	Headers map[string]string
 	Timeout int // seconds, 0 = default (30)
+
+	Stateful         bool     // true = reuse session ID across calls
+	EnableTools      []string
+	DisableTools     []string
+	ExecutionTimeout int
 }
 
 // JSON-RPC 2.0 types for MCP protocol.

@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/tool"
@@ -11,8 +12,9 @@ import (
 // MCPTool wraps a single MCP server tool as a Go Tool interface implementation.
 type MCPTool struct {
 	tool.BaseTool
-	client   Client
-	toolName string // original MCP tool name (may differ from adapted name)
+	client           Client
+	toolName         string // original MCP tool name (may differ from adapted name)
+	executionTimeout int    // seconds; 0 = no timeout
 }
 
 // NewMCPTool creates a Tool backed by an MCP client for the given tool schema.
@@ -32,22 +34,74 @@ func NewMCPTool(client Client, schema model.ToolSchema) *MCPTool {
 
 // Execute calls the MCP server to execute the tool.
 func (t *MCPTool) Execute(ctx context.Context, args map[string]any) (*tool.ToolResponse, error) {
+	if t.executionTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(t.executionTimeout)*time.Second)
+		defer cancel()
+	}
 	return t.client.CallTool(ctx, t.toolName, args)
 }
 
 // NewMCPToolkit creates a Toolkit containing all tools from an MCP client.
-func NewMCPToolkit(ctx context.Context, client Client) (*tool.Toolkit, error) {
+// Use opts to filter tools by enable/disable lists.
+func NewMCPToolkit(ctx context.Context, client Client, opts ...MCPToolkitOption) (*tool.Toolkit, error) {
 	schemas, err := client.ListTools(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	cfg := mcpToolkitConfig{}
+	for _, o := range opts {
+		o(&cfg)
+	}
+
 	var tools []tool.Tool
 	for _, s := range schemas {
+		if !cfg.isAllowed(s.Function.Name) {
+			continue
+		}
 		tools = append(tools, NewMCPTool(client, s))
 	}
 
 	return tool.NewToolkit(tools...), nil
+}
+
+type mcpToolkitConfig struct {
+	enableTools  map[string]bool
+	disableTools map[string]bool
+}
+
+func (c *mcpToolkitConfig) isAllowed(name string) bool {
+	if len(c.disableTools) > 0 && c.disableTools[name] {
+		return false
+	}
+	if len(c.enableTools) > 0 {
+		return c.enableTools[name]
+	}
+	return true
+}
+
+// MCPToolkitOption configures NewMCPToolkit.
+type MCPToolkitOption func(*mcpToolkitConfig)
+
+// WithEnableTools whitelists specific tools; others are excluded.
+func WithEnableTools(names ...string) MCPToolkitOption {
+	return func(c *mcpToolkitConfig) {
+		c.enableTools = make(map[string]bool, len(names))
+		for _, n := range names {
+			c.enableTools[n] = true
+		}
+	}
+}
+
+// WithDisableTools blacklists specific tools.
+func WithDisableTools(names ...string) MCPToolkitOption {
+	return func(c *mcpToolkitConfig) {
+		c.disableTools = make(map[string]bool, len(names))
+		for _, n := range names {
+			c.disableTools[n] = true
+		}
+	}
 }
 
 // MergeToolkits combines multiple toolkits into one.
