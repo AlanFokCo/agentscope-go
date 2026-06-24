@@ -47,6 +47,14 @@ func NewErrorResponse(err error) *ToolResponse {
 	}
 }
 
+// ToolMiddleware wraps individual tool executions in an onion-chain pattern.
+type ToolMiddleware interface {
+	Wrap(ctx context.Context, name string, input map[string]any, next ToolHandler) (any, error)
+}
+
+// ToolHandler is the next function in a tool middleware chain.
+type ToolHandler func(ctx context.Context, name string, input map[string]any) (any, error)
+
 // BaseTool provides embeddable defaults for the Tool interface.
 // Embed this in concrete tool structs and override methods as needed.
 type BaseTool struct {
@@ -55,6 +63,7 @@ type BaseTool struct {
 	ToolSchema      json.RawMessage
 	ConcurrencySafe bool
 	ReadOnly        bool
+	Middlewares     []ToolMiddleware
 }
 
 func (b *BaseTool) Name() string               { return b.ToolName }
@@ -218,6 +227,7 @@ func (tk *Toolkit) GetToolSchemas() []model.ToolSchema {
 }
 
 // CallTool executes a tool by name with the given input.
+// If the tool's BaseTool has Middlewares, they are applied as an onion chain.
 func (tk *Toolkit) CallTool(ctx context.Context, name string, input map[string]any) (*ToolResponse, error) {
 	tk.mu.RLock()
 	t, groupName := tk.findToolWithGroup(name)
@@ -229,7 +239,39 @@ func (tk *Toolkit) CallTool(ctx context.Context, name string, input map[string]a
 		}
 		return nil, &exception.ToolNotFoundError{ToolName: name}
 	}
-	return t.Execute(ctx, input)
+
+	mws := getToolMiddlewares(t)
+	if len(mws) == 0 {
+		return t.Execute(ctx, input)
+	}
+
+	// Build onion chain: mws[0] wraps mws[1] wraps ... wraps t.Execute
+	var handler ToolHandler = func(ctx context.Context, n string, in map[string]any) (any, error) {
+		return t.Execute(ctx, in)
+	}
+	for i := len(mws) - 1; i >= 0; i-- {
+		mw := mws[i]
+		next := handler
+		handler = func(ctx context.Context, n string, in map[string]any) (any, error) {
+			return mw.Wrap(ctx, n, in, next)
+		}
+	}
+
+	result, err := handler(ctx, name, input)
+	if err != nil {
+		return nil, err
+	}
+	if resp, ok := result.(*ToolResponse); ok {
+		return resp, nil
+	}
+	// Wrap raw results
+	switch v := result.(type) {
+	case string:
+		return NewTextResponse(v), nil
+	default:
+		b, _ := json.Marshal(v)
+		return NewTextResponse(string(b)), nil
+	}
 }
 
 // CallToolFromBlock executes a tool from a ToolCallBlock.
@@ -278,6 +320,25 @@ func (tk *Toolkit) findToolWithGroup(name string) (Tool, string) {
 		}
 	}
 	return nil, inactiveGroup
+}
+
+// AddMiddleware appends a tool-level middleware to the BaseTool.
+func (b *BaseTool) AddMiddleware(mw ToolMiddleware) {
+	b.Middlewares = append(b.Middlewares, mw)
+}
+
+// toolMiddlewarer is implemented by tools that carry their own middleware chain.
+type toolMiddlewarer interface {
+	GetMiddlewares() []ToolMiddleware
+}
+
+func (b *BaseTool) GetMiddlewares() []ToolMiddleware { return b.Middlewares }
+
+func getToolMiddlewares(t Tool) []ToolMiddleware {
+	if tm, ok := t.(toolMiddlewarer); ok {
+		return tm.GetMiddlewares()
+	}
+	return nil
 }
 
 // --- Global Registry ---
