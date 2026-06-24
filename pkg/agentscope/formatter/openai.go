@@ -123,9 +123,19 @@ func NewDashScopeFormatter() *DashScopeFormatter {
 	}
 }
 
+// FormatMultiAgent formats messages for multi-agent conversations.
+func (f *OpenAIFormatter) FormatMultiAgent(msgs []*message.Msg, currentAgent string) ([]map[string]any, error) {
+	return formatMultiAgentOpenAI(f, msgs, currentAgent)
+}
+
 // NewOpenAIFormatter creates a formatter for standard OpenAI APIs.
 func NewOpenAIFormatter() *OpenAIFormatter {
 	return &OpenAIFormatter{SupportsThinking: false}
+}
+
+// FormatMultiAgent formats messages for multi-agent DashScope conversations.
+func (f *DashScopeFormatter) FormatMultiAgent(msgs []*message.Msg, currentAgent string) ([]map[string]any, error) {
+	return formatMultiAgentOpenAI(f, msgs, currentAgent)
 }
 
 // --- Anthropic Formatter ---
@@ -210,6 +220,30 @@ func (f *AnthropicFormatter) formatMsg(msg *message.Msg) map[string]any {
 		"role":    role,
 		"content": content,
 	}
+}
+
+// FormatMultiAgent formats messages for multi-agent Anthropic conversations.
+// Anthropic uses content blocks, so agent names are injected as text prefixes.
+func (f *AnthropicFormatter) FormatMultiAgent(msgs []*message.Msg, currentAgent string) ([]map[string]any, error) {
+	formatted, err := f.Format(msgs)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, m := range formatted {
+		role, _ := m["role"].(string)
+		if (role == "user" || role == "assistant") && i < len(msgs) && msgs[i] != nil {
+			if msgs[i].Name != "" && msgs[i].Name != currentAgent {
+				if content, ok := m["content"].([]map[string]any); ok && len(content) > 0 {
+					// Prepend a text block with the agent name
+					nameBlock := map[string]any{"type": "text", "text": "[" + msgs[i].Name + "]:"}
+					m["content"] = append([]map[string]any{nameBlock}, content...)
+				}
+			}
+		}
+	}
+
+	return formatted, nil
 }
 
 // NewAnthropicFormatter creates a formatter for Anthropic's Messages API.
