@@ -1,0 +1,278 @@
+package workspace
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestNewLocalWorkspace(t *testing.T) {
+	dir := t.TempDir()
+	ws, err := NewLocalWorkspace(LocalConfig{BasePath: dir})
+	if err != nil {
+		t.Fatalf("NewLocalWorkspace: %v", err)
+	}
+	if ws.BasePath() != dir {
+		t.Errorf("BasePath = %q, want %q", ws.BasePath(), dir)
+	}
+}
+
+func TestNewLocalWorkspaceCreatesDir(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "nested", "dir")
+	ws, err := NewLocalWorkspace(LocalConfig{BasePath: dir})
+	if err != nil {
+		t.Fatalf("NewLocalWorkspace: %v", err)
+	}
+	info, err := os.Stat(ws.BasePath())
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if !info.IsDir() {
+		t.Error("expected directory")
+	}
+}
+
+func TestNewLocalWorkspaceEmptyPath(t *testing.T) {
+	_, err := NewLocalWorkspace(LocalConfig{})
+	if err == nil {
+		t.Fatal("expected error for empty base path")
+	}
+}
+
+func TestWriteAndReadFile(t *testing.T) {
+	ws := mustWorkspace(t)
+	ctx := context.Background()
+
+	err := ws.WriteFile(ctx, "hello.txt", []byte("hello world"))
+	if err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	data, err := ws.ReadFile(ctx, "hello.txt")
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(data) != "hello world" {
+		t.Errorf("ReadFile = %q, want %q", string(data), "hello world")
+	}
+}
+
+func TestWriteFileCreatesParent(t *testing.T) {
+	ws := mustWorkspace(t)
+	ctx := context.Background()
+
+	err := ws.WriteFile(ctx, "sub/dir/file.txt", []byte("nested"))
+	if err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	data, err := ws.ReadFile(ctx, "sub/dir/file.txt")
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(data) != "nested" {
+		t.Errorf("ReadFile = %q, want %q", string(data), "nested")
+	}
+}
+
+func TestReadFileNotFound(t *testing.T) {
+	ws := mustWorkspace(t)
+	_, err := ws.ReadFile(context.Background(), "nonexistent.txt")
+	if err == nil {
+		t.Fatal("expected error for nonexistent file")
+	}
+}
+
+func TestListFiles(t *testing.T) {
+	ws := mustWorkspace(t)
+	ctx := context.Background()
+
+	ws.WriteFile(ctx, "a.txt", []byte("a"))
+	ws.WriteFile(ctx, "b.txt", []byte("b"))
+	os.Mkdir(filepath.Join(ws.BasePath(), "subdir"), 0o755)
+
+	files, err := ws.ListFiles(ctx, ".")
+	if err != nil {
+		t.Fatalf("ListFiles: %v", err)
+	}
+
+	if len(files) != 3 {
+		t.Fatalf("ListFiles = %d entries, want 3", len(files))
+	}
+
+	names := make(map[string]bool)
+	for _, f := range files {
+		names[f.Name] = true
+	}
+	for _, want := range []string{"a.txt", "b.txt", "subdir"} {
+		if !names[want] {
+			t.Errorf("missing entry %q", want)
+		}
+	}
+}
+
+func TestRemoveFile(t *testing.T) {
+	ws := mustWorkspace(t)
+	ctx := context.Background()
+
+	ws.WriteFile(ctx, "tmp.txt", []byte("temp"))
+
+	err := ws.RemoveFile(ctx, "tmp.txt")
+	if err != nil {
+		t.Fatalf("RemoveFile: %v", err)
+	}
+
+	_, err = ws.ReadFile(ctx, "tmp.txt")
+	if err == nil {
+		t.Fatal("expected error after removal")
+	}
+}
+
+func TestRemoveFileRejectsDir(t *testing.T) {
+	ws := mustWorkspace(t)
+	os.Mkdir(filepath.Join(ws.BasePath(), "mydir"), 0o755)
+
+	err := ws.RemoveFile(context.Background(), "mydir")
+	if err == nil {
+		t.Fatal("expected error when removing directory")
+	}
+}
+
+func TestPathTraversalBlocked(t *testing.T) {
+	ws := mustWorkspace(t)
+	ctx := context.Background()
+
+	_, err := ws.ReadFile(ctx, "../../../etc/passwd")
+	if err == nil {
+		t.Fatal("expected error for path traversal")
+	}
+
+	err = ws.WriteFile(ctx, "../../escape.txt", []byte("bad"))
+	if err == nil {
+		t.Fatal("expected error for path traversal on write")
+	}
+}
+
+func TestAbsolutePathOutsideBlocked(t *testing.T) {
+	ws := mustWorkspace(t)
+	_, err := ws.ReadFile(context.Background(), "/etc/passwd")
+	if err == nil {
+		t.Fatal("expected error for absolute path outside workspace")
+	}
+}
+
+func TestAbsolutePathInsideAllowed(t *testing.T) {
+	ws := mustWorkspace(t)
+	ctx := context.Background()
+
+	ws.WriteFile(ctx, "inside.txt", []byte("ok"))
+
+	absPath := filepath.Join(ws.BasePath(), "inside.txt")
+	data, err := ws.ReadFile(ctx, absPath)
+	if err != nil {
+		t.Fatalf("ReadFile with absolute inside path: %v", err)
+	}
+	if string(data) != "ok" {
+		t.Errorf("ReadFile = %q, want %q", string(data), "ok")
+	}
+}
+
+func TestExecute(t *testing.T) {
+	ws := mustWorkspace(t)
+	ctx := context.Background()
+
+	ws.WriteFile(ctx, "test.txt", []byte("content"))
+
+	result, err := ws.Execute(ctx, "ls test.txt")
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.ExitCode != 0 {
+		t.Errorf("ExitCode = %d, want 0", result.ExitCode)
+	}
+	if result.Stdout == "" {
+		t.Error("expected non-empty stdout")
+	}
+}
+
+func TestExecuteFailure(t *testing.T) {
+	ws := mustWorkspace(t)
+
+	result, err := ws.Execute(context.Background(), "false")
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.ExitCode == 0 {
+		t.Error("expected non-zero exit code")
+	}
+}
+
+func TestExecuteWorkingDir(t *testing.T) {
+	ws := mustWorkspace(t)
+	ctx := context.Background()
+
+	result, err := ws.Execute(ctx, "pwd")
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if got := filepath.Clean(result.Stdout[:len(result.Stdout)-1]); got != ws.BasePath() {
+		t.Errorf("pwd = %q, want %q", got, ws.BasePath())
+	}
+}
+
+func TestOffloadContent(t *testing.T) {
+	ws := mustWorkspace(t)
+	ctx := context.Background()
+
+	path, err := ws.OffloadContent(ctx, "large content here", "summary.txt")
+	if err != nil {
+		t.Fatalf("OffloadContent: %v", err)
+	}
+
+	if path != filepath.Join("_offloaded", "summary.txt") {
+		t.Errorf("path = %q, want %q", path, filepath.Join("_offloaded", "summary.txt"))
+	}
+
+	data, err := ws.ReadFile(ctx, path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(data) != "large content here" {
+		t.Errorf("content = %q, want %q", string(data), "large content here")
+	}
+}
+
+func TestOffloadContentAutoName(t *testing.T) {
+	ws := mustWorkspace(t)
+	path, err := ws.OffloadContent(context.Background(), "auto", "")
+	if err != nil {
+		t.Fatalf("OffloadContent: %v", err)
+	}
+	if path == "" {
+		t.Error("expected non-empty path")
+	}
+}
+
+func TestContextInjection(t *testing.T) {
+	ws := mustWorkspace(t)
+	ctx := WithWorkspace(context.Background(), ws)
+
+	got := GetWorkspace(ctx)
+	if got != ws {
+		t.Error("GetWorkspace returned wrong workspace")
+	}
+
+	if GetWorkspace(context.Background()) != nil {
+		t.Error("GetWorkspace on bare context should return nil")
+	}
+}
+
+func mustWorkspace(t *testing.T) *LocalWorkspace {
+	t.Helper()
+	ws, err := NewLocalWorkspace(LocalConfig{BasePath: t.TempDir()})
+	if err != nil {
+		t.Fatalf("NewLocalWorkspace: %v", err)
+	}
+	return ws
+}
