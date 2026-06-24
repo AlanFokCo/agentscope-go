@@ -2,6 +2,7 @@ package tool
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,36 +13,37 @@ import (
 )
 
 const (
-	// MaxFileSize limits view_text_file to 1MB to avoid memory issues.
-	MaxFileSize = 1024 * 1024
-	// DefaultShellTimeout is the default timeout for execute_shell_command (seconds).
+	MaxFileSize         = 1024 * 1024
 	DefaultShellTimeout = 30
 )
 
-// ExecuteShellCommandTool returns a tool that runs shell commands.
-// Args: "command" (string, required) - the command to execute.
-//       "timeout" (number, optional) - timeout in seconds; default 30.
-// Returns stdout and stderr combined, or an error message.
-func ExecuteShellCommandTool() *Tool {
-	return &Tool{
-		Name:        "execute_shell_command",
-		Description: "Execute a shell command. Args: command (string, required), timeout (number, optional, seconds, default 30). Returns combined stdout and stderr.",
-		Execute:     executeShellCommand,
-	}
+// --- execute_shell_command ---
+
+var shellCommandSchema = json.RawMessage(`{
+	"type": "object",
+	"properties": {
+		"command": {"type": "string", "description": "The shell command to execute"},
+		"timeout": {"type": "number", "description": "Timeout in seconds (default 30, max 300)"}
+	},
+	"required": ["command"]
+}`)
+
+type shellCommandTool struct {
+	BaseTool
 }
 
-func executeShellCommand(ctx context.Context, args map[string]any) (any, error) {
+func (t *shellCommandTool) Execute(ctx context.Context, args map[string]any) (*ToolResponse, error) {
 	raw, ok := args["command"]
 	if !ok {
-		return nil, fmt.Errorf("command is required")
+		return NewErrorResponse(fmt.Errorf("command is required")), nil
 	}
 	cmdStr, ok := raw.(string)
 	if !ok {
-		return nil, fmt.Errorf("command must be a string")
+		return NewErrorResponse(fmt.Errorf("command must be a string")), nil
 	}
 	cmdStr = strings.TrimSpace(cmdStr)
 	if cmdStr == "" {
-		return nil, fmt.Errorf("command cannot be empty")
+		return NewErrorResponse(fmt.Errorf("command cannot be empty")), nil
 	}
 
 	timeoutSec := DefaultShellTimeout
@@ -74,32 +76,45 @@ func executeShellCommand(ctx context.Context, args map[string]any) (any, error) 
 	if cmd.ProcessState != nil {
 		exitCode = cmd.ProcessState.ExitCode()
 	}
-	if err != nil {
-		return map[string]any{
-			"exit_code": exitCode,
-			"output":    string(out),
-			"error":     err.Error(),
-		}, nil
-	}
-	return map[string]any{
+
+	result := map[string]any{
 		"exit_code": exitCode,
 		"output":    string(out),
-	}, nil
+	}
+	if err != nil {
+		result["error"] = err.Error()
+	}
+
+	b, _ := json.Marshal(result)
+	return NewTextResponse(string(b)), nil
 }
 
-// ViewTextFileTool returns a tool that reads text file contents.
-// Args: "path" or "file_path" (string, required) - path to the file.
-// Returns file content as string, or an error message.
-func ViewTextFileTool() *Tool {
-	return &Tool{
-		Name:        "view_text_file",
-		Description: "Read the contents of a text file. Args: path or file_path (string, required). Returns file content.",
-		Execute:     viewTextFile,
+// ExecuteShellCommandTool returns a tool that runs shell commands.
+func ExecuteShellCommandTool() Tool {
+	return &shellCommandTool{
+		BaseTool: BaseTool{
+			ToolName:        "execute_shell_command",
+			ToolDescription: "Execute a shell command and return output. Args: command (string, required), timeout (number, optional, seconds, default 30).",
+			ToolSchema:      shellCommandSchema,
+		},
 	}
 }
 
-func viewTextFile(ctx context.Context, args map[string]any) (any, error) {
-	_ = ctx
+// --- view_text_file ---
+
+var viewTextFileSchema = json.RawMessage(`{
+	"type": "object",
+	"properties": {
+		"path": {"type": "string", "description": "Path to the text file to read"},
+		"file_path": {"type": "string", "description": "Alternative key for file path"}
+	}
+}`)
+
+type viewTextFileTool struct {
+	BaseTool
+}
+
+func (t *viewTextFileTool) Execute(ctx context.Context, args map[string]any) (*ToolResponse, error) {
 	path := ""
 	for _, k := range []string{"path", "file_path"} {
 		if v, ok := args[k]; ok {
@@ -110,40 +125,70 @@ func viewTextFile(ctx context.Context, args map[string]any) (any, error) {
 		}
 	}
 	if path == "" {
-		return nil, fmt.Errorf("path or file_path is required")
+		return NewErrorResponse(fmt.Errorf("path or file_path is required")), nil
 	}
 
 	clean := filepath.Clean(path)
 	abs, err := filepath.Abs(clean)
 	if err != nil {
-		return nil, fmt.Errorf("invalid path: %w", err)
+		return NewErrorResponse(fmt.Errorf("invalid path: %w", err)), nil
 	}
 
 	info, err := os.Stat(abs)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("file not found: %s", path)
+			return NewErrorResponse(fmt.Errorf("file not found: %s", path)), nil
 		}
-		return nil, fmt.Errorf("stat: %w", err)
+		return NewErrorResponse(fmt.Errorf("stat: %w", err)), nil
 	}
 	if info.IsDir() {
-		return nil, fmt.Errorf("path is a directory, not a file: %s", path)
+		return NewErrorResponse(fmt.Errorf("path is a directory, not a file: %s", path)), nil
 	}
 	if info.Size() > MaxFileSize {
-		return nil, fmt.Errorf("file too large (max %d bytes): %s", MaxFileSize, path)
+		return NewErrorResponse(fmt.Errorf("file too large (max %d bytes): %s", MaxFileSize, path)), nil
 	}
 
 	data, err := os.ReadFile(abs)
 	if err != nil {
-		return nil, fmt.Errorf("read file: %w", err)
+		return NewErrorResponse(fmt.Errorf("read file: %w", err)), nil
 	}
-	return map[string]any{
+
+	result := map[string]any{
 		"path":    abs,
 		"content": string(data),
-	}, nil
+	}
+	b, _ := json.Marshal(result)
+	return NewTextResponse(string(b)), nil
+}
+
+// ViewTextFileTool returns a tool that reads text files.
+func ViewTextFileTool() Tool {
+	return &viewTextFileTool{
+		BaseTool: BaseTool{
+			ToolName:        "view_text_file",
+			ToolDescription: "Read the contents of a text file (max 1MB). Args: path or file_path (string, required).",
+			ToolSchema:      viewTextFileSchema,
+			ReadOnly:        true,
+			ConcurrencySafe: true,
+		},
+	}
 }
 
 // NewBuiltinToolkit returns a Toolkit with execute_shell_command and view_text_file.
+// Deprecated: Use NewEnhancedToolkit for the v2 tool set.
 func NewBuiltinToolkit() *Toolkit {
 	return NewToolkit(ExecuteShellCommandTool(), ViewTextFileTool())
+}
+
+// NewEnhancedToolkit returns a Toolkit with the full v2 tool set:
+// bash, read, write, edit, glob, grep.
+func NewEnhancedToolkit() *Toolkit {
+	return NewToolkit(
+		BashTool(),
+		ReadTool(),
+		WriteTool(),
+		EditTool(),
+		GlobTool(),
+		GrepTool(),
+	)
 }

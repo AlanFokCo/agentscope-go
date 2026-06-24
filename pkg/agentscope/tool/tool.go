@@ -2,70 +2,288 @@ package tool
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
+
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/permission"
 )
 
-// Tool describes a callable tool that can be invoked by a model.
-type Tool struct {
-	Name        string
-	Description string
+// Tool is the interface all tools must implement.
+type Tool interface {
+	permission.Checker
 
-	// Execute receives structured arguments and returns a result.
-	Execute func(ctx context.Context, args map[string]any) (any, error)
+	Description() string
+	InputSchema() json.RawMessage
+	Execute(ctx context.Context, input map[string]any) (*ToolResponse, error)
+	IsConcurrencySafe() bool
+	IsReadOnly() bool
 }
+
+// ToolResponse is the result of executing a tool.
+type ToolResponse struct {
+	Content  []message.ContentBlock
+	State    message.ToolResultState
+	Metadata map[string]any
+}
+
+// NewTextResponse creates a ToolResponse with a single text block.
+func NewTextResponse(text string) *ToolResponse {
+	return &ToolResponse{
+		Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: text}},
+		State:   message.ToolResultSuccess,
+	}
+}
+
+// NewErrorResponse creates a ToolResponse representing an error.
+func NewErrorResponse(err error) *ToolResponse {
+	return &ToolResponse{
+		Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: err.Error()}},
+		State:   message.ToolResultError,
+	}
+}
+
+// BaseTool provides embeddable defaults for the Tool interface.
+// Embed this in concrete tool structs and override methods as needed.
+type BaseTool struct {
+	ToolName        string
+	ToolDescription string
+	ToolSchema      json.RawMessage
+	ConcurrencySafe bool
+	ReadOnly        bool
+}
+
+func (b *BaseTool) Name() string               { return b.ToolName }
+func (b *BaseTool) Description() string         { return b.ToolDescription }
+func (b *BaseTool) InputSchema() json.RawMessage { return b.ToolSchema }
+func (b *BaseTool) IsConcurrencySafe() bool     { return b.ConcurrencySafe }
+func (b *BaseTool) IsReadOnly() bool            { return b.ReadOnly }
+
+// Execute must be overridden by embedding structs.
+func (b *BaseTool) Execute(ctx context.Context, input map[string]any) (*ToolResponse, error) {
+	return nil, fmt.Errorf("tool %q: Execute not implemented", b.ToolName)
+}
+
+// CheckPermissions returns Passthrough by default, deferring to the engine.
+func (b *BaseTool) CheckPermissions(input map[string]any, ctx *permission.Context) permission.Decision {
+	return permission.Decision{Behavior: permission.BehaviorPassthrough}
+}
+
+// CheckReadOnly returns the tool's static ReadOnly flag.
+func (b *BaseTool) CheckReadOnly(input map[string]any) bool {
+	return b.ReadOnly
+}
+
+// MatchRule returns true only for empty ruleContent (tool-name-level rules).
+// Concrete tools override this for fine-grained matching.
+func (b *BaseTool) MatchRule(ruleContent string, input map[string]any) bool {
+	return ruleContent == ""
+}
+
+// GenerateSuggestions returns a single tool-name-level allow rule.
+func (b *BaseTool) GenerateSuggestions(input map[string]any) []permission.Rule {
+	return []permission.Rule{{
+		ToolName: b.ToolName,
+		Behavior: permission.BehaviorAllow,
+		Source:   "suggested",
+	}}
+}
+
+// FunctionTool wraps a plain function into the Tool interface.
+type FunctionTool struct {
+	BaseTool
+	Fn func(ctx context.Context, input map[string]any) (any, error)
+}
+
+// NewFunctionTool creates a Tool from a function, name, description, and JSON Schema.
+func NewFunctionTool(name, description string, schema json.RawMessage, fn func(ctx context.Context, input map[string]any) (any, error)) *FunctionTool {
+	return &FunctionTool{
+		BaseTool: BaseTool{
+			ToolName:        name,
+			ToolDescription: description,
+			ToolSchema:      schema,
+		},
+		Fn: fn,
+	}
+}
+
+func (f *FunctionTool) Execute(ctx context.Context, input map[string]any) (*ToolResponse, error) {
+	result, err := f.Fn(ctx, input)
+	if err != nil {
+		return NewErrorResponse(err), nil
+	}
+	switch v := result.(type) {
+	case string:
+		return NewTextResponse(v), nil
+	case *ToolResponse:
+		return v, nil
+	default:
+		b, err := json.Marshal(result)
+		if err != nil {
+			return NewErrorResponse(fmt.Errorf("marshal result: %w", err)), nil
+		}
+		return NewTextResponse(string(b)), nil
+	}
+}
+
+// --- ToolGroup ---
+
+// ToolGroup is a named collection of tools that can be activated/deactivated.
+type ToolGroup struct {
+	GroupName string
+	Tools     []Tool
+	Active    bool
+}
+
+// --- Toolkit ---
+
+// Toolkit manages tool groups and provides schema generation and invocation.
+type Toolkit struct {
+	groups map[string]*ToolGroup
+	mu     sync.RWMutex
+}
+
+// NewToolkit creates a Toolkit. If tools are provided, they are placed in the "basic" group (always active).
+func NewToolkit(tools ...Tool) *Toolkit {
+	tk := &Toolkit{groups: make(map[string]*ToolGroup)}
+	if len(tools) > 0 {
+		tk.groups["basic"] = &ToolGroup{
+			GroupName: "basic",
+			Tools:     tools,
+			Active:    true,
+		}
+	}
+	return tk
+}
+
+// AddGroup adds a named tool group. The group starts active.
+func (tk *Toolkit) AddGroup(name string, tools ...Tool) {
+	tk.mu.Lock()
+	defer tk.mu.Unlock()
+	tk.groups[name] = &ToolGroup{
+		GroupName: name,
+		Tools:     tools,
+		Active:    true,
+	}
+}
+
+// ActivateGroup activates a tool group by name.
+func (tk *Toolkit) ActivateGroup(name string) {
+	tk.mu.Lock()
+	defer tk.mu.Unlock()
+	if g, ok := tk.groups[name]; ok {
+		g.Active = true
+	}
+}
+
+// DeactivateGroup deactivates a tool group (it won't appear in schemas or be callable).
+func (tk *Toolkit) DeactivateGroup(name string) {
+	tk.mu.Lock()
+	defer tk.mu.Unlock()
+	if g, ok := tk.groups[name]; ok {
+		g.Active = false
+	}
+}
+
+// GetToolSchemas returns ToolSchema for all active tools, suitable for passing to model.WithTools.
+func (tk *Toolkit) GetToolSchemas() []model.ToolSchema {
+	tk.mu.RLock()
+	defer tk.mu.RUnlock()
+
+	var schemas []model.ToolSchema
+	for _, g := range tk.groups {
+		if !g.Active {
+			continue
+		}
+		for _, t := range g.Tools {
+			schema := t.InputSchema()
+			if schema == nil {
+				schema = json.RawMessage(`{"type":"object","properties":{}}`)
+			}
+			schemas = append(schemas, model.ToolSchema{
+				Type: "function",
+				Function: model.ToolFunction{
+					Name:        t.Name(),
+					Description: t.Description(),
+					Parameters:  schema,
+				},
+			})
+		}
+	}
+	return schemas
+}
+
+// CallTool executes a tool by name with the given input.
+func (tk *Toolkit) CallTool(ctx context.Context, name string, input map[string]any) (*ToolResponse, error) {
+	tk.mu.RLock()
+	t := tk.findTool(name)
+	tk.mu.RUnlock()
+
+	if t == nil {
+		return nil, fmt.Errorf("tool %q not found or not active", name)
+	}
+	return t.Execute(ctx, input)
+}
+
+// CallToolFromBlock executes a tool from a ToolCallBlock.
+func (tk *Toolkit) CallToolFromBlock(ctx context.Context, block message.ToolCallBlock) (*ToolResponse, error) {
+	input, err := block.ParseInput()
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("parse tool input: %w", err)), nil
+	}
+	return tk.CallTool(ctx, block.Name, input)
+}
+
+// Get returns a tool by name from active groups, or nil if not found.
+func (tk *Toolkit) Get(name string) Tool {
+	tk.mu.RLock()
+	defer tk.mu.RUnlock()
+	return tk.findTool(name)
+}
+
+func (tk *Toolkit) findTool(name string) Tool {
+	for _, g := range tk.groups {
+		if !g.Active {
+			continue
+		}
+		for _, t := range g.Tools {
+			if t.Name() == name {
+				return t
+			}
+		}
+	}
+	return nil
+}
+
+// --- Global Registry ---
 
 var (
 	mu       sync.RWMutex
-	registry = map[string]*Tool{}
+	registry = map[string]Tool{}
 )
 
-// Toolkit is a lightweight wrapper managing a set of tools per agent.
-// It does not automatically register tools in the global registry.
-type Toolkit struct {
-	Tools map[string]*Tool
-}
-
-// NewToolkit builds a Toolkit from the given tool list.
-func NewToolkit(tools ...*Tool) *Toolkit {
-	t := &Toolkit{Tools: make(map[string]*Tool, len(tools))}
-	for _, tool := range tools {
-		if tool == nil || tool.Name == "" {
-			continue
-		}
-		t.Tools[tool.Name] = tool
-	}
-	return t
-}
-
-// Get fetches a tool from the toolkit by name.
-func (t *Toolkit) Get(name string) *Tool {
-	if t == nil {
-		return nil
-	}
-	return t.Tools[name]
-}
-
-// Register registers a tool in the global registry (by unique name).
-func Register(t *Tool) error {
-	if t == nil || t.Name == "" {
+// Register registers a tool in the global registry.
+func Register(t Tool) error {
+	if t == nil || t.Name() == "" {
 		return fmt.Errorf("tool: invalid tool")
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	registry[t.Name] = t
+	registry[t.Name()] = t
 	return nil
 }
 
-// Get returns a globally registered tool by name.
-func Get(name string) *Tool {
+// GetRegistered returns a globally registered tool by name.
+func GetRegistered(name string) Tool {
 	mu.RLock()
 	defer mu.RUnlock()
 	return registry[name]
 }
 
-// List returns the names of all globally registered tools.
-func List() []string {
+// ListRegistered returns the names of all globally registered tools.
+func ListRegistered() []string {
 	mu.RLock()
 	defer mu.RUnlock()
 	out := make([]string, 0, len(registry))
@@ -74,4 +292,3 @@ func List() []string {
 	}
 	return out
 }
-
