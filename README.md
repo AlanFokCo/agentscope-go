@@ -261,9 +261,8 @@ pkg/agentscope/
 └── internal/              # httpx (HTTP+SSE helper), jsonx (repair)
 ```
 
-## Migrating from Python
+## Documentation
 
-See [`docs/migration_from_python.md`](docs/migration_from_python.md) for a side-by-side mapping between Python AgentScope and the Go equivalents.
 
 ## Contributing
 
@@ -278,3 +277,13 @@ Apache License 2.0 — see [LICENSE](./LICENSE) for details.
 If you find AgentScope helpful, please cite our papers:
 
 - [AgentScope: A Flexible yet Robust Multi-Agent Platform](https://arxiv.org/abs/2402.14034)
+
+Detailed documentation is available in the [`docs/`](docs/) directory:
+
+- [Getting Started](docs/getting-started.md) — Installation, first agent, environment setup
+- [Architecture](docs/architecture.md) — Package structure, core concepts, data flow
+- [Model Providers](docs/model-providers.md) — Configure 9 LLM providers with examples
+- [Tools](docs/tools.md) — Built-in tools, custom functions, permissions
+- [Middleware](docs/middleware.md) — 5-hook system, tracing, budget, memory
+- [Examples](docs/examples.md) — Full catalog of 25 runnable examples
+- [Deployment](docs/deployment.md) — HTTP service, sandboxing, production checklist
