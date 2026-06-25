@@ -130,7 +130,7 @@ func WithMiddlewares(mws ...middleware.Middleware) AgentOption {
 // When set, the agent compresses its context window when token count exceeds
 // the trigger ratio, using a model-generated structured summary.
 // Also creates a ReadCache for file caching if none is already set.
-func WithContextConfig(cfg ContextConfig) AgentOption {
+func WithContextConfig(cfg *ContextConfig) AgentOption {
 	return func(a *UnifiedAgent) {
 		c := cfg.withDefaults()
 		a.contextCfg = &c
@@ -285,17 +285,17 @@ func (a *UnifiedAgent) Observe(ctx context.Context, msgs []*message.Msg) error {
 
 // SubmitUserConfirm submits a user confirmation result for pending tool calls.
 // Call this after receiving a RequireUserConfirmEvent from the event stream.
-func (a *UnifiedAgent) SubmitUserConfirm(result event.UserConfirmResultEvent) {
+func (a *UnifiedAgent) SubmitUserConfirm(result *event.UserConfirmResultEvent) {
 	if a.confirmCh != nil {
-		a.confirmCh <- result
+		a.confirmCh <- *result
 	}
 }
 
 // SubmitExternalResult submits results from external tool execution.
 // Call this after receiving a RequireExternalExecutionEvent from the event stream.
-func (a *UnifiedAgent) SubmitExternalResult(result event.ExternalExecutionResultEvent) {
+func (a *UnifiedAgent) SubmitExternalResult(result *event.ExternalExecutionResultEvent) {
 	if a.externalCh != nil {
-		a.externalCh <- result
+		a.externalCh <- *result
 	}
 }
 
@@ -356,7 +356,7 @@ reactLoop:
 					a.executeConcurrentBatch(ctx, ch, replyID, batch.calls, actingHandler)
 				} else {
 					for _, tc := range batch.calls {
-						a.executeAndRecord(ctx, ch, replyID, tc, actingHandler)
+						a.executeAndRecord(ctx, ch, replyID, &tc, actingHandler)
 					}
 				}
 			}
@@ -373,7 +373,7 @@ reactLoop:
 
 			emit(ctx, ch, event.NewModelCallStartEvent(replyID, ""))
 
-			resp, err := modelCallHandler(ctx, middleware.ModelCallInput{
+			resp, err := modelCallHandler(ctx, &middleware.ModelCallInput{
 				AgentName: a.name,
 				Messages:  modelMsgs,
 				Tools:     schemas,
@@ -410,7 +410,7 @@ reactLoop:
 					a.executeConcurrentBatch(ctx, ch, replyID, batch.calls, actingHandler)
 				} else {
 					for _, tc := range batch.calls {
-						a.executeAndRecord(ctx, ch, replyID, tc, actingHandler)
+						a.executeAndRecord(ctx, ch, replyID, &tc, actingHandler)
 					}
 				}
 			}
@@ -448,7 +448,7 @@ func emitContentEvents(ctx context.Context, ch chan<- event.Event, replyID strin
 
 // buildModelCallHandler returns a ModelCallHandler wrapped with middleware.
 func (a *UnifiedAgent) buildModelCallHandler() middleware.ModelCallHandler {
-	core := func(ctx context.Context, input middleware.ModelCallInput) (*model.ChatResponse, error) {
+	core := func(ctx context.Context, input *middleware.ModelCallInput) (*model.ChatResponse, error) {
 		var opts []model.CallOption
 		if len(input.Tools) > 0 {
 			opts = append(opts, model.WithTools(input.Tools))
@@ -466,8 +466,8 @@ func (a *UnifiedAgent) buildModelCallHandler() middleware.ModelCallHandler {
 
 // buildActingHandler returns an ActingHandler wrapped with middleware.
 func (a *UnifiedAgent) buildActingHandler() middleware.ActingHandler {
-	core := func(ctx context.Context, input middleware.ActingInput) (*tool.ToolResponse, error) {
-		return a.toolkit.CallToolFromBlock(ctx, input.ToolCall)
+	core := func(ctx context.Context, input *middleware.ActingInput) (*tool.ToolResponse, error) {
+		return a.toolkit.CallToolFromBlock(ctx, &input.ToolCall)
 	}
 	if len(a.middlewares) == 0 {
 		return core
@@ -481,7 +481,7 @@ func (a *UnifiedAgent) executeToolCallWithPermission(
 	ctx context.Context,
 	ch chan<- event.Event,
 	replyID string,
-	tc message.ToolCallBlock,
+	tc *message.ToolCallBlock,
 	actingHandler middleware.ActingHandler,
 ) (message.ToolResultState, string) {
 	if a.engine != nil && tc.State != message.ToolCallAllowed {
@@ -511,7 +511,7 @@ func (a *UnifiedAgent) executeToolCallWithPermission(
 		case permission.BehaviorAsk, permission.BehaviorPassthrough:
 			a.updateToolCallState(tc.ID, message.ToolCallAsking)
 			tc.SuggestedRules = rulesToAny(decision.SuggestedRules)
-			emit(ctx, ch, event.NewRequireUserConfirmEvent(replyID, []message.ToolCallBlock{tc}))
+			emit(ctx, ch, event.NewRequireUserConfirmEvent(replyID, []message.ToolCallBlock{*tc}))
 
 			// Block waiting for user confirmation
 			confirmed, resultTC := a.waitForConfirmation(ctx, tc.ID)
@@ -521,7 +521,7 @@ func (a *UnifiedAgent) executeToolCallWithPermission(
 					"Permission denied by user")
 			}
 			a.updateToolCallState(tc.ID, message.ToolCallAllowed)
-			tc = resultTC
+			*tc = resultTC
 		}
 	}
 
@@ -530,11 +530,11 @@ func (a *UnifiedAgent) executeToolCallWithPermission(
 	if t != nil && t.IsExternalTool() {
 		a.updateToolCallState(tc.ID, message.ToolCallSubmitted)
 		emit(ctx, ch, event.NewToolResultStartEvent(replyID, tc.ID, tc.Name))
-		emit(ctx, ch, event.NewRequireExternalExecutionEvent(replyID, []message.ToolCallBlock{tc}))
+		emit(ctx, ch, event.NewRequireExternalExecutionEvent(replyID, []message.ToolCallBlock{*tc}))
 		result := a.waitForExternalResult(ctx, tc.ID)
 		if result == nil {
 			return a.emitToolResult(ctx, ch, replyID, tc, message.ToolResultError,
-				"External execution timed out or cancelled")
+				"External execution timed out or canceled")
 		}
 		outputText := result.GetOutputText()
 		emit(ctx, ch, event.NewToolResultTextDeltaEvent(replyID, tc.ID, outputText))
@@ -548,7 +548,8 @@ func (a *UnifiedAgent) executeToolCallWithPermission(
 func (a *UnifiedAgent) waitForConfirmation(ctx context.Context, toolCallID string) (bool, message.ToolCallBlock) {
 	select {
 	case result := <-a.confirmCh:
-		for _, cr := range result.ConfirmResults {
+		for i := range result.ConfirmResults {
+			cr := &result.ConfirmResults[i]
 			if cr.ToolCall.ID == toolCallID {
 				if cr.Confirmed {
 					// Add any user-provided rules to the engine
@@ -589,31 +590,32 @@ func (a *UnifiedAgent) executeTool(
 	ctx context.Context,
 	ch chan<- event.Event,
 	replyID string,
-	tc message.ToolCallBlock,
+	tc *message.ToolCallBlock,
 	actingHandler middleware.ActingHandler,
 ) (message.ToolResultState, string) {
-	toolResp, execErr := actingHandler(ctx, middleware.ActingInput{
+	toolResp, execErr := actingHandler(ctx, &middleware.ActingInput{
 		AgentName: a.name,
-		ToolCall:  tc,
+		ToolCall:  *tc,
 	})
 
 	var resultState message.ToolResultState
 	var outputText string
-	if execErr != nil {
+	switch {
+	case execErr != nil:
 		// DeveloperErrors propagate up; AgentErrors become tool results for the LLM
 		if _, ok := execErr.(exception.DeveloperError); ok {
 			logrus.WithError(execErr).Error("agent: developer error in tool execution")
 		}
 		resultState = message.ToolResultError
 		outputText = exception.GetAgentMessage(execErr)
-	} else if toolResp != nil {
+	case toolResp != nil:
 		resultState = toolResp.State
 		for _, b := range toolResp.Content {
 			if tb, ok := b.(message.TextBlock); ok {
 				outputText += tb.Text
 			}
 		}
-	} else {
+	default:
 		resultState = message.ToolResultSuccess
 	}
 
@@ -639,7 +641,7 @@ func (a *UnifiedAgent) emitToolResult(
 	ctx context.Context,
 	ch chan<- event.Event,
 	replyID string,
-	tc message.ToolCallBlock,
+	tc *message.ToolCallBlock,
 	state message.ToolResultState,
 	text string,
 ) (message.ToolResultState, string) {
@@ -800,7 +802,7 @@ func (a *UnifiedAgent) executeAndRecord(
 	ctx context.Context,
 	ch chan<- event.Event,
 	replyID string,
-	tc message.ToolCallBlock,
+	tc *message.ToolCallBlock,
 	actingHandler middleware.ActingHandler,
 ) {
 	emit(ctx, ch, event.NewToolCallStartEvent(replyID, tc.ID, tc.Name))
@@ -833,11 +835,11 @@ func (a *UnifiedAgent) executeConcurrentBatch(
 	wg.Add(len(calls))
 
 	for i, tc := range calls {
-		go func(idx int, tc message.ToolCallBlock) {
+		go func(idx int, tc *message.ToolCallBlock) {
 			defer wg.Done()
 			state, text := a.executeToolCallWithPermission(ctx, nil, replyID, tc, actingHandler)
 			results[idx] = toolResult{index: idx, state: state, text: text}
-		}(i, tc)
+		}(i, &tc)
 	}
 	wg.Wait()
 

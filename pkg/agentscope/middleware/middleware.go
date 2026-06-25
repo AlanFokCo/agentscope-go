@@ -13,10 +13,10 @@ import (
 type ReplyHandler func(ctx context.Context, input ReplyInput) <-chan event.Event
 
 // ModelCallHandler calls the model and returns a response.
-type ModelCallHandler func(ctx context.Context, input ModelCallInput) (*model.ChatResponse, error)
+type ModelCallHandler func(ctx context.Context, input *ModelCallInput) (*model.ChatResponse, error)
 
 // ActingHandler executes a tool call and returns the result.
-type ActingHandler func(ctx context.Context, input ActingInput) (*tool.ToolResponse, error)
+type ActingHandler func(ctx context.Context, input *ActingInput) (*tool.ToolResponse, error)
 
 // CompressHandler performs context compression.
 type CompressHandler func(ctx context.Context, input CompressInput) error
@@ -75,10 +75,10 @@ type Middleware interface {
 	OnReasoning(ctx context.Context, input ReasoningInput, next ReasoningHandler) <-chan event.Event
 
 	// OnModelCall wraps each model API call within the ReAct loop.
-	OnModelCall(ctx context.Context, input ModelCallInput, next ModelCallHandler) (*model.ChatResponse, error)
+	OnModelCall(ctx context.Context, input *ModelCallInput, next ModelCallHandler) (*model.ChatResponse, error)
 
 	// OnActing wraps each tool execution.
-	OnActing(ctx context.Context, input ActingInput, next ActingHandler) (*tool.ToolResponse, error)
+	OnActing(ctx context.Context, input *ActingInput, next ActingHandler) (*tool.ToolResponse, error)
 
 	// OnSystemPrompt transforms the system prompt (pipeline mode, not onion).
 	// Each middleware receives the output of the previous one.
@@ -116,11 +116,11 @@ func (b *BaseMiddleware) ListTools() []tool.Tool {
 	return nil
 }
 
-func (b *BaseMiddleware) OnModelCall(ctx context.Context, input ModelCallInput, next ModelCallHandler) (*model.ChatResponse, error) {
+func (b *BaseMiddleware) OnModelCall(ctx context.Context, input *ModelCallInput, next ModelCallHandler) (*model.ChatResponse, error) {
 	return next(ctx, input)
 }
 
-func (b *BaseMiddleware) OnActing(ctx context.Context, input ActingInput, next ActingHandler) (*tool.ToolResponse, error) {
+func (b *BaseMiddleware) OnActing(ctx context.Context, input *ActingInput, next ActingHandler) (*tool.ToolResponse, error) {
 	return next(ctx, input)
 }
 

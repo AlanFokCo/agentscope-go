@@ -36,14 +36,14 @@ func (m *orderMiddleware) OnReply(ctx context.Context, input ReplyInput, next Re
 	return out
 }
 
-func (m *orderMiddleware) OnModelCall(ctx context.Context, input ModelCallInput, next ModelCallHandler) (*model.ChatResponse, error) {
+func (m *orderMiddleware) OnModelCall(ctx context.Context, input *ModelCallInput, next ModelCallHandler) (*model.ChatResponse, error) {
 	m.tracker.order = append(m.tracker.order, m.label+":before")
 	resp, err := next(ctx, input)
 	m.tracker.order = append(m.tracker.order, m.label+":after")
 	return resp, err
 }
 
-func (m *orderMiddleware) OnActing(ctx context.Context, input ActingInput, next ActingHandler) (*tool.ToolResponse, error) {
+func (m *orderMiddleware) OnActing(ctx context.Context, input *ActingInput, next ActingHandler) (*tool.ToolResponse, error) {
 	m.tracker.order = append(m.tracker.order, m.label+":before")
 	resp, err := next(ctx, input)
 	m.tracker.order = append(m.tracker.order, m.label+":after")
@@ -97,13 +97,13 @@ func TestBuildModelCallChain_OnionOrder(t *testing.T) {
 	mw1 := &orderMiddleware{BaseMiddleware: BaseMiddleware{MiddlewareKey: "mw1"}, tracker: tracker, label: "outer"}
 	mw2 := &orderMiddleware{BaseMiddleware: BaseMiddleware{MiddlewareKey: "mw2"}, tracker: tracker, label: "inner"}
 
-	core := func(ctx context.Context, input ModelCallInput) (*model.ChatResponse, error) {
+	core := func(ctx context.Context, input *ModelCallInput) (*model.ChatResponse, error) {
 		tracker.order = append(tracker.order, "core")
 		return &model.ChatResponse{Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: "hello"}}}, nil
 	}
 
 	chain := BuildModelCallChain([]Middleware{mw1, mw2}, core)
-	resp, err := chain(context.Background(), ModelCallInput{AgentName: "test"})
+	resp, err := chain(context.Background(), &ModelCallInput{AgentName: "test"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,13 +127,13 @@ func TestBuildActingChain_OnionOrder(t *testing.T) {
 	mw1 := &orderMiddleware{BaseMiddleware: BaseMiddleware{MiddlewareKey: "mw1"}, tracker: tracker, label: "outer"}
 	mw2 := &orderMiddleware{BaseMiddleware: BaseMiddleware{MiddlewareKey: "mw2"}, tracker: tracker, label: "inner"}
 
-	core := func(ctx context.Context, input ActingInput) (*tool.ToolResponse, error) {
+	core := func(ctx context.Context, input *ActingInput) (*tool.ToolResponse, error) {
 		tracker.order = append(tracker.order, "core")
 		return tool.NewTextResponse("done"), nil
 	}
 
 	chain := BuildActingChain([]Middleware{mw1, mw2}, core)
-	resp, err := chain(context.Background(), ActingInput{AgentName: "test"})
+	resp, err := chain(context.Background(), &ActingInput{AgentName: "test"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,10 +186,10 @@ func TestBaseMiddleware_PassThrough(t *testing.T) {
 	}
 
 	// OnModelCall pass-through
-	modelCore := func(ctx context.Context, input ModelCallInput) (*model.ChatResponse, error) {
+	modelCore := func(ctx context.Context, input *ModelCallInput) (*model.ChatResponse, error) {
 		return &model.ChatResponse{}, nil
 	}
-	_, err := mw.OnModelCall(context.Background(), ModelCallInput{}, modelCore)
+	_, err := mw.OnModelCall(context.Background(), &ModelCallInput{}, modelCore)
 	if err != nil {
 		t.Errorf("OnModelCall pass-through error: %v", err)
 	}
@@ -211,7 +211,7 @@ type shortCircuitMiddleware struct {
 	BaseMiddleware
 }
 
-func (m *shortCircuitMiddleware) OnModelCall(_ context.Context, _ ModelCallInput, _ ModelCallHandler) (*model.ChatResponse, error) {
+func (m *shortCircuitMiddleware) OnModelCall(_ context.Context, _ *ModelCallInput, _ ModelCallHandler) (*model.ChatResponse, error) {
 	return nil, fmt.Errorf("blocked by middleware")
 }
 
@@ -219,13 +219,13 @@ func TestBuildModelCallChain_ShortCircuit(t *testing.T) {
 	blocker := &shortCircuitMiddleware{BaseMiddleware: BaseMiddleware{MiddlewareKey: "blocker"}}
 
 	coreCalled := false
-	core := func(ctx context.Context, input ModelCallInput) (*model.ChatResponse, error) {
+	core := func(ctx context.Context, input *ModelCallInput) (*model.ChatResponse, error) {
 		coreCalled = true
 		return &model.ChatResponse{}, nil
 	}
 
 	chain := BuildModelCallChain([]Middleware{blocker}, core)
-	_, err := chain(context.Background(), ModelCallInput{})
+	_, err := chain(context.Background(), &ModelCallInput{})
 	if err == nil {
 		t.Fatal("expected error from short-circuit middleware")
 	}

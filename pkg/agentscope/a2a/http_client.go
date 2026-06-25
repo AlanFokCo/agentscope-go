@@ -12,7 +12,8 @@ import (
 
 // HTTPClient is a reference implementation that calls a remote agent service via HTTP/JSON.
 // Protocol convention:
-//   POST {Endpoint} with body {"messages":[...]}, returns {"reply": {...}}.
+//
+//	POST {Endpoint} with body {"messages":[...]}, returns {"reply": {...}}.
 type HTTPClient struct {
 	Endpoint   string
 	HTTPClient *http.Client
@@ -56,4 +57,3 @@ func (c *HTTPClient) Call(ctx context.Context, msgs []*message.Msg) (*message.Ms
 	}
 	return data.Reply, nil
 }
-

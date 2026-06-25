@@ -24,7 +24,7 @@ type LoggingMiddleware struct {
 
 func (m *LoggingMiddleware) OnModelCall(
 	ctx context.Context,
-	input middleware.ModelCallInput,
+	input *middleware.ModelCallInput,
 	next middleware.ModelCallHandler,
 ) (*model.ChatResponse, error) {
 	start := time.Now()
@@ -52,7 +52,7 @@ func (m *LoggingMiddleware) OnModelCall(
 
 func (m *LoggingMiddleware) OnActing(
 	ctx context.Context,
-	input middleware.ActingInput,
+	input *middleware.ActingInput,
 	next middleware.ActingHandler,
 ) (*tool.ToolResponse, error) {
 	fmt.Printf("[middleware] executing tool %q for agent %q\n", input.ToolCall.Name, input.AgentName)
@@ -136,7 +136,7 @@ func main() {
 
 func loadChatModelFromEnv() (model.ChatModel, error) {
 	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
-		return model.NewAnthropicChatModel(model.AnthropicConfig{
+		return model.NewAnthropicChatModel(&model.AnthropicConfig{
 			APIKey:          key,
 			Model:           "claude-sonnet-4-20250514",
 			MaxOutputTokens: 1024,

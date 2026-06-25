@@ -14,7 +14,7 @@ const (
 	TaskPending   TaskStatus = "pending"
 	TaskRunning   TaskStatus = "running"
 	TaskCompleted TaskStatus = "completed"
-	TaskCancelled TaskStatus = "cancelled"
+	TaskCanceled  TaskStatus = "canceled"
 	TaskFailed    TaskStatus = "failed"
 )
 
@@ -67,7 +67,7 @@ func (m *BackgroundTaskManager) Submit(name string, fn func(ctx context.Context)
 		defer m.mu.Unlock()
 		task.DoneAt = time.Now()
 		if ctx.Err() == context.Canceled {
-			task.Status = TaskCancelled
+			task.Status = TaskCanceled
 		} else if err != nil {
 			task.Status = TaskFailed
 			task.Error = err
@@ -148,7 +148,7 @@ func (d *CancelDispatcher) Cancel(key string) {
 	}
 }
 
-// Unregister removes a key without cancelling.
+// Unregister removes a key without canceling.
 func (d *CancelDispatcher) Unregister(key string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()

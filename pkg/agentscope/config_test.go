@@ -46,4 +46,3 @@ func TestInitWithInvalidLogPath(t *testing.T) {
 	Logger().Println("log after invalid path")
 	Log().Info("logrus after invalid path")
 }
-

@@ -75,7 +75,7 @@ func (s *Server) RemoveTool(name string) {
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 type mcpToolInfo struct {
@@ -98,7 +98,7 @@ func (s *Server) handleListTools(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tools)
+	_ = json.NewEncoder(w).Encode(tools)
 }
 
 func (s *Server) handleCallTool(w http.ResponseWriter, r *http.Request) {
@@ -122,7 +122,7 @@ func (s *Server) handleCallTool(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"content":  err.Error(),
 			"is_error": true,
 		})
@@ -145,7 +145,7 @@ func (s *Server) handleCallTool(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"content":  content,
 		"is_error": isError,
 	})

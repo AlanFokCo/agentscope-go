@@ -18,7 +18,7 @@ func TestAgentErrors(t *testing.T) {
 		},
 		{
 			"ToolInterruptedError",
-			&ToolInterruptedError{ToolName: "bash", Reason: "user cancelled"},
+			&ToolInterruptedError{ToolName: "bash", Reason: "user canceled"},
 			true,
 		},
 		{

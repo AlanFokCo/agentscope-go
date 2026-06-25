@@ -32,7 +32,7 @@ type GeminiEmbeddingModel struct {
 }
 
 // NewGeminiEmbeddingModel creates an embedding model using Google Gemini's API.
-func NewGeminiEmbeddingModel(cfg GeminiConfig) (*GeminiEmbeddingModel, error) {
+func NewGeminiEmbeddingModel(cfg *GeminiConfig) (*GeminiEmbeddingModel, error) {
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("embedding: Gemini API key is required")
 	}
@@ -60,8 +60,8 @@ func NewGeminiEmbeddingModel(cfg GeminiConfig) (*GeminiEmbeddingModel, error) {
 	}, nil
 }
 
-func (m *GeminiEmbeddingModel) ModelName() string  { return m.model }
-func (m *GeminiEmbeddingModel) Dimensions() int    { return m.dimensions }
+func (m *GeminiEmbeddingModel) ModelName() string         { return m.model }
+func (m *GeminiEmbeddingModel) Dimensions() int           { return m.dimensions }
 func (m *GeminiEmbeddingModel) SetCache(c EmbeddingCache) { m.cache = c }
 
 func (m *GeminiEmbeddingModel) Embed(ctx context.Context, texts []string) (*EmbeddingResponse, error) {

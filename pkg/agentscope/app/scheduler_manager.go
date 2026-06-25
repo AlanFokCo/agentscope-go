@@ -93,7 +93,7 @@ func (m *SchedulerManager) Cancel(ctx context.Context, id string) error {
 		m.mu.Unlock()
 		return fmt.Errorf("schedule %s not found", id)
 	}
-	record.Status = "cancelled"
+	record.Status = "canceled"
 	m.mu.Unlock()
 
 	return m.scheduler.Cancel(ctx, record.TaskID)

@@ -107,14 +107,15 @@ func (a *UnifiedAgent) compressContext(ctx context.Context) error {
 	}
 
 	if len(a.middlewares) == 0 {
-		return a.compressContextImpl(ctx, *a.contextCfg)
+		cfgCopy := *a.contextCfg
+		return a.compressContextImpl(ctx, &cfgCopy)
 	}
 
 	core := func(ctx context.Context, input middleware.CompressInput) error {
 		cfg := *a.contextCfg
 		cfg.TriggerRatio = input.TriggerRatio
 		cfg.ReserveRatio = input.ReserveRatio
-		return a.compressContextImpl(ctx, cfg)
+		return a.compressContextImpl(ctx, &cfg)
 	}
 	chain := middleware.BuildCompressChain(a.middlewares, core)
 	return chain(ctx, middleware.CompressInput{
@@ -124,7 +125,7 @@ func (a *UnifiedAgent) compressContext(ctx context.Context) error {
 	})
 }
 
-func (a *UnifiedAgent) compressContextImpl(ctx context.Context, cfg ContextConfig) error {
+func (a *UnifiedAgent) compressContextImpl(ctx context.Context, cfg *ContextConfig) error {
 	ctxSize := cfg.ContextSize
 	if ctxSize == 0 {
 		ctxSize = model.ResolveContextSize(a.model, defaultContextSize)
@@ -232,7 +233,7 @@ func (a *UnifiedAgent) retryCompressWithFewer(
 	ctx context.Context,
 	baseMsgs []*message.Msg,
 	msgsToCompress []*message.Msg,
-	cfg ContextConfig,
+	cfg *ContextConfig,
 	ctxSize int,
 	compressionToolSchema []model.ToolSchema,
 ) (json.RawMessage, error) {
@@ -278,7 +279,9 @@ func (a *UnifiedAgent) splitContextForCompression(reserveTokenBudget int, tools 
 
 	splitIdx := len(ctxMsgs)
 	for i := len(ctxMsgs) - 1; i >= 0; i-- {
-		candidate := append(baseMsgs, ctxMsgs[i:]...)
+		candidate := make([]*message.Msg, len(baseMsgs))
+		copy(candidate, baseMsgs)
+		candidate = append(candidate, ctxMsgs[i:]...)
 		tokens := a.model.CountTokens(candidate, tools)
 		if tokens >= reserveTokenBudget {
 			splitIdx = i + 1

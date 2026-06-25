@@ -44,7 +44,7 @@ func openAIMockServer() *httptest.Server {
 			if r.Header.Get("x-api-key") != "" {
 				// Check if streaming
 				var body map[string]any
-				json.NewDecoder(r.Body).Decode(&body)
+				_ = json.NewDecoder(r.Body).Decode(&body)
 				if stream, ok := body["stream"].(bool); ok && stream {
 					w.Header().Set("Content-Type", "text/event-stream")
 					fmt.Fprint(w, anthropicStreamResponseSSE())
@@ -58,7 +58,7 @@ func openAIMockServer() *httptest.Server {
 		// Default: OpenAI-compatible chat/completions
 		// Check if streaming
 		var body map[string]any
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 		if stream, ok := body["stream"].(bool); ok && stream {
 			w.Header().Set("Content-Type", "text/event-stream")
 			fmt.Fprint(w, openAIStreamResponseSSE())
@@ -190,12 +190,12 @@ func TestOpenAIConfig_MissingFields(t *testing.T) {
 }
 
 func TestAnthropicConfig_MissingFields(t *testing.T) {
-	_, err := NewAnthropicChatModel(AnthropicConfig{})
+	_, err := NewAnthropicChatModel(&AnthropicConfig{})
 	if err == nil || !strings.Contains(err.Error(), "APIKey is required") {
 		t.Fatalf("expected APIKey error, got %v", err)
 	}
 
-	_, err = NewAnthropicChatModel(AnthropicConfig{APIKey: "sk-test"})
+	_, err = NewAnthropicChatModel(&AnthropicConfig{APIKey: "sk-test"})
 	if err == nil || !strings.Contains(err.Error(), "Model is required") {
 		t.Fatalf("expected Model error, got %v", err)
 	}
@@ -269,7 +269,7 @@ func TestXAIConfig_MissingFields(t *testing.T) {
 }
 
 func TestOpenAIResponseConfig_MissingFields(t *testing.T) {
-	_, err := NewOpenAIResponseModel(OpenAIResponseConfig{})
+	_, err := NewOpenAIResponseModel(&OpenAIResponseConfig{})
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Fatalf("expected api key error, got %v", err)
 	}
@@ -288,7 +288,7 @@ func TestOpenAIConfig_ValidConstruction(t *testing.T) {
 }
 
 func TestAnthropicConfig_ValidConstruction(t *testing.T) {
-	m, err := NewAnthropicChatModel(AnthropicConfig{APIKey: "sk-test", Model: "claude-3"})
+	m, err := NewAnthropicChatModel(&AnthropicConfig{APIKey: "sk-test", Model: "claude-3"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +344,7 @@ func TestXAIConfig_ValidConstruction(t *testing.T) {
 }
 
 func TestOpenAIResponseConfig_ValidConstruction(t *testing.T) {
-	m, err := NewOpenAIResponseModel(OpenAIResponseConfig{APIKey: "sk-test"})
+	m, err := NewOpenAIResponseModel(&OpenAIResponseConfig{APIKey: "sk-test"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,14 +366,14 @@ func TestCountTokens_AllProviders(t *testing.T) {
 		model ChatModel
 	}{
 		{"OpenAI", must(NewOpenAIChatModel(OpenAIConfig{APIKey: "k", Model: "m"}))},
-		{"Anthropic", must(NewAnthropicChatModel(AnthropicConfig{APIKey: "k", Model: "m"}))},
+		{"Anthropic", must(NewAnthropicChatModel(&AnthropicConfig{APIKey: "k", Model: "m"}))},
 		{"DashScope", must(NewDashScopeChatModel(DashScopeConfig{APIKey: "k", Model: "m"}))},
 		{"DeepSeek", must(NewDeepSeekChatModel(DeepSeekConfig{APIKey: "k", Model: "m"}))},
 		{"Gemini", must(NewGeminiChatModel(GeminiConfig{APIKey: "k", Model: "m"}))},
 		{"Moonshot", must(NewMoonshotChatModel(MoonshotConfig{APIKey: "k", Model: "m"}))},
 		{"Ollama", mustOllama(NewOllamaChatModel(OllamaConfig{Model: "m"}))},
 		{"XAI", must(NewXAIChatModel(XAIConfig{APIKey: "k", Model: "m"}))},
-		{"OpenAIResponse", mustChatModel(NewOpenAIResponseModel(OpenAIResponseConfig{APIKey: "k"}))},
+		{"OpenAIResponse", mustChatModel(NewOpenAIResponseModel(&OpenAIResponseConfig{APIKey: "k"}))},
 	}
 
 	for _, tt := range tests {
@@ -436,7 +436,7 @@ func TestChat_EmptyMessages_AllProviders(t *testing.T) {
 		model ChatModel
 	}{
 		{"OpenAI", mustChatModel(NewOpenAIChatModel(OpenAIConfig{APIKey: "k", Model: "m", BaseURL: srv.URL, HTTPClient: client}))},
-		{"Anthropic", mustChatModel(NewAnthropicChatModel(AnthropicConfig{APIKey: "k", Model: "m", BaseURL: srv.URL, HTTPClient: client}))},
+		{"Anthropic", mustChatModel(NewAnthropicChatModel(&AnthropicConfig{APIKey: "k", Model: "m", BaseURL: srv.URL, HTTPClient: client}))},
 		{"DashScope", mustChatModel(NewDashScopeChatModel(DashScopeConfig{APIKey: "k", Model: "m", BaseURL: srv.URL, HTTPClient: client}))},
 		{"DeepSeek", mustChatModel(NewDeepSeekChatModel(DeepSeekConfig{APIKey: "k", Model: "m", BaseURL: srv.URL, HTTPClient: client}))},
 		{"Gemini", mustChatModel(NewGeminiChatModel(GeminiConfig{APIKey: "k", Model: "m", BaseURL: srv.URL, HTTPClient: client}))},
@@ -475,7 +475,7 @@ func TestChatStream_ReturnsChannel_AllProviders(t *testing.T) {
 		model ChatModel
 	}{
 		{"OpenAI", mustChatModel(NewOpenAIChatModel(OpenAIConfig{APIKey: "k", Model: "m", BaseURL: srv.URL, HTTPClient: client}))},
-		{"Anthropic", mustChatModel(NewAnthropicChatModel(AnthropicConfig{APIKey: "k", Model: "m", BaseURL: srv.URL, HTTPClient: client}))},
+		{"Anthropic", mustChatModel(NewAnthropicChatModel(&AnthropicConfig{APIKey: "k", Model: "m", BaseURL: srv.URL, HTTPClient: client}))},
 		{"DashScope", mustChatModel(NewDashScopeChatModel(DashScopeConfig{APIKey: "k", Model: "m", BaseURL: srv.URL, HTTPClient: client}))},
 		{"DeepSeek", mustChatModel(NewDeepSeekChatModel(DeepSeekConfig{APIKey: "k", Model: "m", BaseURL: srv.URL, HTTPClient: client}))},
 		{"Gemini", mustChatModel(NewGeminiChatModel(GeminiConfig{APIKey: "k", Model: "m", BaseURL: srv.URL, HTTPClient: client}))},
@@ -512,7 +512,7 @@ func TestChatStream_EmptyMessages_AllProviders(t *testing.T) {
 		model ChatModel
 	}{
 		{"OpenAI", mustChatModel(NewOpenAIChatModel(OpenAIConfig{APIKey: "k", Model: "m", BaseURL: srv.URL, HTTPClient: client}))},
-		{"Anthropic", mustChatModel(NewAnthropicChatModel(AnthropicConfig{APIKey: "k", Model: "m", BaseURL: srv.URL, HTTPClient: client}))},
+		{"Anthropic", mustChatModel(NewAnthropicChatModel(&AnthropicConfig{APIKey: "k", Model: "m", BaseURL: srv.URL, HTTPClient: client}))},
 		{"DashScope", mustChatModel(NewDashScopeChatModel(DashScopeConfig{APIKey: "k", Model: "m", BaseURL: srv.URL, HTTPClient: client}))},
 		{"DeepSeek", mustChatModel(NewDeepSeekChatModel(DeepSeekConfig{APIKey: "k", Model: "m", BaseURL: srv.URL, HTTPClient: client}))},
 		{"Gemini", mustChatModel(NewGeminiChatModel(GeminiConfig{APIKey: "k", Model: "m", BaseURL: srv.URL, HTTPClient: client}))},
@@ -583,7 +583,7 @@ func TestChat_MockServer_Anthropic(t *testing.T) {
 	ctx := context.Background()
 	msgs := testMessages()
 
-	m, err := NewAnthropicChatModel(AnthropicConfig{
+	m, err := NewAnthropicChatModel(&AnthropicConfig{
 		APIKey:     "sk-test",
 		Model:      "claude-3",
 		BaseURL:    srv.URL,
@@ -644,7 +644,7 @@ func TestChat_MockServer_OpenAIResponse(t *testing.T) {
 	ctx := context.Background()
 	msgs := testMessages()
 
-	m, err := NewOpenAIResponseModel(OpenAIResponseConfig{
+	m, err := NewOpenAIResponseModel(&OpenAIResponseConfig{
 		APIKey:  "sk-test",
 		Model:   "gpt-4.1",
 		BaseURL: srv.URL,
@@ -681,7 +681,7 @@ func TestOpenAIConfig_DefaultBaseURL(t *testing.T) {
 }
 
 func TestAnthropicConfig_Defaults(t *testing.T) {
-	m, err := NewAnthropicChatModel(AnthropicConfig{APIKey: "k", Model: "m"})
+	m, err := NewAnthropicChatModel(&AnthropicConfig{APIKey: "k", Model: "m"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -717,7 +717,7 @@ func TestOllamaConfig_DefaultBaseURL(t *testing.T) {
 }
 
 func TestOpenAIResponseConfig_DefaultModel(t *testing.T) {
-	m, err := NewOpenAIResponseModel(OpenAIResponseConfig{APIKey: "k"})
+	m, err := NewOpenAIResponseModel(&OpenAIResponseConfig{APIKey: "k"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -742,7 +742,7 @@ func TestCustomBaseURL(t *testing.T) {
 		t.Errorf("OpenAI baseURL = %q, want %q", m1.baseURL, customURL)
 	}
 
-	m2, _ := NewAnthropicChatModel(AnthropicConfig{APIKey: "k", Model: "m", BaseURL: customURL})
+	m2, _ := NewAnthropicChatModel(&AnthropicConfig{APIKey: "k", Model: "m", BaseURL: customURL})
 	if m2.baseURL != customURL {
 		t.Errorf("Anthropic baseURL = %q, want %q", m2.baseURL, customURL)
 	}
@@ -783,7 +783,7 @@ func TestCustomBaseURL(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestOpenAIResponseModel_ContextSizer(t *testing.T) {
-	m, err := NewOpenAIResponseModel(OpenAIResponseConfig{APIKey: "k"})
+	m, err := NewOpenAIResponseModel(&OpenAIResponseConfig{APIKey: "k"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -798,7 +798,7 @@ func TestOpenAIResponseModel_ContextSizer(t *testing.T) {
 }
 
 func TestOpenAIResponseModel_ModelNamer(t *testing.T) {
-	m, err := NewOpenAIResponseModel(OpenAIResponseConfig{APIKey: "k", Model: "gpt-4.1-mini"})
+	m, err := NewOpenAIResponseModel(&OpenAIResponseConfig{APIKey: "k", Model: "gpt-4.1-mini"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -824,7 +824,7 @@ func TestCustomHTTPClient(t *testing.T) {
 		t.Error("OpenAI did not use custom HTTP client")
 	}
 
-	m2, _ := NewAnthropicChatModel(AnthropicConfig{APIKey: "k", Model: "m", HTTPClient: customClient})
+	m2, _ := NewAnthropicChatModel(&AnthropicConfig{APIKey: "k", Model: "m", HTTPClient: customClient})
 	if m2.httpClient != customClient {
 		t.Error("Anthropic did not use custom HTTP client")
 	}

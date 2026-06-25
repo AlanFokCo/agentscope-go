@@ -41,7 +41,7 @@ func BuildModelCallChain(middlewares []Middleware, core ModelCallHandler) ModelC
 	for i := len(middlewares) - 1; i >= 0; i-- {
 		mw := middlewares[i]
 		next := handler
-		handler = func(ctx context.Context, input ModelCallInput) (*model.ChatResponse, error) {
+		handler = func(ctx context.Context, input *ModelCallInput) (*model.ChatResponse, error) {
 			return mw.OnModelCall(ctx, input, next)
 		}
 	}
@@ -54,7 +54,7 @@ func BuildActingChain(middlewares []Middleware, core ActingHandler) ActingHandle
 	for i := len(middlewares) - 1; i >= 0; i-- {
 		mw := middlewares[i]
 		next := handler
-		handler = func(ctx context.Context, input ActingInput) (*tool.ToolResponse, error) {
+		handler = func(ctx context.Context, input *ActingInput) (*tool.ToolResponse, error) {
 			return mw.OnActing(ctx, input, next)
 		}
 	}

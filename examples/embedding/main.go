@@ -104,13 +104,13 @@ func cosineSimilarity(a, b []float32) float64 {
 
 func loadEmbeddingModelFromEnv() (embedding.EmbeddingModel, error) {
 	if key := os.Getenv("DASHSCOPE_API_KEY"); key != "" {
-		return embedding.NewDashScopeEmbeddingModel(embedding.OpenAICompatConfig{
+		return embedding.NewDashScopeEmbeddingModel(&embedding.OpenAICompatConfig{
 			APIKey: key,
 			Model:  "text-embedding-v3",
 		})
 	}
 	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
-		return embedding.NewOpenAIEmbeddingModel(embedding.OpenAICompatConfig{
+		return embedding.NewOpenAIEmbeddingModel(&embedding.OpenAICompatConfig{
 			APIKey: key,
 			Model:  "text-embedding-3-small",
 		})

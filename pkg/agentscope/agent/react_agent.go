@@ -90,11 +90,11 @@ type toolCall struct {
 }
 
 // Reply implements a simplified ReAct loop:
-// 1. Load history from memory and append the current user question.
-// 2. Call the model to get a reply.
-// 3. If the reply is a tool call JSON {"tool": "...", "args": {...}}, execute the tool,
-//    append the result to the context and call the model again.
-// 4. Stop when no tool call is returned or MaxIters is reached.
+//  1. Load history from memory and append the current user question.
+//  2. Call the model to get a reply.
+//  3. If the reply is a tool call JSON {"tool": "...", "args": {...}}, execute the tool,
+//     append the result to the context and call the model again.
+//  4. Stop when no tool call is returned or MaxIters is reached.
 func (a *ReActAgent) Reply(ctx context.Context, args ...any) (*message.Msg, error) {
 	var userText string
 	if len(args) > 0 {
@@ -140,7 +140,16 @@ func (a *ReActAgent) Reply(ctx context.Context, args ...any) (*message.Msg, erro
 		if err != nil {
 			return nil, err
 		}
-		assistantMsg := resp.ToMsg(a.Name)
+		assistantMsg := message.AssistantMsg(a.Name, resp.Content)
+		assistantMsg.ID = resp.ID
+		if resp.Usage != nil {
+			assistantMsg.Usage = &message.Usage{
+				InputTokens:              resp.Usage.InputTokens,
+				OutputTokens:             resp.Usage.OutputTokens,
+				CacheCreationInputTokens: resp.Usage.CacheCreationInputTokens,
+				CacheInputTokens:         resp.Usage.CacheInputTokens,
+			}
+		}
 		if assistantMsg == nil {
 			return nil, fmt.Errorf("react agent: nil response message")
 		}
@@ -151,7 +160,6 @@ func (a *ReActAgent) Reply(ctx context.Context, args ...any) (*message.Msg, erro
 			t := a.Toolkit.Get(call.Tool)
 			if t == nil {
 				// Tool not found; treat model reply as final answer.
-				history = append(history, assistantMsg)
 				break
 			}
 			resp, err := t.Execute(ctx, call.Args)
@@ -174,7 +182,6 @@ func (a *ReActAgent) Reply(ctx context.Context, args ...any) (*message.Msg, erro
 		}
 
 		// Non-tool reply is treated as the final answer.
-		history = append(history, assistantMsg)
 		if err := a.Memory.Save(ctx, memKey, userMsg); err != nil {
 			logrus.WithError(err).Warn("react agent: failed to save user message to memory")
 		}
@@ -274,4 +281,3 @@ func tryParseToolCall(msg *message.Msg) (*toolCall, bool) {
 	}
 	return &call, true
 }
-

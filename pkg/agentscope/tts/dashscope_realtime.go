@@ -35,7 +35,7 @@ type DashScopeRealtimeTTS struct {
 }
 
 // NewDashScopeRealtimeTTS creates a realtime TTS model.
-func NewDashScopeRealtimeTTS(cfg DashScopeRealtimeConfig) *DashScopeRealtimeTTS {
+func NewDashScopeRealtimeTTS(cfg *DashScopeRealtimeConfig) *DashScopeRealtimeTTS {
 	if cfg.Model == "" {
 		cfg.Model = "cosyvoice-v2"
 	}
@@ -46,7 +46,7 @@ func NewDashScopeRealtimeTTS(cfg DashScopeRealtimeConfig) *DashScopeRealtimeTTS 
 		cfg.BaseURL = dashScopeRealtimeTTSURL
 	}
 	return &DashScopeRealtimeTTS{
-		cfg:    cfg,
+		cfg:    *cfg,
 		client: &http.Client{Timeout: 2 * time.Minute},
 	}
 }

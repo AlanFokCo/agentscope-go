@@ -34,7 +34,7 @@ type openaiResponseModel struct {
 }
 
 // NewOpenAIResponseModel creates a ChatModel that uses the OpenAI Responses API.
-func NewOpenAIResponseModel(cfg OpenAIResponseConfig) (ChatModel, error) {
+func NewOpenAIResponseModel(cfg *OpenAIResponseConfig) (ChatModel, error) {
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("openai response: api key is required")
 	}
@@ -55,7 +55,7 @@ func NewOpenAIResponseModel(cfg OpenAIResponseConfig) (ChatModel, error) {
 		defHeaders = cfg.ClientOptions.DefaultHeaders
 	}
 	return &openaiResponseModel{
-		cfg:            cfg,
+		cfg:            *cfg,
 		httpClient:     defaultHTTPClient(cfg.HTTPClient, opts),
 		defaultHeaders: defHeaders,
 	}, nil
@@ -105,7 +105,7 @@ func (m *openaiResponseModel) CountTokens(msgs []*message.Msg, tools []ToolSchem
 	return countTokensByBytes(msgs, tools)
 }
 
-func (m *openaiResponseModel) ContextSize() int { return 200000 }
+func (m *openaiResponseModel) ContextSize() int  { return 200000 }
 func (m *openaiResponseModel) ModelName() string { return m.cfg.Model }
 
 func (m *openaiResponseModel) buildRequestBody(msgs []*message.Msg, opts *CallOptions, stream bool) map[string]any {

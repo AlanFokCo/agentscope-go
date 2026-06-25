@@ -41,7 +41,7 @@ func TestTeam_AddMember(t *testing.T) {
 
 func TestTeam_AddMember_DuplicateName(t *testing.T) {
 	tm := NewTeam("alpha", "desc", "leader")
-	tm.AddMember("worker1", "first")
+	_, _ = tm.AddMember("worker1", "first")
 
 	_, err := tm.AddMember("worker1", "second")
 	if err == nil {
@@ -60,7 +60,7 @@ func TestTeam_AddMember_LeaderNameConflict(t *testing.T) {
 
 func TestTeam_RemoveMember(t *testing.T) {
 	tm := NewTeam("alpha", "desc", "leader")
-	tm.AddMember("worker1", "temp")
+	_, _ = tm.AddMember("worker1", "temp")
 
 	err := tm.RemoveMember("worker1")
 	if err != nil {
@@ -81,7 +81,7 @@ func TestTeam_RemoveMember_NotFound(t *testing.T) {
 
 func TestTeam_Send(t *testing.T) {
 	tm := NewTeam("alpha", "desc", "leader")
-	tm.AddMember("worker1", "listener")
+	_, _ = tm.AddMember("worker1", "listener")
 
 	err := tm.Send("leader", "worker1", "do this task")
 	if err != nil {
@@ -104,7 +104,7 @@ func TestTeam_Send(t *testing.T) {
 
 func TestTeam_Send_ToLeader(t *testing.T) {
 	tm := NewTeam("alpha", "desc", "leader")
-	tm.AddMember("worker1", "reporter")
+	_, _ = tm.AddMember("worker1", "reporter")
 
 	err := tm.Send("worker1", "leader", "done")
 	if err != ErrLeaderRecipient {
@@ -114,7 +114,7 @@ func TestTeam_Send_ToLeader(t *testing.T) {
 
 func TestTeam_Send_ToSelf(t *testing.T) {
 	tm := NewTeam("alpha", "desc", "leader")
-	tm.AddMember("worker1", "lonely")
+	_, _ = tm.AddMember("worker1", "lonely")
 
 	err := tm.Send("worker1", "worker1", "hello me")
 	if err == nil {
@@ -124,8 +124,8 @@ func TestTeam_Send_ToSelf(t *testing.T) {
 
 func TestTeam_Broadcast(t *testing.T) {
 	tm := NewTeam("alpha", "desc", "leader")
-	tm.AddMember("w1", "first")
-	tm.AddMember("w2", "second")
+	_, _ = tm.AddMember("w1", "first")
+	_, _ = tm.AddMember("w2", "second")
 
 	err := tm.Broadcast("leader", "announcement")
 	if err != nil {
@@ -150,8 +150,8 @@ func TestTeam_Broadcast(t *testing.T) {
 
 func TestTeam_Disband(t *testing.T) {
 	tm := NewTeam("alpha", "desc", "leader")
-	tm.AddMember("w1", "")
-	tm.AddMember("w2", "")
+	_, _ = tm.AddMember("w1", "")
+	_, _ = tm.AddMember("w2", "")
 
 	tm.Disband()
 
@@ -178,7 +178,7 @@ func TestTeam_ContextInjection(t *testing.T) {
 
 func TestSubAgentTemplate_Render(t *testing.T) {
 	tmpl := DefaultTemplate
-	result := tmpl.Render(TemplateVars{
+	result := tmpl.Render(&TemplateVars{
 		TeamName:          "Research Squad",
 		TeamDescription:   "We do research",
 		MemberName:        "Alice",
@@ -268,7 +268,7 @@ func TestAgentCreateTool_NotLeader(t *testing.T) {
 
 func TestTeamSayTool_Send(t *testing.T) {
 	tm := NewTeam("alpha", "desc", "leader")
-	tm.AddMember("worker1", "listener")
+	_, _ = tm.AddMember("worker1", "listener")
 	ctx := WithTeam(context.Background(), tm)
 
 	say := TeamSayTool("leader")
@@ -287,8 +287,8 @@ func TestTeamSayTool_Send(t *testing.T) {
 
 func TestTeamSayTool_Broadcast(t *testing.T) {
 	tm := NewTeam("alpha", "desc", "leader")
-	tm.AddMember("w1", "")
-	tm.AddMember("w2", "")
+	_, _ = tm.AddMember("w1", "")
+	_, _ = tm.AddMember("w2", "")
 	ctx := WithTeam(context.Background(), tm)
 
 	say := TeamSayTool("leader")
@@ -303,7 +303,7 @@ func TestTeamSayTool_Broadcast(t *testing.T) {
 
 func TestTeamDeleteTool(t *testing.T) {
 	tm := NewTeam("alpha", "desc", "leader")
-	tm.AddMember("w1", "")
+	_, _ = tm.AddMember("w1", "")
 	ctx := WithTeam(context.Background(), tm)
 
 	del := TeamDeleteTool("leader")

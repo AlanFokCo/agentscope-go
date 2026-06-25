@@ -40,20 +40,6 @@ func allFormatters() []namedFormatter {
 	}
 }
 
-// openaiFamily returns true for formatters that embed OpenAIFormatter.
-func openaiFamily(name string) bool {
-	switch name {
-	case "OpenAI", "DashScope", "DeepSeek", "Moonshot", "Ollama", "XAI":
-		return true
-	}
-	return false
-}
-
-// supportsThinking returns true for formatters that output reasoning_content.
-func supportsThinking(name string) bool {
-	return name == "DashScope" || name == "DeepSeek"
-}
-
 // supportsImageInput returns true for formatters that have image/* in SupportedInputMediaTypes.
 func supportsImageInput(name string) bool {
 	switch name {
@@ -1389,6 +1375,7 @@ func TestMultiAgentFormatters(t *testing.T) {
 			if role == "user" || role == "assistant" {
 				// name should be present if msg.Name != currentAgent
 				// (implementation injects sanitized name)
+				_ = role
 			}
 		}
 	})

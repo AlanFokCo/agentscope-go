@@ -22,9 +22,9 @@ type XAIChatModel struct {
 
 // XAIConfig configures XAIChatModel.
 type XAIConfig struct {
-	APIKey     string
-	BaseURL    string
-	Model      string
+	APIKey        string
+	BaseURL       string
+	Model         string
 	HTTPClient    *http.Client
 	ClientOptions *ClientOptions
 }
@@ -103,7 +103,7 @@ func (m *XAIChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts ...Ca
 		return nil, fmt.Errorf("xai: %w", err)
 	}
 
-	return parseOpenAIResponse(parsed, msgs)
+	return parseOpenAIResponse(&parsed, msgs)
 }
 
 // ChatStream implements streaming chat via SSE.

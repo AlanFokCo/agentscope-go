@@ -113,7 +113,7 @@ func (m *DashScopeChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts
 		return nil, fmt.Errorf("dashscope: %w", err)
 	}
 
-	return parseOpenAIResponse(parsed, msgs)
+	return parseOpenAIResponse(&parsed, msgs)
 }
 
 // ChatStream implements streaming chat via SSE (OpenAI-compatible format).
@@ -188,9 +188,9 @@ func processOpenAIStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, outCh
 		modelName    string
 		usage        *ChatUsage
 
-		accAudioData     []byte
-		audioBlockID     string
-		audioHeaderSent  bool
+		accAudioData    []byte
+		audioBlockID    string
+		audioHeaderSent bool
 	)
 
 	for evt := range sseCh {
@@ -436,14 +436,14 @@ type openAIChatRequest struct {
 	Messages []openAIChatMessage `json:"messages"`
 	Stream   bool                `json:"stream,omitempty"`
 
-	Temperature   *float32            `json:"temperature,omitempty"`
-	MaxTokens     *int                `json:"max_tokens,omitempty"`
-	TopP          *float32            `json:"top_p,omitempty"`
-	Tools         []ToolSchema        `json:"tools,omitempty"`
-	ToolChoice    any                 `json:"tool_choice,omitempty"`
-	Audio         *openAIAudioConfig  `json:"audio,omitempty"`
-	Modalities    []string            `json:"modalities,omitempty"`
-	StreamOptions *openAIStreamOpts   `json:"stream_options,omitempty"`
+	Temperature   *float32           `json:"temperature,omitempty"`
+	MaxTokens     *int               `json:"max_tokens,omitempty"`
+	TopP          *float32           `json:"top_p,omitempty"`
+	Tools         []ToolSchema       `json:"tools,omitempty"`
+	ToolChoice    any                `json:"tool_choice,omitempty"`
+	Audio         *openAIAudioConfig `json:"audio,omitempty"`
+	Modalities    []string           `json:"modalities,omitempty"`
+	StreamOptions *openAIStreamOpts  `json:"stream_options,omitempty"`
 }
 
 type openAIStreamOpts struct {
@@ -461,9 +461,9 @@ type openAIChatResponse struct {
 		FinishReason string            `json:"finish_reason"`
 	} `json:"choices"`
 	Usage *struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
+		PromptTokens        int `json:"prompt_tokens"`
+		CompletionTokens    int `json:"completion_tokens"`
+		TotalTokens         int `json:"total_tokens"`
 		PromptTokensDetails *struct {
 			CachedTokens int `json:"cached_tokens,omitempty"`
 		} `json:"prompt_tokens_details,omitempty"`
@@ -482,9 +482,9 @@ type openAIStreamChunk struct {
 		FinishReason *string          `json:"finish_reason"`
 	} `json:"choices"`
 	Usage *struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
+		PromptTokens        int `json:"prompt_tokens"`
+		CompletionTokens    int `json:"completion_tokens"`
+		TotalTokens         int `json:"total_tokens"`
 		PromptTokensDetails *struct {
 			CachedTokens int `json:"cached_tokens,omitempty"`
 		} `json:"prompt_tokens_details,omitempty"`
@@ -492,11 +492,11 @@ type openAIStreamChunk struct {
 }
 
 type openAIChunkDelta struct {
-	Role             string                  `json:"role,omitempty"`
-	Content          string                  `json:"content,omitempty"`
-	ReasoningContent string                  `json:"reasoning_content,omitempty"`
-	ToolCalls        []openAIStreamToolCall  `json:"tool_calls,omitempty"`
-	Audio            *openAIAudioDelta       `json:"audio,omitempty"`
+	Role             string                 `json:"role,omitempty"`
+	Content          string                 `json:"content,omitempty"`
+	ReasoningContent string                 `json:"reasoning_content,omitempty"`
+	ToolCalls        []openAIStreamToolCall `json:"tool_calls,omitempty"`
+	Audio            *openAIAudioDelta      `json:"audio,omitempty"`
 }
 
 type openAIStreamToolCall struct {
@@ -526,7 +526,7 @@ func formatToolChoice(tc *ToolChoice) any {
 }
 
 // parseOpenAIResponse converts an OpenAI-compatible response to our ChatResponse.
-func parseOpenAIResponse(parsed openAIChatResponse, msgs []*message.Msg) (*ChatResponse, error) {
+func parseOpenAIResponse(parsed *openAIChatResponse, msgs []*message.Msg) (*ChatResponse, error) {
 	if len(parsed.Choices) == 0 {
 		return nil, fmt.Errorf("empty choices in response")
 	}

@@ -98,7 +98,7 @@ func (m *TracingMiddleware) OnReasoning(ctx context.Context, input ReasoningInpu
 
 // OnModelCall creates a "chat" span for each model API call with GenAI
 // semantic convention attributes for the request and response.
-func (m *TracingMiddleware) OnModelCall(ctx context.Context, input ModelCallInput, next ModelCallHandler) (*model.ChatResponse, error) {
+func (m *TracingMiddleware) OnModelCall(ctx context.Context, input *ModelCallInput, next ModelCallHandler) (*model.ChatResponse, error) {
 	spanName := "chat"
 
 	attrs := []tracing.SpanAttribute{
@@ -143,8 +143,10 @@ func (m *TracingMiddleware) OnModelCall(ctx context.Context, input ModelCallInpu
 		}
 
 		if resp.Usage != nil {
-			postAttrs = append(postAttrs, tracing.SpanAttribute{Key: "gen_ai.usage.input_tokens", Value: resp.Usage.InputTokens})
-			postAttrs = append(postAttrs, tracing.SpanAttribute{Key: "gen_ai.usage.output_tokens", Value: resp.Usage.OutputTokens})
+			postAttrs = append(postAttrs,
+				tracing.SpanAttribute{Key: "gen_ai.usage.input_tokens", Value: resp.Usage.InputTokens},
+				tracing.SpanAttribute{Key: "gen_ai.usage.output_tokens", Value: resp.Usage.OutputTokens},
+			)
 			if resp.Usage.CacheInputTokens > 0 {
 				postAttrs = append(postAttrs, tracing.SpanAttribute{Key: "gen_ai.usage.cache_read_input_tokens", Value: resp.Usage.CacheInputTokens})
 			}
@@ -161,7 +163,7 @@ func (m *TracingMiddleware) OnModelCall(ctx context.Context, input ModelCallInpu
 
 // OnActing creates an "execute_tool" span for each tool execution with GenAI
 // tool semantic convention attributes.
-func (m *TracingMiddleware) OnActing(ctx context.Context, input ActingInput, next ActingHandler) (*tool.ToolResponse, error) {
+func (m *TracingMiddleware) OnActing(ctx context.Context, input *ActingInput, next ActingHandler) (*tool.ToolResponse, error) {
 	spanName := fmt.Sprintf("execute_tool %s", input.ToolCall.Name)
 
 	attrs := []tracing.SpanAttribute{

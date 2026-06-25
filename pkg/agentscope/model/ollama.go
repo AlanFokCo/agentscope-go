@@ -22,8 +22,8 @@ type OllamaChatModel struct {
 
 // OllamaConfig configures OllamaChatModel.
 type OllamaConfig struct {
-	BaseURL    string
-	Model      string
+	BaseURL       string
+	Model         string
 	HTTPClient    *http.Client
 	ClientOptions *ClientOptions
 }
@@ -97,7 +97,7 @@ func (m *OllamaChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts ..
 		return nil, fmt.Errorf("ollama: %w", err)
 	}
 
-	return parseOpenAIResponse(parsed, msgs)
+	return parseOpenAIResponse(&parsed, msgs)
 }
 
 // ChatStream implements streaming chat via SSE.

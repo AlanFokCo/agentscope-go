@@ -122,9 +122,9 @@ func TestAppendEvent_ToolCallStreaming(t *testing.T) {
 func TestAppendEvent_ToolResultStreaming(t *testing.T) {
 	replyID := "r1"
 	msg := &message.Msg{
-		ID:      replyID,
-		Name:    "bot",
-		Role:    message.RoleAssistant,
+		ID:   replyID,
+		Name: "bot",
+		Role: message.RoleAssistant,
 		Content: []message.ContentBlock{
 			message.ToolCallBlock{Type: "tool_call", ID: "tc1", Name: "bash", State: message.ToolCallAllowed},
 		},

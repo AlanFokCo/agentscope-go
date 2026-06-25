@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
@@ -19,10 +20,10 @@ func PublishSessionEvent(bus messagebus.MessageBus, sessionID string, evt event.
 	}
 
 	// Append to replay log (queue)
-	bus.QueuePush(nil, topic+":log", data)
+	_ = bus.QueuePush(context.TODO(), topic+":log", data)
 
 	// Publish live
-	return bus.Publish(nil, topic, data)
+	return bus.Publish(context.TODO(), topic, data)
 }
 
 // EnqueueRunTrigger queues a run trigger event for a session.
@@ -37,6 +38,6 @@ func EnqueueRunTrigger(bus messagebus.MessageBus, sessionID string, triggerType 
 		return err
 	}
 	topic := "session:" + sessionID + ":triggers"
-	bus.QueuePush(nil, topic, data)
+	_ = bus.QueuePush(context.TODO(), topic, data)
 	return nil
 }

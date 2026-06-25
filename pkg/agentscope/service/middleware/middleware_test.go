@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
-	mw "github.com/alanfokco/agentscope-go/pkg/agentscope/middleware"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	mw "github.com/alanfokco/agentscope-go/pkg/agentscope/middleware"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/tool"
 )
 
@@ -95,11 +95,11 @@ func TestStateChangeMiddleware_EmitsOnSuccess(t *testing.T) {
 	listener := &mockListener{}
 	mid := NewStateChangeMiddleware(listener)
 
-	core := func(_ context.Context, _ mw.ActingInput) (*tool.ToolResponse, error) {
+	core := func(_ context.Context, _ *mw.ActingInput) (*tool.ToolResponse, error) {
 		return tool.NewTextResponse("ok"), nil
 	}
 
-	resp, err := mid.OnActing(context.Background(), mw.ActingInput{
+	resp, err := mid.OnActing(context.Background(), &mw.ActingInput{
 		AgentName: "agent",
 		ToolCall:  message.ToolCallBlock{Name: "read", ID: "tc1"},
 	}, core)
@@ -122,11 +122,11 @@ func TestStateChangeMiddleware_NoEmitOnError(t *testing.T) {
 	listener := &mockListener{}
 	mid := NewStateChangeMiddleware(listener)
 
-	core := func(_ context.Context, _ mw.ActingInput) (*tool.ToolResponse, error) {
+	core := func(_ context.Context, _ *mw.ActingInput) (*tool.ToolResponse, error) {
 		return nil, context.Canceled
 	}
 
-	_, _ = mid.OnActing(context.Background(), mw.ActingInput{
+	_, _ = mid.OnActing(context.Background(), &mw.ActingInput{
 		AgentName: "agent",
 		ToolCall:  message.ToolCallBlock{Name: "bash"},
 	}, core)
@@ -151,11 +151,11 @@ func TestToolOffloadMiddleware_OffloadsMatching(t *testing.T) {
 		},
 	)
 
-	core := func(_ context.Context, _ mw.ActingInput) (*tool.ToolResponse, error) {
+	core := func(_ context.Context, _ *mw.ActingInput) (*tool.ToolResponse, error) {
 		return tool.NewTextResponse("done"), nil
 	}
 
-	resp, err := mid.OnActing(context.Background(), mw.ActingInput{
+	resp, err := mid.OnActing(context.Background(), &mw.ActingInput{
 		AgentName: "agent",
 		ToolCall:  message.ToolCallBlock{Name: "slow_tool", ID: "tc1"},
 	}, core)
@@ -182,11 +182,11 @@ func TestToolOffloadMiddleware_PassthroughNonMatching(t *testing.T) {
 		nil,
 	)
 
-	core := func(_ context.Context, _ mw.ActingInput) (*tool.ToolResponse, error) {
+	core := func(_ context.Context, _ *mw.ActingInput) (*tool.ToolResponse, error) {
 		return tool.NewTextResponse("immediate"), nil
 	}
 
-	resp, err := mid.OnActing(context.Background(), mw.ActingInput{
+	resp, err := mid.OnActing(context.Background(), &mw.ActingInput{
 		AgentName: "agent",
 		ToolCall:  message.ToolCallBlock{Name: "fast_tool"},
 	}, core)

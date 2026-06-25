@@ -20,7 +20,7 @@ func TestSSEWriter(t *testing.T) {
 		t.Fatalf("NewSSEWriter: %v", err)
 	}
 
-	sse.WriteEvent("test", map[string]string{"key": "value"})
+	_ = sse.WriteEvent("test", map[string]string{"key": "value"})
 
 	body := w.Body.String()
 	if !strings.Contains(body, "event: test") {
@@ -62,7 +62,7 @@ func TestCreateSession(t *testing.T) {
 	}
 
 	var resp SessionResponse
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp.SessionID == "" {
 		t.Error("expected non-empty session ID")
 	}
@@ -85,7 +85,7 @@ func TestListSessions(t *testing.T) {
 	}
 
 	var sessions []SessionResponse
-	json.NewDecoder(w.Body).Decode(&sessions)
+	_ = json.NewDecoder(w.Body).Decode(&sessions)
 	if len(sessions) != 2 {
 		t.Errorf("sessions = %d, want 2", len(sessions))
 	}
@@ -217,6 +217,6 @@ func createSession(t *testing.T, svc *Service) string {
 	w := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(w, req)
 	var resp SessionResponse
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	return resp.SessionID
 }

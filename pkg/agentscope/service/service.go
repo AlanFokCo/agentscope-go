@@ -39,7 +39,6 @@ type Service struct {
 
 type sessionState struct {
 	agent     *agent.UnifiedAgent
-	state     *agent.AgentState
 	createdAt time.Time
 }
 
@@ -183,12 +182,12 @@ func (s *Service) handleChatStream(w http.ResponseWriter, r *http.Request) {
 
 	ch, err := sess.agent.ReplyStream(r.Context(), msg)
 	if err != nil {
-		sse.WriteEvent("error", map[string]string{"error": err.Error()})
+		_ = sse.WriteEvent("error", map[string]string{"error": err.Error()})
 		return
 	}
 
 	for evt := range ch {
-		sse.WriteEvent(string(evt.GetEventType()), evt)
+		_ = sse.WriteEvent(string(evt.GetEventType()), evt)
 	}
 }
 
@@ -306,7 +305,8 @@ func (s *Service) handleConfirm(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	sess.agent.SubmitUserConfirm(event.NewUserConfirmResultEvent("", results))
+	confirmResult := event.NewUserConfirmResultEvent("", results)
+	sess.agent.SubmitUserConfirm(&confirmResult)
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -345,7 +345,7 @@ func (s *Service) corsMiddleware(next http.Handler) http.Handler {
 func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {

@@ -223,7 +223,7 @@ func TestReadTool_LineTruncation(t *testing.T) {
 		longLine[i] = 'A'
 	}
 	content := string(longLine) + "\nshort line\n"
-	os.WriteFile(path, []byte(content), 0o644)
+	_ = os.WriteFile(path, []byte(content), 0o644)
 
 	rt := ReadTool()
 	resp, err := rt.Execute(context.Background(), map[string]any{"file_path": path})

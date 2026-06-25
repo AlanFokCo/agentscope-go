@@ -22,7 +22,7 @@ const (
 	StatusPending   TaskStatus = "pending"
 	StatusRunning   TaskStatus = "running"
 	StatusCompleted TaskStatus = "completed"
-	StatusCancelled TaskStatus = "cancelled"
+	StatusCanceled  TaskStatus = "canceled"
 	StatusFailed    TaskStatus = "failed"
 )
 
@@ -122,10 +122,10 @@ func (s *InMemoryScheduler) run(ctx context.Context, entry *scheduledEntry) {
 			select {
 			case <-timer.C:
 			case <-ctx.Done():
-				s.setStatus(task.ID, StatusCancelled)
+				s.setStatus(task.ID, StatusCanceled)
 				return
 			case <-s.closeCh:
-				s.setStatus(task.ID, StatusCancelled)
+				s.setStatus(task.ID, StatusCanceled)
 				return
 			}
 		}
@@ -145,10 +145,10 @@ func (s *InMemoryScheduler) runRecurring(ctx context.Context, entry *scheduledEn
 			select {
 			case <-timer.C:
 			case <-ctx.Done():
-				s.setStatus(task.ID, StatusCancelled)
+				s.setStatus(task.ID, StatusCanceled)
 				return
 			case <-s.closeCh:
-				s.setStatus(task.ID, StatusCancelled)
+				s.setStatus(task.ID, StatusCanceled)
 				return
 			}
 		}
@@ -164,10 +164,10 @@ func (s *InMemoryScheduler) runRecurring(ctx context.Context, entry *scheduledEn
 		case <-ticker.C:
 			s.executeOnce(ctx, entry)
 		case <-ctx.Done():
-			s.setStatus(task.ID, StatusCancelled)
+			s.setStatus(task.ID, StatusCanceled)
 			return
 		case <-s.closeCh:
-			s.setStatus(task.ID, StatusCancelled)
+			s.setStatus(task.ID, StatusCanceled)
 			return
 		}
 	}
@@ -211,7 +211,7 @@ func (s *InMemoryScheduler) Cancel(_ context.Context, taskID string) error {
 	}
 
 	entry.cancel()
-	entry.task.Status = StatusCancelled
+	entry.task.Status = StatusCanceled
 	return nil
 }
 
@@ -254,7 +254,7 @@ func (s *InMemoryScheduler) Close() error {
 	for _, e := range s.tasks {
 		e.cancel()
 		if e.task.Status == StatusPending || e.task.Status == StatusRunning {
-			e.task.Status = StatusCancelled
+			e.task.Status = StatusCanceled
 		}
 	}
 

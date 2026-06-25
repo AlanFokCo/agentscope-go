@@ -113,4 +113,3 @@ func (u *UserAgent) Observe(ctx context.Context, msgs []*message.Msg) error {
 	_ = msgs
 	return nil
 }
-

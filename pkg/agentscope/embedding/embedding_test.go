@@ -260,7 +260,7 @@ func newOpenAIMockServer(t *testing.T) *httptest.Server {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 }
 
@@ -268,7 +268,7 @@ func TestOpenAICompatEmbed(t *testing.T) {
 	server := newOpenAIMockServer(t)
 	defer server.Close()
 
-	model, err := NewOpenAIEmbeddingModel(OpenAICompatConfig{
+	model, err := NewOpenAIEmbeddingModel(&OpenAICompatConfig{
 		APIKey:  "test-key",
 		BaseURL: server.URL,
 		Model:   "text-embedding-3-small",
@@ -297,7 +297,7 @@ func TestOpenAICompatEmbed(t *testing.T) {
 }
 
 func TestOpenAICompatEmbed_Empty(t *testing.T) {
-	model, err := NewOpenAIEmbeddingModel(OpenAICompatConfig{
+	model, err := NewOpenAIEmbeddingModel(&OpenAICompatConfig{
 		APIKey:  "test-key",
 		BaseURL: "http://unused",
 		Model:   "test",
@@ -320,7 +320,7 @@ func TestOpenAICompatEmbed_Batching(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := callCount.Add(1)
 		var req openAIEmbeddingRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(r.Body).Decode(&req)
 
 		data := make([]openAIEmbeddingData, len(req.Input))
 		for i := range req.Input {
@@ -335,11 +335,11 @@ func TestOpenAICompatEmbed_Batching(t *testing.T) {
 			Usage: &openAIEmbeddingUsage{TotalTokens: len(req.Input)},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
-	model, err := newOpenAICompat(OpenAICompatConfig{
+	model, err := newOpenAICompat(&OpenAICompatConfig{
 		APIKey:    "test",
 		BaseURL:   server.URL,
 		Model:     "test",
@@ -376,11 +376,11 @@ func TestOpenAICompatEmbed_SortsByIndex(t *testing.T) {
 			Usage: &openAIEmbeddingUsage{TotalTokens: 3},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
-	model, _ := newOpenAICompat(OpenAICompatConfig{
+	model, _ := newOpenAICompat(&OpenAICompatConfig{
 		APIKey:  "test",
 		BaseURL: server.URL,
 		Model:   "test",
@@ -407,11 +407,11 @@ func TestOpenAICompatEmbed_DenseEmbeddingFallback(t *testing.T) {
 			Usage: &openAIEmbeddingUsage{TotalTokens: 1},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
-	model, _ := newOpenAICompat(OpenAICompatConfig{
+	model, _ := newOpenAICompat(&OpenAICompatConfig{
 		APIKey:  "test",
 		BaseURL: server.URL,
 		Model:   "test",
@@ -435,12 +435,12 @@ func TestOpenAICompatEmbed_WithCache(t *testing.T) {
 			Usage: &openAIEmbeddingUsage{TotalTokens: 1},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
 	cache, _ := NewFileEmbeddingCache(t.TempDir(), 0, 0)
-	model, _ := newOpenAICompat(OpenAICompatConfig{
+	model, _ := newOpenAICompat(&OpenAICompatConfig{
 		APIKey:  "test",
 		BaseURL: server.URL,
 		Model:   "test",
@@ -476,7 +476,7 @@ func TestOpenAICompatEmbed_WithCache(t *testing.T) {
 }
 
 func TestOpenAICompatEmbed_ModelName(t *testing.T) {
-	model, _ := newOpenAICompat(OpenAICompatConfig{
+	model, _ := newOpenAICompat(&OpenAICompatConfig{
 		BaseURL: "http://test",
 		Model:   "my-model",
 	})
@@ -489,7 +489,7 @@ func TestOpenAICompatEmbed_Dimensions(t *testing.T) {
 	server := newOpenAIMockServer(t)
 	defer server.Close()
 
-	model, _ := NewDashScopeEmbeddingModel(OpenAICompatConfig{
+	model, _ := NewDashScopeEmbeddingModel(&OpenAICompatConfig{
 		APIKey:     "test",
 		BaseURL:    server.URL,
 		Model:      "text-embedding-v3",
@@ -503,28 +503,28 @@ func TestOpenAICompatEmbed_Dimensions(t *testing.T) {
 // --- Constructor validation ---
 
 func TestNewOpenAI_RequiresKey(t *testing.T) {
-	_, err := NewOpenAIEmbeddingModel(OpenAICompatConfig{Model: "test"})
+	_, err := NewOpenAIEmbeddingModel(&OpenAICompatConfig{Model: "test"})
 	if err == nil {
 		t.Error("expected error for missing API key")
 	}
 }
 
 func TestNewDashScope_RequiresKey(t *testing.T) {
-	_, err := NewDashScopeEmbeddingModel(OpenAICompatConfig{Model: "test"})
+	_, err := NewDashScopeEmbeddingModel(&OpenAICompatConfig{Model: "test"})
 	if err == nil {
 		t.Error("expected error for missing API key")
 	}
 }
 
 func TestNewOllama_NoKeyRequired(t *testing.T) {
-	_, err := NewOllamaEmbeddingModel(OpenAICompatConfig{Model: "test"})
+	_, err := NewOllamaEmbeddingModel(&OpenAICompatConfig{Model: "test"})
 	if err != nil {
 		t.Errorf("Ollama should not require API key: %v", err)
 	}
 }
 
 func TestNewOpenAICompat_RequiresModel(t *testing.T) {
-	_, err := newOpenAICompat(OpenAICompatConfig{BaseURL: "http://test"})
+	_, err := newOpenAICompat(&OpenAICompatConfig{BaseURL: "http://test"})
 	if err == nil {
 		t.Error("expected error for missing model")
 	}
@@ -550,7 +550,7 @@ func newGeminiMockServer(t *testing.T) *httptest.Server {
 
 		resp := geminiBatchEmbedResponse{Embeddings: embeddings}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 }
 
@@ -558,7 +558,7 @@ func TestGeminiEmbed(t *testing.T) {
 	server := newGeminiMockServer(t)
 	defer server.Close()
 
-	model, err := NewGeminiEmbeddingModel(GeminiConfig{
+	model, err := NewGeminiEmbeddingModel(&GeminiConfig{
 		APIKey:  "test-key",
 		BaseURL: server.URL,
 		Model:   "gemini-embedding-001",
@@ -584,7 +584,7 @@ func TestGeminiEmbed(t *testing.T) {
 }
 
 func TestGeminiEmbed_Empty(t *testing.T) {
-	model, _ := NewGeminiEmbeddingModel(GeminiConfig{
+	model, _ := NewGeminiEmbeddingModel(&GeminiConfig{
 		APIKey:  "test",
 		BaseURL: "http://unused",
 		Model:   "test",
@@ -607,12 +607,12 @@ func TestGeminiEmbed_WithCache(t *testing.T) {
 			Embeddings: []geminiEmbeddingResult{{Values: []float32{7.7}}},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
 	cache, _ := NewFileEmbeddingCache(t.TempDir(), 0, 0)
-	model, _ := NewGeminiEmbeddingModel(GeminiConfig{
+	model, _ := NewGeminiEmbeddingModel(&GeminiConfig{
 		APIKey:  "test",
 		BaseURL: server.URL,
 		Model:   "test",
@@ -631,21 +631,21 @@ func TestGeminiEmbed_WithCache(t *testing.T) {
 }
 
 func TestNewGemini_RequiresKey(t *testing.T) {
-	_, err := NewGeminiEmbeddingModel(GeminiConfig{Model: "test"})
+	_, err := NewGeminiEmbeddingModel(&GeminiConfig{Model: "test"})
 	if err == nil {
 		t.Error("expected error for missing API key")
 	}
 }
 
 func TestNewGemini_RequiresModel(t *testing.T) {
-	_, err := NewGeminiEmbeddingModel(GeminiConfig{APIKey: "test"})
+	_, err := NewGeminiEmbeddingModel(&GeminiConfig{APIKey: "test"})
 	if err == nil {
 		t.Error("expected error for missing model")
 	}
 }
 
 func TestGeminiEmbed_ModelName(t *testing.T) {
-	model, _ := NewGeminiEmbeddingModel(GeminiConfig{
+	model, _ := NewGeminiEmbeddingModel(&GeminiConfig{
 		APIKey: "test",
 		Model:  "gemini-embedding-2",
 	})

@@ -44,8 +44,8 @@ func TestRegistryGetAll(t *testing.T) {
 	bus := messagebus.NewInMemoryMessageBus()
 	defer bus.Close()
 
-	bus.RegistrySet("k", "a", []byte("1"))
-	bus.RegistrySet("k", "b", []byte("2"))
+	_ = bus.RegistrySet("k", "a", []byte("1"))
+	_ = bus.RegistrySet("k", "b", []byte("2"))
 
 	all, err := bus.RegistryGetAll("k")
 	if err != nil {
@@ -76,8 +76,8 @@ func TestRegistryDel(t *testing.T) {
 	bus := messagebus.NewInMemoryMessageBus()
 	defer bus.Close()
 
-	bus.RegistrySet("k", "a", []byte("1"))
-	bus.RegistrySet("k", "b", []byte("2"))
+	_ = bus.RegistrySet("k", "a", []byte("1"))
+	_ = bus.RegistrySet("k", "b", []byte("2"))
 
 	if err := bus.RegistryDel("k", "a"); err != nil {
 		t.Fatalf("RegistryDel: %v", err)
@@ -98,8 +98,8 @@ func TestRegistryDrop(t *testing.T) {
 	bus := messagebus.NewInMemoryMessageBus()
 	defer bus.Close()
 
-	bus.RegistrySet("k", "a", []byte("1"))
-	bus.RegistrySet("k", "b", []byte("2"))
+	_ = bus.RegistrySet("k", "a", []byte("1"))
+	_ = bus.RegistrySet("k", "b", []byte("2"))
 
 	if err := bus.RegistryDrop("k"); err != nil {
 		t.Fatalf("RegistryDrop: %v", err)
@@ -116,7 +116,7 @@ func TestRegistryPayloadIsolation(t *testing.T) {
 	defer bus.Close()
 
 	original := []byte("original")
-	bus.RegistrySet("k", "f", original)
+	_ = bus.RegistrySet("k", "f", original)
 
 	original[0] = 'X'
 
@@ -157,8 +157,8 @@ func TestSessionProjectionDeleteEntry(t *testing.T) {
 	defer bus.Close()
 
 	proj := NewSessionProjection(bus)
-	proj.SetEntry("sid", "k", "e1", map[string]any{"x": "1"})
-	proj.SetEntry("sid", "k", "e2", map[string]any{"x": "2"})
+	_ = proj.SetEntry("sid", "k", "e1", map[string]any{"x": "1"})
+	_ = proj.SetEntry("sid", "k", "e2", map[string]any{"x": "2"})
 
 	if err := proj.DeleteEntry("sid", "k", "e1"); err != nil {
 		t.Fatalf("DeleteEntry: %v", err)
@@ -178,8 +178,8 @@ func TestSessionProjectionPurgeEntries(t *testing.T) {
 	defer bus.Close()
 
 	proj := NewSessionProjection(bus)
-	proj.SetEntry("sid", "k", "e1", map[string]any{"x": "1"})
-	proj.SetEntry("sid", "k", "e2", map[string]any{"x": "2"})
+	_ = proj.SetEntry("sid", "k", "e1", map[string]any{"x": "1"})
+	_ = proj.SetEntry("sid", "k", "e2", map[string]any{"x": "2"})
 
 	if err := proj.PurgeEntries("sid", "k"); err != nil {
 		t.Fatalf("PurgeEntries: %v", err)
@@ -210,7 +210,7 @@ func TestSessionProjectionFallbackNoBus(t *testing.T) {
 		t.Errorf("unexpected payload: %v", entries["e1"])
 	}
 
-	proj.DeleteEntry("s1", "kind", "e1")
+	_ = proj.DeleteEntry("s1", "kind", "e1")
 	entries, _ = proj.ListEntries("s1", "kind")
 	if entries != nil {
 		t.Errorf("expected nil after delete, got %v", entries)
@@ -275,7 +275,7 @@ func TestMaybeProjectReplyEndRemovesEntry(t *testing.T) {
 
 	// First, project a request.
 	reqEvt := event.NewRequireUserConfirmEvent("reply-xyz", nil)
-	hitl.MaybeProject(reqEvt, "worker-1", "agent")
+	_ = hitl.MaybeProject(reqEvt, "worker-1", "agent")
 
 	// Then simulate a reply end.
 	endEvt := event.NewReplyEndEvent("session-1", "reply-xyz")
@@ -344,10 +344,10 @@ func TestResolveRouting(t *testing.T) {
 
 	// Project requests from two different workers.
 	evtA := event.NewRequireUserConfirmEvent("reply-A", nil)
-	hitl.MaybeProject(evtA, "worker-A", "agentA")
+	_ = hitl.MaybeProject(evtA, "worker-A", "agentA")
 
 	evtB := event.NewRequireExternalExecutionEvent("reply-B", nil)
-	hitl.MaybeProject(evtB, "worker-B", "agentB")
+	_ = hitl.MaybeProject(evtB, "worker-B", "agentB")
 
 	// Resolve reply-A should find worker-A.
 	wsid, found := hitl.Resolve("leader-1", "reply-A")
@@ -388,13 +388,13 @@ func TestDropWorkerCleanup(t *testing.T) {
 
 	// Project from both workers.
 	evtA1 := event.NewRequireUserConfirmEvent("r1", nil)
-	hitl.MaybeProject(evtA1, "worker-A", "agentA")
+	_ = hitl.MaybeProject(evtA1, "worker-A", "agentA")
 
 	evtA2 := event.NewRequireExternalExecutionEvent("r2", nil)
-	hitl.MaybeProject(evtA2, "worker-A", "agentA")
+	_ = hitl.MaybeProject(evtA2, "worker-A", "agentA")
 
 	evtB := event.NewRequireUserConfirmEvent("r3", nil)
-	hitl.MaybeProject(evtB, "worker-B", "agentB")
+	_ = hitl.MaybeProject(evtB, "worker-B", "agentB")
 
 	// Drop worker-A.
 	if err := hitl.DropWorker("leader-1", "worker-A"); err != nil {

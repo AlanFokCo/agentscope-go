@@ -20,11 +20,24 @@ linters-settings:
     enabled-tags:
       - diagnostic
       - performance
+    disabled-checks:
+      - ifElseChain
   misspell:
     locale: US
 
 issues:
   exclude-dirs:
     - vendor
-  max-issues-per-linter: 50
-  max-same-issues: 5
+  exclude-rules:
+    # Event types implement the Event interface via value receivers;
+    # pointer receivers would break interface satisfaction.
+    - path: pkg/agentscope/event/
+      linters: [gocritic]
+      text: hugeParam
+    # ToolCallBlock and ToolResultBlock implement ContentBlock interface
+    # via value receivers; cannot change to pointer receivers.
+    - path: pkg/agentscope/message/
+      linters: [gocritic]
+      text: hugeParam
+  max-issues-per-linter: 0
+  max-same-issues: 0

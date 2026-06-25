@@ -11,7 +11,7 @@ import (
 func TestReadCache_BasicCRUD(t *testing.T) {
 	dir := t.TempDir()
 	file1 := filepath.Join(dir, "a.txt")
-	os.WriteFile(file1, []byte("hello"), 0o644)
+	_ = os.WriteFile(file1, []byte("hello"), 0o644)
 
 	rc := NewReadCache(10, 100*1024)
 	rc.CacheFile(file1, []string{"hello"})
@@ -42,14 +42,14 @@ func TestReadCache_MissOnUnknownFile(t *testing.T) {
 func TestReadCache_StalenessEviction(t *testing.T) {
 	dir := t.TempDir()
 	file1 := filepath.Join(dir, "b.txt")
-	os.WriteFile(file1, []byte("v1"), 0o644)
+	_ = os.WriteFile(file1, []byte("v1"), 0o644)
 
 	rc := NewReadCache(10, 100*1024)
 	rc.CacheFile(file1, []string{"v1"})
 
 	// Modify file to change mtime
 	time.Sleep(10 * time.Millisecond)
-	os.WriteFile(file1, []byte("v2"), 0o644)
+	_ = os.WriteFile(file1, []byte("v2"), 0o644)
 
 	entry := rc.GetCache(file1)
 	if entry != nil {
@@ -66,7 +66,7 @@ func TestReadCache_EvictionByCount(t *testing.T) {
 
 	for i := 0; i < 5; i++ {
 		path := filepath.Join(dir, string(rune('a'+i))+".txt")
-		os.WriteFile(path, []byte("x"), 0o644)
+		_ = os.WriteFile(path, []byte("x"), 0o644)
 		rc.CacheFile(path, []string{"x"})
 	}
 
@@ -88,15 +88,15 @@ func TestReadCache_EvictionBySize(t *testing.T) {
 	rc := NewReadCache(100, 20)
 
 	file1 := filepath.Join(dir, "big1.txt")
-	os.WriteFile(file1, []byte("12345678"), 0o644)
+	_ = os.WriteFile(file1, []byte("12345678"), 0o644)
 	rc.CacheFile(file1, []string{"12345678"})
 
 	file2 := filepath.Join(dir, "big2.txt")
-	os.WriteFile(file2, []byte("abcdefgh"), 0o644)
+	_ = os.WriteFile(file2, []byte("abcdefgh"), 0o644)
 	rc.CacheFile(file2, []string{"abcdefgh"})
 
 	file3 := filepath.Join(dir, "big3.txt")
-	os.WriteFile(file3, []byte("xyzwvuts"), 0o644)
+	_ = os.WriteFile(file3, []byte("xyzwvuts"), 0o644)
 	rc.CacheFile(file3, []string{"xyzwvuts"})
 
 	if rc.Len() > 2 {
@@ -107,7 +107,7 @@ func TestReadCache_EvictionBySize(t *testing.T) {
 func TestReadCache_DeduplicationOnReinsert(t *testing.T) {
 	dir := t.TempDir()
 	file1 := filepath.Join(dir, "dup.txt")
-	os.WriteFile(file1, []byte("v1"), 0o644)
+	_ = os.WriteFile(file1, []byte("v1"), 0o644)
 
 	rc := NewReadCache(10, 100*1024)
 	rc.CacheFile(file1, []string{"v1"})
@@ -121,7 +121,7 @@ func TestReadCache_DeduplicationOnReinsert(t *testing.T) {
 func TestReadCache_HasBeenRead(t *testing.T) {
 	dir := t.TempDir()
 	file1 := filepath.Join(dir, "has.txt")
-	os.WriteFile(file1, []byte("content"), 0o644)
+	_ = os.WriteFile(file1, []byte("content"), 0o644)
 
 	rc := NewReadCache(10, 100*1024)
 
@@ -141,7 +141,7 @@ func TestReadCache_CleanFileCache(t *testing.T) {
 	files := make([]string, 3)
 	for i := range files {
 		files[i] = filepath.Join(dir, string(rune('a'+i))+".txt")
-		os.WriteFile(files[i], []byte("x"), 0o644)
+		_ = os.WriteFile(files[i], []byte("x"), 0o644)
 	}
 
 	rc := NewReadCache(10, 100*1024)
@@ -163,7 +163,7 @@ func TestReadCache_CleanFileCache(t *testing.T) {
 func TestReadCache_CleanAll(t *testing.T) {
 	dir := t.TempDir()
 	file1 := filepath.Join(dir, "clean.txt")
-	os.WriteFile(file1, []byte("x"), 0o644)
+	_ = os.WriteFile(file1, []byte("x"), 0o644)
 
 	rc := NewReadCache(10, 100*1024)
 	rc.CacheFile(file1, []string{"x"})
@@ -178,7 +178,7 @@ func TestReadCache_CleanAll(t *testing.T) {
 func TestReadCache_DeletedFileEviction(t *testing.T) {
 	dir := t.TempDir()
 	file1 := filepath.Join(dir, "del.txt")
-	os.WriteFile(file1, []byte("x"), 0o644)
+	_ = os.WriteFile(file1, []byte("x"), 0o644)
 
 	rc := NewReadCache(10, 100*1024)
 	rc.CacheFile(file1, []string{"x"})

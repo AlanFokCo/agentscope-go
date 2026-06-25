@@ -30,10 +30,10 @@ const (
 )
 
 const (
-	defaultTopK             = 5
-	defaultMiddlewareKey    = "longterm_memory"
-	mcFieldMemories         = "memories"
-	mcFieldAssistantText    = "assistant_text"
+	defaultTopK          = 5
+	defaultMiddlewareKey = "longterm_memory"
+	mcFieldMemories      = "memories"
+	mcFieldAssistantText = "assistant_text"
 
 	DefaultMemorySectionHeader = "## Relevant memories from past conversations"
 	DefaultMemorySectionIntro  = "The following memories about the user may be relevant. " +
@@ -51,9 +51,9 @@ type Config struct {
 	AgentID string      // optional; scopes memory per agent
 	Store   MemoryStore // required
 
-	Mode               Mode   // default: ModeBoth
-	TopK               int    // default: 5
-	ScopeSearchByAgent bool   // filter search results by AgentID (default: true)
+	Mode                Mode   // default: ModeBoth
+	TopK                int    // default: 5
+	ScopeSearchByAgent  bool   // filter search results by AgentID (default: true)
 	MemorySectionHeader string // default: DefaultMemorySectionHeader
 	MemorySectionIntro  string // default: DefaultMemorySectionIntro
 	ToolInstructions    string // default: DefaultToolInstructions
@@ -87,7 +87,7 @@ type LongTermMemoryMiddleware struct {
 }
 
 // New creates a LongTermMemoryMiddleware with the given configuration.
-func New(cfg Config) (*LongTermMemoryMiddleware, error) {
+func New(cfg *Config) (*LongTermMemoryMiddleware, error) {
 	if cfg.UserID == "" {
 		return nil, fmt.Errorf("memory middleware: user_id is required")
 	}
@@ -98,7 +98,7 @@ func New(cfg Config) (*LongTermMemoryMiddleware, error) {
 
 	m := &LongTermMemoryMiddleware{
 		BaseMiddleware: middleware.BaseMiddleware{MiddlewareKey: defaultMiddlewareKey},
-		cfg:            cfg,
+		cfg:            *cfg,
 	}
 
 	if cfg.Mode == ModeAgentControl || cfg.Mode == ModeBoth {

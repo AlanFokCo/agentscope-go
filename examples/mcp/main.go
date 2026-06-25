@@ -39,7 +39,7 @@ func main() {
 	ctx := context.Background()
 
 	// Connect to the MCP server via HTTP.
-	client, err := mcp.NewHttpClient(ctx, mcp.HttpConfig{
+	client, err := mcp.NewHttpClient(ctx, &mcp.HttpConfig{
 		URL: fmt.Sprintf("http://localhost%s", srv.Addr),
 	})
 	if err != nil {
@@ -165,7 +165,7 @@ func startMockMCPServer() *http.Server {
 
 func loadChatModelFromEnv() (model.ChatModel, error) {
 	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
-		return model.NewAnthropicChatModel(model.AnthropicConfig{
+		return model.NewAnthropicChatModel(&model.AnthropicConfig{
 			APIKey:          key,
 			Model:           "claude-sonnet-4-20250514",
 			MaxOutputTokens: 1024,

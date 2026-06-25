@@ -406,7 +406,7 @@ func TestCompressContext_OffloaderIntegration(t *testing.T) {
 	offloader := &mockOffloader{}
 
 	agent := NewUnifiedAgent("test", "prompt", mock,
-		WithContextConfig(ContextConfig{
+		WithContextConfig(&ContextConfig{
 			TriggerRatio: 0.8,
 			ReserveRatio: 0.1,
 		}),
@@ -478,7 +478,7 @@ func TestCompressContext_ToolResultTruncationWithOffloader(t *testing.T) {
 	tk := tool.NewToolkit(bigTool)
 	agent := NewUnifiedAgent("test", "prompt", mock,
 		WithToolkit(tk),
-		WithContextConfig(ContextConfig{ToolResultLimit: 50}),
+		WithContextConfig(&ContextConfig{ToolResultLimit: 50}),
 		WithOffloader(offloader),
 	)
 
@@ -523,7 +523,7 @@ func TestCompressContext_NoOffloader_NoOffloadReference(t *testing.T) {
 	}
 
 	agent := NewUnifiedAgent("test", "prompt", mock,
-		WithContextConfig(ContextConfig{
+		WithContextConfig(&ContextConfig{
 			TriggerRatio: 0.8,
 			ReserveRatio: 0.1,
 		}),
@@ -551,9 +551,3 @@ func TestCompressContext_NoOffloader_NoOffloadReference(t *testing.T) {
 
 // min returns the smaller of a and b.
 // Included here for Go 1.22 compatibility (builtin min is 1.21+).
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

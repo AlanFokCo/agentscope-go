@@ -30,7 +30,7 @@ func NewStateChangeMiddleware(listener StateChangeListener) *StateChangeMiddlewa
 
 func (m *StateChangeMiddleware) OnActing(
 	ctx context.Context,
-	input mw.ActingInput,
+	input *mw.ActingInput,
 	next mw.ActingHandler,
 ) (*tool.ToolResponse, error) {
 	resp, err := next(ctx, input)
@@ -49,7 +49,7 @@ func (m *StateChangeMiddleware) OnActing(
 
 func (m *StateChangeMiddleware) OnModelCall(
 	ctx context.Context,
-	input mw.ModelCallInput,
+	input *mw.ModelCallInput,
 	next mw.ModelCallHandler,
 ) (*model.ChatResponse, error) {
 	return next(ctx, input)

@@ -70,4 +70,3 @@ func SetupTracing(t Tracer) {
 func TracerInstance() Tracer {
 	return tracer
 }
-

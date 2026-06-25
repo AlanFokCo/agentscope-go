@@ -279,9 +279,9 @@ func TestEditTool_NotFound(t *testing.T) {
 
 func TestGlobTool_Match(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "a.go"), []byte(""), 0o644)
-	os.WriteFile(filepath.Join(dir, "b.go"), []byte(""), 0o644)
-	os.WriteFile(filepath.Join(dir, "c.txt"), []byte(""), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "a.go"), []byte(""), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "b.go"), []byte(""), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "c.txt"), []byte(""), 0o644)
 
 	gt := GlobTool()
 	resp, err := gt.Execute(context.Background(), map[string]any{
@@ -303,9 +303,9 @@ func TestGlobTool_Match(t *testing.T) {
 func TestGlobTool_DoublestarMatch(t *testing.T) {
 	dir := t.TempDir()
 	sub := filepath.Join(dir, "sub")
-	os.MkdirAll(sub, 0o755)
-	os.WriteFile(filepath.Join(sub, "deep.go"), []byte(""), 0o644)
-	os.WriteFile(filepath.Join(dir, "top.go"), []byte(""), 0o644)
+	_ = os.MkdirAll(sub, 0o755)
+	_ = os.WriteFile(filepath.Join(sub, "deep.go"), []byte(""), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "top.go"), []byte(""), 0o644)
 
 	gt := GlobTool()
 	resp, err := gt.Execute(context.Background(), map[string]any{
@@ -344,7 +344,7 @@ func TestGlobTool_NoMatch(t *testing.T) {
 
 func TestGrepTool_Found(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "test.go"), []byte("func main() {\n\tfmt.Println(\"hello\")\n}\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "test.go"), []byte("func main() {\n\tfmt.Println(\"hello\")\n}\n"), 0o644)
 
 	gt := GrepTool()
 	resp, err := gt.Execute(context.Background(), map[string]any{
@@ -365,7 +365,7 @@ func TestGrepTool_Found(t *testing.T) {
 
 func TestGrepTool_NotFound(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "test.txt"), []byte("hello world\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "test.txt"), []byte("hello world\n"), 0o644)
 
 	gt := GrepTool()
 	resp, err := gt.Execute(context.Background(), map[string]any{
@@ -383,8 +383,8 @@ func TestGrepTool_NotFound(t *testing.T) {
 
 func TestGrepTool_WithInclude(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "a.go"), []byte("target line\n"), 0o644)
-	os.WriteFile(filepath.Join(dir, "b.txt"), []byte("target line\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "a.go"), []byte("target line\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "b.txt"), []byte("target line\n"), 0o644)
 
 	gt := GrepTool()
 	resp, err := gt.Execute(context.Background(), map[string]any{
@@ -449,7 +449,7 @@ func createTempFile(t *testing.T, content string) string {
 func TestReadTool_CacheHit(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "cached.txt")
-	os.WriteFile(path, []byte("line1\nline2\nline3"), 0o644)
+	_ = os.WriteFile(path, []byte("line1\nline2\nline3"), 0o644)
 
 	rc := NewReadCache(10, 100*1024)
 	ctx := WithReadCache(context.Background(), rc)
@@ -483,7 +483,7 @@ func TestReadTool_CacheHit(t *testing.T) {
 func TestReadTool_NoCacheContext(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "nocache.txt")
-	os.WriteFile(path, []byte("content"), 0o644)
+	_ = os.WriteFile(path, []byte("content"), 0o644)
 
 	rt := ReadTool()
 	resp, err := rt.Execute(context.Background(), map[string]any{"file_path": path})
@@ -498,7 +498,7 @@ func TestReadTool_NoCacheContext(t *testing.T) {
 func TestEditTool_ReadBeforeWriteGuard(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "guard.txt")
-	os.WriteFile(path, []byte("old text"), 0o644)
+	_ = os.WriteFile(path, []byte("old text"), 0o644)
 
 	rc := NewReadCache(10, 100*1024)
 	ctx := WithReadCache(context.Background(), rc)
@@ -524,7 +524,7 @@ func TestEditTool_ReadBeforeWriteGuard(t *testing.T) {
 
 	// Read the file first
 	rt := ReadTool()
-	rt.Execute(ctx, map[string]any{"file_path": path})
+	_, _ = rt.Execute(ctx, map[string]any{"file_path": path})
 
 	// Now edit should work
 	resp2, err := et.Execute(ctx, map[string]any{
@@ -543,7 +543,7 @@ func TestEditTool_ReadBeforeWriteGuard(t *testing.T) {
 func TestWriteTool_ReadBeforeWriteGuard(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "writeguard.txt")
-	os.WriteFile(path, []byte("existing"), 0o644)
+	_ = os.WriteFile(path, []byte("existing"), 0o644)
 
 	rc := NewReadCache(10, 100*1024)
 	ctx := WithReadCache(context.Background(), rc)
@@ -583,7 +583,7 @@ func TestWriteTool_ReadBeforeWriteGuard(t *testing.T) {
 func TestEditTool_NoGuardWithoutCache(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "noguard.txt")
-	os.WriteFile(path, []byte("old text"), 0o644)
+	_ = os.WriteFile(path, []byte("old text"), 0o644)
 
 	et := EditTool()
 

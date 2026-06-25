@@ -64,7 +64,7 @@ func (e *Engine) checkDefault(tool Checker, input map[string]any) Decision {
 	if td.Behavior == BehaviorAllow || td.Behavior == BehaviorDeny {
 		return td
 	}
-	if isSafetyAsk(td) {
+	if isSafetyAsk(&td) {
 		td.SuggestedRules = e.generateSuggestions(tool, input)
 		return td
 	}
@@ -137,7 +137,7 @@ func (e *Engine) checkAcceptEdits(tool Checker, input map[string]any) Decision {
 	if td.Behavior == BehaviorAllow || td.Behavior == BehaviorDeny {
 		return td
 	}
-	if isSafetyAsk(td) {
+	if isSafetyAsk(&td) {
 		td.SuggestedRules = e.generateSuggestions(tool, input)
 		return td
 	}
@@ -197,16 +197,16 @@ func (e *Engine) checkDontAsk(tool Checker, input map[string]any) Decision {
 	}
 	if d := e.checkAskRules(tool, input); d != nil {
 		d.SuggestedRules = e.generateSuggestions(tool, input)
-		return convertAskToDeny(tool, *d)
+		return convertAskToDeny(tool, d)
 	}
 
 	td := tool.CheckPermissions(input, e.Context)
 	if td.Behavior == BehaviorAllow || td.Behavior == BehaviorDeny {
 		return td
 	}
-	if isSafetyAsk(td) {
+	if isSafetyAsk(&td) {
 		td.SuggestedRules = e.generateSuggestions(tool, input)
-		return convertAskToDeny(tool, td)
+		return convertAskToDeny(tool, &td)
 	}
 
 	if d := e.checkAllowRules(tool, input); d != nil {
@@ -250,8 +250,8 @@ func (e *Engine) checkAllowRules(tool Checker, input map[string]any) *Decision {
 	for _, rule := range e.Context.AllowRules[tool.Name()] {
 		if e.ruleMatches(tool, rule, input) {
 			return &Decision{
-				Behavior:    BehaviorAllow,
-				Message:     fmt.Sprintf("Permission granted for %s", tool.Name()),
+				Behavior:     BehaviorAllow,
+				Message:      fmt.Sprintf("Permission granted for %s", tool.Name()),
 				UpdatedInput: input,
 			}
 		}
@@ -270,11 +270,11 @@ func (e *Engine) generateSuggestions(tool Checker, input map[string]any) []Rule 
 	return tool.GenerateSuggestions(input)
 }
 
-func isSafetyAsk(d Decision) bool {
+func isSafetyAsk(d *Decision) bool {
 	return d.Behavior == BehaviorAsk && d.BypassImmune
 }
 
-func convertAskToDeny(tool Checker, ask Decision) Decision {
+func convertAskToDeny(tool Checker, ask *Decision) Decision {
 	return Decision{
 		Behavior: BehaviorDeny,
 		Message: fmt.Sprintf(

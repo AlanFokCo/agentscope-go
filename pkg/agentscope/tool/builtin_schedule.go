@@ -99,7 +99,7 @@ func (t *scheduleDeleteTool) Execute(ctx context.Context, input map[string]any) 
 	if err := s.Cancel(ctx, taskID); err != nil {
 		return NewErrorResponse(err), nil
 	}
-	return NewTextResponse(fmt.Sprintf("Cancelled task %s", taskID)), nil
+	return NewTextResponse(fmt.Sprintf("Canceled task %s", taskID)), nil
 }
 
 // --- ScheduleListTool ---

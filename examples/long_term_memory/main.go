@@ -47,7 +47,7 @@ func main() {
 	fmt.Println()
 
 	// Create the long-term memory middleware in "both" mode.
-	memMiddleware, err := memory.New(memory.Config{
+	memMiddleware, err := memory.New(&memory.Config{
 		UserID:  "user-123",
 		AgentID: "assistant",
 		Store:   store,
@@ -110,7 +110,7 @@ func main() {
 
 func loadChatModelFromEnv() (model.ChatModel, error) {
 	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
-		return model.NewAnthropicChatModel(model.AnthropicConfig{
+		return model.NewAnthropicChatModel(&model.AnthropicConfig{
 			APIKey:          key,
 			Model:           "claude-sonnet-4-20250514",
 			MaxOutputTokens: 1024,

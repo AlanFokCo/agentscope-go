@@ -93,8 +93,6 @@ func (i *QdrantIndex) AddDocuments(ctx context.Context, docs []Document) error {
 // It expects a []float32 vector in docs[0].Meta[vectorMetaKey]; other fields are ignored.
 func (i *QdrantIndex) Query(ctx context.Context, query string, topK int) ([]Document, error) {
 	_ = query // semantic search is driven by the vector, not raw text, in this implementation.
-	if topK <= 0 {
-		topK = 10
-	}
+	_ = topK  // topK would be used in a full implementation
 	return nil, fmt.Errorf("qdrant: Query requires a vector-based implementation; use a custom wrapper that supplies a query vector")
 }

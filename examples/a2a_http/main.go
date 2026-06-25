@@ -9,8 +9,8 @@ import (
 	"os"
 
 	as "github.com/alanfokco/agentscope-go/pkg/agentscope"
-	asagent "github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/a2a"
+	asagent "github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
 )
@@ -122,4 +122,3 @@ func main() {
 		fmt.Println("A2A reply:", *txt)
 	}
 }
-

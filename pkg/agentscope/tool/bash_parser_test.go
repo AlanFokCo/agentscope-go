@@ -143,8 +143,8 @@ func TestExtractFilePaths(t *testing.T) {
 		{"mv old.txt new.txt", []string{"old.txt", "new.txt"}},
 		{"chmod 755 script.sh", []string{"script.sh"}},
 		{"mkdir -p new/dir", []string{"new/dir"}},
-		{"ls -la", nil},       // ls is not a file command
-		{"echo hello", nil},   // echo is not a file command
+		{"ls -la", nil},     // ls is not a file command
+		{"echo hello", nil}, // echo is not a file command
 		{"touch new.txt", []string{"new.txt"}},
 	}
 

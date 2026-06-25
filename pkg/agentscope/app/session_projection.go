@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"sync"
@@ -49,7 +50,7 @@ func (p *SessionProjection) Publish(targetSessionID string, entry ProjectedEntry
 	if err2 != nil {
 		return err2
 	}
-	return p.bus.Publish(nil, "session:"+targetSessionID+":events", evtData)
+	return p.bus.Publish(context.TODO(), "session:"+targetSessionID+":events", evtData)
 }
 
 // Set stores a projected entry in the target session's projection feed.
@@ -198,7 +199,7 @@ func (p *SubagentHitlProjector) Unregister(workerSessionID string) {
 
 // ProjectConfirmRequest projects a RequireUserConfirmEvent from a worker
 // onto the leader session so the leader's client can respond.
-func (p *SubagentHitlProjector) ProjectConfirmRequest(workerSessionID string, evt event.RequireUserConfirmEvent) error {
+func (p *SubagentHitlProjector) ProjectConfirmRequest(workerSessionID string, evt *event.RequireUserConfirmEvent) error {
 	p.mu.RLock()
 	leaderID, ok := p.mappings[workerSessionID]
 	p.mu.RUnlock()

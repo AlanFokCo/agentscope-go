@@ -88,9 +88,9 @@ func TestListFiles(t *testing.T) {
 	ws := mustWorkspace(t)
 	ctx := context.Background()
 
-	ws.WriteFile(ctx, "a.txt", []byte("a"))
-	ws.WriteFile(ctx, "b.txt", []byte("b"))
-	os.Mkdir(filepath.Join(ws.BasePath(), "subdir"), 0o755)
+	_ = ws.WriteFile(ctx, "a.txt", []byte("a"))
+	_ = ws.WriteFile(ctx, "b.txt", []byte("b"))
+	_ = os.Mkdir(filepath.Join(ws.BasePath(), "subdir"), 0o755)
 
 	files, err := ws.ListFiles(ctx, ".")
 	if err != nil {
@@ -116,7 +116,7 @@ func TestRemoveFile(t *testing.T) {
 	ws := mustWorkspace(t)
 	ctx := context.Background()
 
-	ws.WriteFile(ctx, "tmp.txt", []byte("temp"))
+	_ = ws.WriteFile(ctx, "tmp.txt", []byte("temp"))
 
 	err := ws.RemoveFile(ctx, "tmp.txt")
 	if err != nil {
@@ -131,7 +131,7 @@ func TestRemoveFile(t *testing.T) {
 
 func TestRemoveFileRejectsDir(t *testing.T) {
 	ws := mustWorkspace(t)
-	os.Mkdir(filepath.Join(ws.BasePath(), "mydir"), 0o755)
+	_ = os.Mkdir(filepath.Join(ws.BasePath(), "mydir"), 0o755)
 
 	err := ws.RemoveFile(context.Background(), "mydir")
 	if err == nil {
@@ -166,7 +166,7 @@ func TestAbsolutePathInsideAllowed(t *testing.T) {
 	ws := mustWorkspace(t)
 	ctx := context.Background()
 
-	ws.WriteFile(ctx, "inside.txt", []byte("ok"))
+	_ = ws.WriteFile(ctx, "inside.txt", []byte("ok"))
 
 	absPath := filepath.Join(ws.BasePath(), "inside.txt")
 	data, err := ws.ReadFile(ctx, absPath)
@@ -182,7 +182,7 @@ func TestExecute(t *testing.T) {
 	ws := mustWorkspace(t)
 	ctx := context.Background()
 
-	ws.WriteFile(ctx, "test.txt", []byte("content"))
+	_ = ws.WriteFile(ctx, "test.txt", []byte("content"))
 
 	result, err := ws.Execute(ctx, "ls test.txt")
 	if err != nil {

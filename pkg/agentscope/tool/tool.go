@@ -69,12 +69,12 @@ type BaseTool struct {
 	Middlewares     []ToolMiddleware
 }
 
-func (b *BaseTool) Name() string               { return b.ToolName }
-func (b *BaseTool) Description() string         { return b.ToolDescription }
+func (b *BaseTool) Name() string                 { return b.ToolName }
+func (b *BaseTool) Description() string          { return b.ToolDescription }
 func (b *BaseTool) InputSchema() json.RawMessage { return b.ToolSchema }
-func (b *BaseTool) IsConcurrencySafe() bool     { return b.ConcurrencySafe }
-func (b *BaseTool) IsReadOnly() bool            { return b.ReadOnly }
-func (b *BaseTool) IsExternalTool() bool        { return false }
+func (b *BaseTool) IsConcurrencySafe() bool      { return b.ConcurrencySafe }
+func (b *BaseTool) IsReadOnly() bool             { return b.ReadOnly }
+func (b *BaseTool) IsExternalTool() bool         { return false }
 
 // Execute must be overridden by embedding structs.
 func (b *BaseTool) Execute(ctx context.Context, input map[string]any) (*ToolResponse, error) {
@@ -291,7 +291,7 @@ func (tk *Toolkit) CallTool(ctx context.Context, name string, input map[string]a
 }
 
 // CallToolFromBlock executes a tool from a ToolCallBlock.
-func (tk *Toolkit) CallToolFromBlock(ctx context.Context, block message.ToolCallBlock) (*ToolResponse, error) {
+func (tk *Toolkit) CallToolFromBlock(ctx context.Context, block *message.ToolCallBlock) (*ToolResponse, error) {
 	input, err := block.ParseInput()
 	if err != nil {
 		// Try JSON repair before giving up

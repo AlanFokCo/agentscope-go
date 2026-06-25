@@ -75,7 +75,7 @@ func main() {
 // Reuse the model selection logic from the simple example.
 func loadChatModelFromEnv() (model.ChatModel, error) {
 	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
-		return model.NewAnthropicChatModel(model.AnthropicConfig{
+		return model.NewAnthropicChatModel(&model.AnthropicConfig{
 			APIKey:          key,
 			Model:           "claude-3-opus-20240229",
 			MaxOutputTokens: 1024,
@@ -97,5 +97,3 @@ func loadChatModelFromEnv() (model.ChatModel, error) {
 	}
 	return nil, fmt.Errorf("please set one of ANTHROPIC_API_KEY, DASHSCOPE_API_KEY, or OPENAI_API_KEY")
 }
-
-

@@ -69,7 +69,7 @@ func TestScheduleRecurring(t *testing.T) {
 	defer s.Close()
 
 	var count atomic.Int32
-	s.Schedule(context.Background(), &Task{
+	_, _ = s.Schedule(context.Background(), &Task{
 		Name:     "recurring",
 		Interval: 50 * time.Millisecond,
 	}, func(ctx context.Context, task *Task) error {
@@ -103,13 +103,13 @@ func TestCancel(t *testing.T) {
 	}
 
 	task, _ := s.Get(context.Background(), id)
-	if task.Status != StatusCancelled {
-		t.Errorf("status = %q, want %q", task.Status, StatusCancelled)
+	if task.Status != StatusCanceled {
+		t.Errorf("status = %q, want %q", task.Status, StatusCanceled)
 	}
 
 	time.Sleep(50 * time.Millisecond)
 	if ran.Load() {
-		t.Error("cancelled task should not run")
+		t.Error("canceled task should not run")
 	}
 }
 
@@ -138,8 +138,8 @@ func TestList(t *testing.T) {
 	defer s.Close()
 
 	noop := func(ctx context.Context, task *Task) error { return nil }
-	s.Schedule(context.Background(), &Task{Name: "a", RunAt: time.Now().Add(time.Hour)}, noop)
-	s.Schedule(context.Background(), &Task{Name: "b", RunAt: time.Now().Add(time.Hour)}, noop)
+	_, _ = s.Schedule(context.Background(), &Task{Name: "a", RunAt: time.Now().Add(time.Hour)}, noop)
+	_, _ = s.Schedule(context.Background(), &Task{Name: "b", RunAt: time.Now().Add(time.Hour)}, noop)
 
 	tasks, err := s.List(context.Background())
 	if err != nil {
@@ -173,7 +173,7 @@ func TestClose(t *testing.T) {
 	s := NewInMemoryScheduler()
 
 	var ran atomic.Bool
-	s.Schedule(context.Background(), &Task{
+	_, _ = s.Schedule(context.Background(), &Task{
 		Name:  "close-me",
 		RunAt: time.Now().Add(time.Hour),
 	}, func(ctx context.Context, task *Task) error {

@@ -205,7 +205,7 @@ func (b HintBlock) MarshalJSON() ([]byte, error) {
 		Source string `json:"source,omitempty"`
 		Hint   any    `json:"hint"`
 	}
-	return json.Marshal(Alias{Type: b.Type, ID: b.ID, Source: b.Source, Hint: b.Hint})
+	return json.Marshal(Alias(b))
 }
 
 // UnmarshalJSON handles the polymorphic Hint field.

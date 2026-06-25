@@ -86,7 +86,7 @@ func TestHITL_RequireUserConfirmEvent_EmittedOnAsk(t *testing.T) {
 	for evt := range ch {
 		if _, ok := evt.(event.RequireUserConfirmEvent); ok && !confirmed {
 			confirmed = true
-			agent.SubmitUserConfirm(event.UserConfirmResultEvent{
+			agent.SubmitUserConfirm(&event.UserConfirmResultEvent{
 				ConfirmResults: []event.ConfirmResult{
 					{
 						Confirmed: true,
@@ -160,7 +160,7 @@ func TestHITL_SubmitUserConfirm_ResumesExecution(t *testing.T) {
 			if confirmEvt, ok := evt.(event.RequireUserConfirmEvent); ok {
 				gotConfirmEvent = true
 				// Simulate user confirming
-				agent.SubmitUserConfirm(event.UserConfirmResultEvent{
+				agent.SubmitUserConfirm(&event.UserConfirmResultEvent{
 					ConfirmResults: []event.ConfirmResult{
 						{
 							Confirmed: true,
@@ -244,7 +244,7 @@ func TestHITL_ToolRejection_ProducesDenied(t *testing.T) {
 		for evt := range ch {
 			if _, ok := evt.(event.RequireUserConfirmEvent); ok {
 				// Reject the tool call
-				agent.SubmitUserConfirm(event.UserConfirmResultEvent{
+				agent.SubmitUserConfirm(&event.UserConfirmResultEvent{
 					ConfirmResults: []event.ConfirmResult{
 						{
 							Confirmed: false,
@@ -333,7 +333,7 @@ func TestHITL_ExternalTool_EmitsRequireExternalExecution(t *testing.T) {
 			if _, ok := evt.(event.RequireExternalExecutionEvent); ok {
 				gotExternalEvent = true
 				// Submit external result
-				agent.SubmitExternalResult(event.ExternalExecutionResultEvent{
+				agent.SubmitExternalResult(&event.ExternalExecutionResultEvent{
 					ExecutionResults: []message.ToolResultBlock{
 						{
 							Type:   "tool_result",
@@ -403,7 +403,7 @@ func TestHITL_SubmitExternalResult_ProvidesResultBack(t *testing.T) {
 		defer close(done)
 		for evt := range ch {
 			if _, ok := evt.(event.RequireExternalExecutionEvent); ok {
-				agent.SubmitExternalResult(event.ExternalExecutionResultEvent{
+				agent.SubmitExternalResult(&event.ExternalExecutionResultEvent{
 					ExecutionResults: []message.ToolResultBlock{
 						{
 							Type:   "tool_result",

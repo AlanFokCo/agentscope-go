@@ -55,4 +55,3 @@ func (h *MsgHub) RequestReply(
 	_ = src // Source is not used for now; kept for future extension.
 	return dst.Reply(ctx, msg)
 }
-

@@ -24,7 +24,7 @@ type HttpClient struct {
 }
 
 // NewHttpClient creates an HTTP-based MCP client and initializes the session.
-func NewHttpClient(ctx context.Context, cfg HttpConfig) (*HttpClient, error) {
+func NewHttpClient(ctx context.Context, cfg *HttpConfig) (*HttpClient, error) {
 	timeout := 30 * time.Second
 	if cfg.Timeout > 0 {
 		timeout = time.Duration(cfg.Timeout) * time.Second

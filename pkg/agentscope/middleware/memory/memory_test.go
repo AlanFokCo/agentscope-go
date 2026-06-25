@@ -280,42 +280,42 @@ func TestNewMemoryTools(t *testing.T) {
 // ==================== Middleware ====================
 
 func TestNew_RequiresUserID(t *testing.T) {
-	_, err := New(Config{Store: NewInMemoryStore()})
+	_, err := New(&Config{Store: NewInMemoryStore()})
 	if err == nil {
 		t.Error("expected error for missing user_id")
 	}
 }
 
 func TestNew_RequiresStore(t *testing.T) {
-	_, err := New(Config{UserID: "u1"})
+	_, err := New(&Config{UserID: "u1"})
 	if err == nil {
 		t.Error("expected error for missing store")
 	}
 }
 
 func TestNew_DefaultMode(t *testing.T) {
-	mw, _ := New(Config{UserID: "u1", Store: NewInMemoryStore()})
+	mw, _ := New(&Config{UserID: "u1", Store: NewInMemoryStore()})
 	if mw.cfg.Mode != ModeBoth {
 		t.Errorf("expected default mode=both, got %s", mw.cfg.Mode)
 	}
 }
 
 func TestNew_StaticControl_NoTools(t *testing.T) {
-	mw, _ := New(Config{UserID: "u1", Store: NewInMemoryStore(), Mode: ModeStaticControl})
+	mw, _ := New(&Config{UserID: "u1", Store: NewInMemoryStore(), Mode: ModeStaticControl})
 	if len(mw.Tools()) != 0 {
 		t.Error("static_control should not expose tools")
 	}
 }
 
 func TestNew_AgentControl_HasTools(t *testing.T) {
-	mw, _ := New(Config{UserID: "u1", Store: NewInMemoryStore(), Mode: ModeAgentControl})
+	mw, _ := New(&Config{UserID: "u1", Store: NewInMemoryStore(), Mode: ModeAgentControl})
 	if len(mw.Tools()) != 2 {
 		t.Errorf("agent_control should expose 2 tools, got %d", len(mw.Tools()))
 	}
 }
 
 func TestNew_Both_HasTools(t *testing.T) {
-	mw, _ := New(Config{UserID: "u1", Store: NewInMemoryStore(), Mode: ModeBoth})
+	mw, _ := New(&Config{UserID: "u1", Store: NewInMemoryStore(), Mode: ModeBoth})
 	if len(mw.Tools()) != 2 {
 		t.Errorf("both mode should expose 2 tools, got %d", len(mw.Tools()))
 	}
@@ -328,7 +328,7 @@ func TestOnSystemPrompt_StaticControl(t *testing.T) {
 	ctx := context.Background()
 	_ = store.Add(ctx, "user likes Go", "u1", "")
 
-	mw, _ := New(Config{
+	mw, _ := New(&Config{
 		UserID: "u1",
 		Store:  store,
 		Mode:   ModeStaticControl,
@@ -349,7 +349,7 @@ func TestOnSystemPrompt_StaticControl(t *testing.T) {
 }
 
 func TestOnSystemPrompt_AgentControl(t *testing.T) {
-	mw, _ := New(Config{
+	mw, _ := New(&Config{
 		UserID: "u1",
 		Store:  NewInMemoryStore(),
 		Mode:   ModeAgentControl,
@@ -367,7 +367,7 @@ func TestOnSystemPrompt_AgentControl(t *testing.T) {
 }
 
 func TestOnSystemPrompt_Both(t *testing.T) {
-	mw, _ := New(Config{
+	mw, _ := New(&Config{
 		UserID: "u1",
 		Store:  NewInMemoryStore(),
 		Mode:   ModeBoth,
@@ -387,7 +387,7 @@ func TestOnSystemPrompt_Both(t *testing.T) {
 }
 
 func TestOnSystemPrompt_NoMemories(t *testing.T) {
-	mw, _ := New(Config{
+	mw, _ := New(&Config{
 		UserID: "u1",
 		Store:  NewInMemoryStore(),
 		Mode:   ModeStaticControl,
@@ -403,7 +403,7 @@ func TestOnSystemPrompt_NoMemories(t *testing.T) {
 // ==================== OnReply ====================
 
 func TestOnReply_AgentControlPassthrough(t *testing.T) {
-	mw, _ := New(Config{
+	mw, _ := New(&Config{
 		UserID: "u1",
 		Store:  NewInMemoryStore(),
 		Mode:   ModeAgentControl,
@@ -431,7 +431,7 @@ func TestOnReply_StaticControl_SearchAndInject(t *testing.T) {
 	ctx := context.Background()
 	_ = store.Add(ctx, "user likes pizza", "u1", "")
 
-	mw, _ := New(Config{
+	mw, _ := New(&Config{
 		UserID:             "u1",
 		Store:              store,
 		Mode:               ModeStaticControl,
@@ -473,7 +473,7 @@ func TestOnReply_StaticControl_WriteBack(t *testing.T) {
 	store := NewInMemoryStore()
 	ctx := context.Background()
 
-	mw, _ := New(Config{
+	mw, _ := New(&Config{
 		UserID: "u1",
 		Store:  store,
 		Mode:   ModeStaticControl,
@@ -508,7 +508,7 @@ func TestOnReply_StaticControl_WriteBack(t *testing.T) {
 
 func TestOnReply_EmptyInput_NoWriteBack(t *testing.T) {
 	store := NewInMemoryStore()
-	mw, _ := New(Config{
+	mw, _ := New(&Config{
 		UserID: "u1",
 		Store:  store,
 		Mode:   ModeStaticControl,
@@ -533,7 +533,7 @@ func TestOnReply_EmptyInput_NoWriteBack(t *testing.T) {
 }
 
 func TestOnReply_EventsForwarded(t *testing.T) {
-	mw, _ := New(Config{
+	mw, _ := New(&Config{
 		UserID: "u1",
 		Store:  NewInMemoryStore(),
 		Mode:   ModeStaticControl,
@@ -562,7 +562,7 @@ func TestOnReply_EventsForwarded(t *testing.T) {
 // ==================== Middleware Key ====================
 
 func TestMiddlewareKey(t *testing.T) {
-	mw, _ := New(Config{UserID: "u1", Store: NewInMemoryStore()})
+	mw, _ := New(&Config{UserID: "u1", Store: NewInMemoryStore()})
 	if mw.Key() != defaultMiddlewareKey {
 		t.Errorf("expected key %q, got %q", defaultMiddlewareKey, mw.Key())
 	}

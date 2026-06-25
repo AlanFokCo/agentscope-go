@@ -14,9 +14,9 @@ type SubAgentTemplate struct {
 	Description          string // agent-readable description
 	SystemPromptTemplate string // format string with placeholders
 
-	ContextConfig    *agent.ContextConfig    // optional context compression settings
-	ReactConfig      *agent.ReactConfig      // optional ReAct loop settings
-	PermissionCtx    *permission.Context     // optional permission context
+	ContextConfig *agent.ContextConfig // optional context compression settings
+	ReactConfig   *agent.ReactConfig   // optional ReAct loop settings
+	PermissionCtx *permission.Context  // optional permission context
 }
 
 // TemplateVars holds the values for substituting template placeholders.
@@ -29,7 +29,7 @@ type TemplateVars struct {
 }
 
 // Render substitutes placeholders in the template with the given values.
-func (t *SubAgentTemplate) Render(vars TemplateVars) string {
+func (t *SubAgentTemplate) Render(vars *TemplateVars) string {
 	r := strings.NewReplacer(
 		"{team_name}", vars.TeamName,
 		"{team_description}", vars.TeamDescription,
@@ -41,7 +41,7 @@ func (t *SubAgentTemplate) Render(vars TemplateVars) string {
 }
 
 // NewAgentFromTemplate creates a UnifiedAgent from a template.
-func NewAgentFromTemplate(tmpl SubAgentTemplate, name string, m model.ChatModel, vars TemplateVars) *agent.UnifiedAgent {
+func NewAgentFromTemplate(tmpl SubAgentTemplate, name string, m model.ChatModel, vars *TemplateVars) *agent.UnifiedAgent {
 	prompt := tmpl.Render(vars)
 
 	var opts []agent.AgentOption
@@ -49,7 +49,7 @@ func NewAgentFromTemplate(tmpl SubAgentTemplate, name string, m model.ChatModel,
 		opts = append(opts, agent.WithReactConfig(*tmpl.ReactConfig))
 	}
 	if tmpl.ContextConfig != nil {
-		opts = append(opts, agent.WithContextConfig(*tmpl.ContextConfig))
+		opts = append(opts, agent.WithContextConfig(tmpl.ContextConfig))
 	}
 	if tmpl.PermissionCtx != nil {
 		opts = append(opts, agent.WithPermissionContext(tmpl.PermissionCtx))

@@ -51,7 +51,7 @@ func (m *ReplyBudgetControlMiddleware) OnReply(ctx context.Context, input ReplyI
 // by forcing tool_choice to "none" when the limit is reached.
 func (m *ReplyBudgetControlMiddleware) OnModelCall(
 	ctx context.Context,
-	input ModelCallInput,
+	input *ModelCallInput,
 	next ModelCallHandler,
 ) (*model.ChatResponse, error) {
 	mc := GetMiddleContext(ctx)

@@ -49,10 +49,10 @@ const (
 	EventHintBlock EventType = "hint_block"
 
 	// Human-in-the-loop
-	EventRequireUserConfirm        EventType = "require_user_confirm"
-	EventUserConfirmResult         EventType = "user_confirm_result"
-	EventRequireExternalExecution  EventType = "require_external_execution"
-	EventExternalExecutionResult   EventType = "external_execution_result"
+	EventRequireUserConfirm       EventType = "require_user_confirm"
+	EventUserConfirmResult        EventType = "user_confirm_result"
+	EventRequireExternalExecution EventType = "require_external_execution"
+	EventExternalExecutionResult  EventType = "external_execution_result"
 
 	// Control
 	EventExceedMaxIters EventType = "exceed_max_iters"
@@ -94,8 +94,8 @@ type ReplyStartEvent struct {
 }
 
 func (e ReplyStartEvent) GetEventType() EventType { return EventReplyStart }
-func (e ReplyStartEvent) GetEventID() string       { return e.ID }
-func (e ReplyStartEvent) GetReplyID() string       { return e.ReplyID }
+func (e ReplyStartEvent) GetEventID() string      { return e.ID }
+func (e ReplyStartEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewReplyStartEvent(sessionID, replyID, name string, role message.Role) ReplyStartEvent {
 	return ReplyStartEvent{Base: newBase(), SessionID: sessionID, ReplyID: replyID, Name: name, Role: role}
@@ -108,8 +108,8 @@ type ReplyEndEvent struct {
 }
 
 func (e ReplyEndEvent) GetEventType() EventType { return EventReplyEnd }
-func (e ReplyEndEvent) GetEventID() string       { return e.ID }
-func (e ReplyEndEvent) GetReplyID() string       { return e.ReplyID }
+func (e ReplyEndEvent) GetEventID() string      { return e.ID }
+func (e ReplyEndEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewReplyEndEvent(sessionID, replyID string) ReplyEndEvent {
 	return ReplyEndEvent{Base: newBase(), SessionID: sessionID, ReplyID: replyID}
@@ -124,8 +124,8 @@ type ModelCallStartEvent struct {
 }
 
 func (e ModelCallStartEvent) GetEventType() EventType { return EventModelCallStart }
-func (e ModelCallStartEvent) GetEventID() string       { return e.ID }
-func (e ModelCallStartEvent) GetReplyID() string       { return e.ReplyID }
+func (e ModelCallStartEvent) GetEventID() string      { return e.ID }
+func (e ModelCallStartEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewModelCallStartEvent(replyID, modelName string) ModelCallStartEvent {
 	return ModelCallStartEvent{Base: newBase(), ReplyID: replyID, ModelName: modelName}
@@ -139,8 +139,8 @@ type ModelCallEndEvent struct {
 }
 
 func (e ModelCallEndEvent) GetEventType() EventType { return EventModelCallEnd }
-func (e ModelCallEndEvent) GetEventID() string       { return e.ID }
-func (e ModelCallEndEvent) GetReplyID() string       { return e.ReplyID }
+func (e ModelCallEndEvent) GetEventID() string      { return e.ID }
+func (e ModelCallEndEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewModelCallEndEvent(replyID string, inputTokens, outputTokens int) ModelCallEndEvent {
 	return ModelCallEndEvent{Base: newBase(), ReplyID: replyID, InputTokens: inputTokens, OutputTokens: outputTokens}
@@ -155,8 +155,8 @@ type TextBlockStartEvent struct {
 }
 
 func (e TextBlockStartEvent) GetEventType() EventType { return EventTextBlockStart }
-func (e TextBlockStartEvent) GetEventID() string       { return e.ID }
-func (e TextBlockStartEvent) GetReplyID() string       { return e.ReplyID }
+func (e TextBlockStartEvent) GetEventID() string      { return e.ID }
+func (e TextBlockStartEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewTextBlockStartEvent(replyID, blockID string) TextBlockStartEvent {
 	return TextBlockStartEvent{Base: newBase(), ReplyID: replyID, BlockID: blockID}
@@ -170,8 +170,8 @@ type TextBlockDeltaEvent struct {
 }
 
 func (e TextBlockDeltaEvent) GetEventType() EventType { return EventTextBlockDelta }
-func (e TextBlockDeltaEvent) GetEventID() string       { return e.ID }
-func (e TextBlockDeltaEvent) GetReplyID() string       { return e.ReplyID }
+func (e TextBlockDeltaEvent) GetEventID() string      { return e.ID }
+func (e TextBlockDeltaEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewTextBlockDeltaEvent(replyID, blockID, delta string) TextBlockDeltaEvent {
 	return TextBlockDeltaEvent{Base: newBase(), ReplyID: replyID, BlockID: blockID, Delta: delta}
@@ -184,8 +184,8 @@ type TextBlockEndEvent struct {
 }
 
 func (e TextBlockEndEvent) GetEventType() EventType { return EventTextBlockEnd }
-func (e TextBlockEndEvent) GetEventID() string       { return e.ID }
-func (e TextBlockEndEvent) GetReplyID() string       { return e.ReplyID }
+func (e TextBlockEndEvent) GetEventID() string      { return e.ID }
+func (e TextBlockEndEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewTextBlockEndEvent(replyID, blockID string) TextBlockEndEvent {
 	return TextBlockEndEvent{Base: newBase(), ReplyID: replyID, BlockID: blockID}
@@ -200,8 +200,8 @@ type ThinkingBlockStartEvent struct {
 }
 
 func (e ThinkingBlockStartEvent) GetEventType() EventType { return EventThinkingBlockStart }
-func (e ThinkingBlockStartEvent) GetEventID() string       { return e.ID }
-func (e ThinkingBlockStartEvent) GetReplyID() string       { return e.ReplyID }
+func (e ThinkingBlockStartEvent) GetEventID() string      { return e.ID }
+func (e ThinkingBlockStartEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewThinkingBlockStartEvent(replyID, blockID string) ThinkingBlockStartEvent {
 	return ThinkingBlockStartEvent{Base: newBase(), ReplyID: replyID, BlockID: blockID}
@@ -215,8 +215,8 @@ type ThinkingBlockDeltaEvent struct {
 }
 
 func (e ThinkingBlockDeltaEvent) GetEventType() EventType { return EventThinkingBlockDelta }
-func (e ThinkingBlockDeltaEvent) GetEventID() string       { return e.ID }
-func (e ThinkingBlockDeltaEvent) GetReplyID() string       { return e.ReplyID }
+func (e ThinkingBlockDeltaEvent) GetEventID() string      { return e.ID }
+func (e ThinkingBlockDeltaEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewThinkingBlockDeltaEvent(replyID, blockID, delta string) ThinkingBlockDeltaEvent {
 	return ThinkingBlockDeltaEvent{Base: newBase(), ReplyID: replyID, BlockID: blockID, Delta: delta}
@@ -229,8 +229,8 @@ type ThinkingBlockEndEvent struct {
 }
 
 func (e ThinkingBlockEndEvent) GetEventType() EventType { return EventThinkingBlockEnd }
-func (e ThinkingBlockEndEvent) GetEventID() string       { return e.ID }
-func (e ThinkingBlockEndEvent) GetReplyID() string       { return e.ReplyID }
+func (e ThinkingBlockEndEvent) GetEventID() string      { return e.ID }
+func (e ThinkingBlockEndEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewThinkingBlockEndEvent(replyID, blockID string) ThinkingBlockEndEvent {
 	return ThinkingBlockEndEvent{Base: newBase(), ReplyID: replyID, BlockID: blockID}
@@ -246,8 +246,8 @@ type DataBlockStartEvent struct {
 }
 
 func (e DataBlockStartEvent) GetEventType() EventType { return EventDataBlockStart }
-func (e DataBlockStartEvent) GetEventID() string       { return e.ID }
-func (e DataBlockStartEvent) GetReplyID() string       { return e.ReplyID }
+func (e DataBlockStartEvent) GetEventID() string      { return e.ID }
+func (e DataBlockStartEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewDataBlockStartEvent(replyID, blockID, mediaType string) DataBlockStartEvent {
 	return DataBlockStartEvent{Base: newBase(), ReplyID: replyID, BlockID: blockID, MediaType: mediaType}
@@ -262,8 +262,8 @@ type DataBlockDeltaEvent struct {
 }
 
 func (e DataBlockDeltaEvent) GetEventType() EventType { return EventDataBlockDelta }
-func (e DataBlockDeltaEvent) GetEventID() string       { return e.ID }
-func (e DataBlockDeltaEvent) GetReplyID() string       { return e.ReplyID }
+func (e DataBlockDeltaEvent) GetEventID() string      { return e.ID }
+func (e DataBlockDeltaEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewDataBlockDeltaEvent(replyID, blockID, data, mediaType string) DataBlockDeltaEvent {
 	return DataBlockDeltaEvent{Base: newBase(), ReplyID: replyID, BlockID: blockID, Data: data, MediaType: mediaType}
@@ -276,8 +276,8 @@ type DataBlockEndEvent struct {
 }
 
 func (e DataBlockEndEvent) GetEventType() EventType { return EventDataBlockEnd }
-func (e DataBlockEndEvent) GetEventID() string       { return e.ID }
-func (e DataBlockEndEvent) GetReplyID() string       { return e.ReplyID }
+func (e DataBlockEndEvent) GetEventID() string      { return e.ID }
+func (e DataBlockEndEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewDataBlockEndEvent(replyID, blockID string) DataBlockEndEvent {
 	return DataBlockEndEvent{Base: newBase(), ReplyID: replyID, BlockID: blockID}
@@ -293,8 +293,8 @@ type ToolCallStartEvent struct {
 }
 
 func (e ToolCallStartEvent) GetEventType() EventType { return EventToolCallStart }
-func (e ToolCallStartEvent) GetEventID() string       { return e.ID }
-func (e ToolCallStartEvent) GetReplyID() string       { return e.ReplyID }
+func (e ToolCallStartEvent) GetEventID() string      { return e.ID }
+func (e ToolCallStartEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewToolCallStartEvent(replyID, toolCallID, toolCallName string) ToolCallStartEvent {
 	return ToolCallStartEvent{Base: newBase(), ReplyID: replyID, ToolCallID: toolCallID, ToolCallName: toolCallName}
@@ -308,8 +308,8 @@ type ToolCallDeltaEvent struct {
 }
 
 func (e ToolCallDeltaEvent) GetEventType() EventType { return EventToolCallDelta }
-func (e ToolCallDeltaEvent) GetEventID() string       { return e.ID }
-func (e ToolCallDeltaEvent) GetReplyID() string       { return e.ReplyID }
+func (e ToolCallDeltaEvent) GetEventID() string      { return e.ID }
+func (e ToolCallDeltaEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewToolCallDeltaEvent(replyID, toolCallID, delta string) ToolCallDeltaEvent {
 	return ToolCallDeltaEvent{Base: newBase(), ReplyID: replyID, ToolCallID: toolCallID, Delta: delta}
@@ -322,8 +322,8 @@ type ToolCallEndEvent struct {
 }
 
 func (e ToolCallEndEvent) GetEventType() EventType { return EventToolCallEnd }
-func (e ToolCallEndEvent) GetEventID() string       { return e.ID }
-func (e ToolCallEndEvent) GetReplyID() string       { return e.ReplyID }
+func (e ToolCallEndEvent) GetEventID() string      { return e.ID }
+func (e ToolCallEndEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewToolCallEndEvent(replyID, toolCallID string) ToolCallEndEvent {
 	return ToolCallEndEvent{Base: newBase(), ReplyID: replyID, ToolCallID: toolCallID}
@@ -339,8 +339,8 @@ type ToolResultStartEvent struct {
 }
 
 func (e ToolResultStartEvent) GetEventType() EventType { return EventToolResultStart }
-func (e ToolResultStartEvent) GetEventID() string       { return e.ID }
-func (e ToolResultStartEvent) GetReplyID() string       { return e.ReplyID }
+func (e ToolResultStartEvent) GetEventID() string      { return e.ID }
+func (e ToolResultStartEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewToolResultStartEvent(replyID, toolCallID, toolCallName string) ToolResultStartEvent {
 	return ToolResultStartEvent{Base: newBase(), ReplyID: replyID, ToolCallID: toolCallID, ToolCallName: toolCallName}
@@ -354,8 +354,8 @@ type ToolResultTextDeltaEvent struct {
 }
 
 func (e ToolResultTextDeltaEvent) GetEventType() EventType { return EventToolResultTextDelta }
-func (e ToolResultTextDeltaEvent) GetEventID() string       { return e.ID }
-func (e ToolResultTextDeltaEvent) GetReplyID() string       { return e.ReplyID }
+func (e ToolResultTextDeltaEvent) GetEventID() string      { return e.ID }
+func (e ToolResultTextDeltaEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewToolResultTextDeltaEvent(replyID, toolCallID, delta string) ToolResultTextDeltaEvent {
 	return ToolResultTextDeltaEvent{Base: newBase(), ReplyID: replyID, ToolCallID: toolCallID, Delta: delta}
@@ -372,8 +372,8 @@ type ToolResultDataDeltaEvent struct {
 }
 
 func (e ToolResultDataDeltaEvent) GetEventType() EventType { return EventToolResultDataDelta }
-func (e ToolResultDataDeltaEvent) GetEventID() string       { return e.ID }
-func (e ToolResultDataDeltaEvent) GetReplyID() string       { return e.ReplyID }
+func (e ToolResultDataDeltaEvent) GetEventID() string      { return e.ID }
+func (e ToolResultDataDeltaEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewToolResultDataDeltaEvent(replyID, toolCallID, blockID, mediaType, data, url string) ToolResultDataDeltaEvent {
 	return ToolResultDataDeltaEvent{Base: newBase(), ReplyID: replyID, ToolCallID: toolCallID, BlockID: blockID, MediaType: mediaType, Data: data, URL: url}
@@ -381,14 +381,14 @@ func NewToolResultDataDeltaEvent(replyID, toolCallID, blockID, mediaType, data, 
 
 type ToolResultEndEvent struct {
 	Base
-	ReplyID    string              `json:"reply_id"`
-	ToolCallID string              `json:"tool_call_id"`
+	ReplyID    string                  `json:"reply_id"`
+	ToolCallID string                  `json:"tool_call_id"`
 	State      message.ToolResultState `json:"state"`
 }
 
 func (e ToolResultEndEvent) GetEventType() EventType { return EventToolResultEnd }
-func (e ToolResultEndEvent) GetEventID() string       { return e.ID }
-func (e ToolResultEndEvent) GetReplyID() string       { return e.ReplyID }
+func (e ToolResultEndEvent) GetEventID() string      { return e.ID }
+func (e ToolResultEndEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewToolResultEndEvent(replyID, toolCallID string, state message.ToolResultState) ToolResultEndEvent {
 	return ToolResultEndEvent{Base: newBase(), ReplyID: replyID, ToolCallID: toolCallID, State: state}
@@ -405,8 +405,8 @@ type HintBlockEvent struct {
 }
 
 func (e HintBlockEvent) GetEventType() EventType { return EventHintBlock }
-func (e HintBlockEvent) GetEventID() string       { return e.ID }
-func (e HintBlockEvent) GetReplyID() string       { return e.ReplyID }
+func (e HintBlockEvent) GetEventID() string      { return e.ID }
+func (e HintBlockEvent) GetReplyID() string      { return e.ReplyID }
 
 // NewHintBlockEvent creates a HintBlockEvent. The hint parameter accepts
 // either a plain string or any value (e.g. []message.ContentBlock for
@@ -419,9 +419,9 @@ func NewHintBlockEvent(replyID, blockID, source string, hint any) HintBlockEvent
 
 // ConfirmResult carries the user's decision for a single tool call.
 type ConfirmResult struct {
-	Confirmed bool                 `json:"confirmed"`
+	Confirmed bool                  `json:"confirmed"`
 	ToolCall  message.ToolCallBlock `json:"tool_call"`
-	Rules     []any                `json:"rules,omitempty"`
+	Rules     []any                 `json:"rules,omitempty"`
 }
 
 type RequireUserConfirmEvent struct {
@@ -431,8 +431,8 @@ type RequireUserConfirmEvent struct {
 }
 
 func (e RequireUserConfirmEvent) GetEventType() EventType { return EventRequireUserConfirm }
-func (e RequireUserConfirmEvent) GetEventID() string       { return e.ID }
-func (e RequireUserConfirmEvent) GetReplyID() string       { return e.ReplyID }
+func (e RequireUserConfirmEvent) GetEventID() string      { return e.ID }
+func (e RequireUserConfirmEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewRequireUserConfirmEvent(replyID string, toolCalls []message.ToolCallBlock) RequireUserConfirmEvent {
 	return RequireUserConfirmEvent{Base: newBase(), ReplyID: replyID, ToolCalls: toolCalls}
@@ -445,8 +445,8 @@ type UserConfirmResultEvent struct {
 }
 
 func (e UserConfirmResultEvent) GetEventType() EventType { return EventUserConfirmResult }
-func (e UserConfirmResultEvent) GetEventID() string       { return e.ID }
-func (e UserConfirmResultEvent) GetReplyID() string       { return e.ReplyID }
+func (e UserConfirmResultEvent) GetEventID() string      { return e.ID }
+func (e UserConfirmResultEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewUserConfirmResultEvent(replyID string, results []ConfirmResult) UserConfirmResultEvent {
 	return UserConfirmResultEvent{Base: newBase(), ReplyID: replyID, ConfirmResults: results}
@@ -458,9 +458,11 @@ type RequireExternalExecutionEvent struct {
 	ToolCalls []message.ToolCallBlock `json:"tool_calls"`
 }
 
-func (e RequireExternalExecutionEvent) GetEventType() EventType { return EventRequireExternalExecution }
-func (e RequireExternalExecutionEvent) GetEventID() string       { return e.ID }
-func (e RequireExternalExecutionEvent) GetReplyID() string       { return e.ReplyID }
+func (e RequireExternalExecutionEvent) GetEventType() EventType {
+	return EventRequireExternalExecution
+}
+func (e RequireExternalExecutionEvent) GetEventID() string { return e.ID }
+func (e RequireExternalExecutionEvent) GetReplyID() string { return e.ReplyID }
 
 func NewRequireExternalExecutionEvent(replyID string, toolCalls []message.ToolCallBlock) RequireExternalExecutionEvent {
 	return RequireExternalExecutionEvent{Base: newBase(), ReplyID: replyID, ToolCalls: toolCalls}
@@ -473,8 +475,8 @@ type ExternalExecutionResultEvent struct {
 }
 
 func (e ExternalExecutionResultEvent) GetEventType() EventType { return EventExternalExecutionResult }
-func (e ExternalExecutionResultEvent) GetEventID() string       { return e.ID }
-func (e ExternalExecutionResultEvent) GetReplyID() string       { return e.ReplyID }
+func (e ExternalExecutionResultEvent) GetEventID() string      { return e.ID }
+func (e ExternalExecutionResultEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewExternalExecutionResultEvent(replyID string, results []message.ToolResultBlock) ExternalExecutionResultEvent {
 	return ExternalExecutionResultEvent{Base: newBase(), ReplyID: replyID, ExecutionResults: results}
@@ -489,8 +491,8 @@ type ExceedMaxItersEvent struct {
 }
 
 func (e ExceedMaxItersEvent) GetEventType() EventType { return EventExceedMaxIters }
-func (e ExceedMaxItersEvent) GetEventID() string       { return e.ID }
-func (e ExceedMaxItersEvent) GetReplyID() string       { return e.ReplyID }
+func (e ExceedMaxItersEvent) GetEventID() string      { return e.ID }
+func (e ExceedMaxItersEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewExceedMaxItersEvent(replyID, name string) ExceedMaxItersEvent {
 	return ExceedMaxItersEvent{Base: newBase(), ReplyID: replyID, Name: name}
@@ -504,8 +506,8 @@ type CustomEvent struct {
 }
 
 func (e CustomEvent) GetEventType() EventType { return EventCustom }
-func (e CustomEvent) GetEventID() string       { return e.ID }
-func (e CustomEvent) GetReplyID() string       { return e.ReplyID }
+func (e CustomEvent) GetEventID() string      { return e.ID }
+func (e CustomEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewCustomEvent(replyID, name string, value map[string]any) CustomEvent {
 	return CustomEvent{Base: newBase(), ReplyID: replyID, Name: name, Value: value}

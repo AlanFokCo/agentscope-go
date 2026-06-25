@@ -188,7 +188,7 @@ func TestHttpClient_MockServer(t *testing.T) {
 	reqCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req jsonrpcRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(r.Body).Decode(&req)
 		reqCount++
 
 		var result any
@@ -196,8 +196,8 @@ func TestHttpClient_MockServer(t *testing.T) {
 		case "initialize":
 			result = map[string]any{
 				"protocolVersion": "2024-11-05",
-				"capabilities":   map[string]any{},
-				"serverInfo":     map[string]any{"name": "test-server", "version": "1.0"},
+				"capabilities":    map[string]any{},
+				"serverInfo":      map[string]any{"name": "test-server", "version": "1.0"},
 			}
 		case "tools/list":
 			result = toolListResult{
@@ -216,11 +216,11 @@ func TestHttpClient_MockServer(t *testing.T) {
 			ID:      req.ID,
 		}
 		resp.Result, _ = json.Marshal(result)
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
-	client, err := NewHttpClient(context.Background(), HttpConfig{URL: server.URL})
+	client, err := NewHttpClient(context.Background(), &HttpConfig{URL: server.URL})
 	if err != nil {
 		t.Fatal(err)
 	}

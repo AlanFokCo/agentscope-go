@@ -70,7 +70,7 @@ func TestMem0Store_Add_Success(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -121,19 +121,19 @@ func TestMem0Store_Add_ZeroResults_RetryWithInferFalse(t *testing.T) {
 		mu.Unlock()
 
 		var body mem0AddRequest
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 
 		w.Header().Set("Content-Type", "application/json")
 
 		if call == 1 {
 			// First call: return zero results.
-			json.NewEncoder(w).Encode(mem0AddResponse{Results: []mem0Result{}})
+			_ = json.NewEncoder(w).Encode(mem0AddResponse{Results: []mem0Result{}})
 		} else {
 			// Second call: capture the retry body and return success.
 			mu.Lock()
 			secondBody = body
 			mu.Unlock()
-			json.NewEncoder(w).Encode(mem0AddResponse{
+			_ = json.NewEncoder(w).Encode(mem0AddResponse{
 				Results: []mem0Result{{ID: "mem_1", Memory: "raw text", Event: "ADD"}},
 			})
 		}
@@ -167,7 +167,7 @@ func TestMem0Store_Search(t *testing.T) {
 		}
 
 		var body mem0SearchRequest
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 
 		if body.Query != "coffee" {
 			t.Errorf("expected query=coffee, got %s", body.Query)
@@ -200,7 +200,7 @@ func TestMem0Store_Search(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -231,9 +231,9 @@ func TestMem0Store_Search_DefaultOptions(t *testing.T) {
 	var receivedBody mem0SearchRequest
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&receivedBody)
+		_ = json.NewDecoder(r.Body).Decode(&receivedBody)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(mem0SearchResponse{Results: []mem0SearchResult{}})
+		_ = json.NewEncoder(w).Encode(mem0SearchResponse{Results: []mem0SearchResult{}})
 	}))
 	defer server.Close()
 
@@ -255,9 +255,9 @@ func TestMem0Store_Search_WithAgentID(t *testing.T) {
 	var receivedBody mem0SearchRequest
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&receivedBody)
+		_ = json.NewDecoder(r.Body).Decode(&receivedBody)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(mem0SearchResponse{Results: []mem0SearchResult{}})
+		_ = json.NewEncoder(w).Encode(mem0SearchResponse{Results: []mem0SearchResult{}})
 	}))
 	defer server.Close()
 
@@ -301,7 +301,7 @@ func TestMem0Store_List(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(entries)
+		_ = json.NewEncoder(w).Encode(entries)
 	}))
 	defer server.Close()
 
@@ -331,7 +331,7 @@ func TestMem0Store_List(t *testing.T) {
 func TestMem0Store_List_Empty(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]mem0ListEntry{})
+		_ = json.NewEncoder(w).Encode([]mem0ListEntry{})
 	}))
 	defer server.Close()
 
@@ -357,7 +357,7 @@ func TestMem0Store_Delete(t *testing.T) {
 			t.Errorf("unexpected auth header: %s", r.Header.Get("Authorization"))
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"message": "Memory deleted successfully!"}`))
+		_, _ = w.Write([]byte(`{"message": "Memory deleted successfully!"}`))
 	}))
 	defer server.Close()
 
@@ -371,7 +371,7 @@ func TestMem0Store_Delete(t *testing.T) {
 func TestMem0Store_Add_APIError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(`{"detail": "Invalid API key"}`))
+		_, _ = w.Write([]byte(`{"detail": "Invalid API key"}`))
 	}))
 	defer server.Close()
 
@@ -388,7 +388,7 @@ func TestMem0Store_Add_APIError(t *testing.T) {
 func TestMem0Store_Search_APIError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"detail": "Invalid request"}`))
+		_, _ = w.Write([]byte(`{"detail": "Invalid request"}`))
 	}))
 	defer server.Close()
 
@@ -402,7 +402,7 @@ func TestMem0Store_Search_APIError(t *testing.T) {
 func TestMem0Store_List_APIError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"detail": "Internal server error"}`))
+		_, _ = w.Write([]byte(`{"detail": "Internal server error"}`))
 	}))
 	defer server.Close()
 
@@ -416,7 +416,7 @@ func TestMem0Store_List_APIError(t *testing.T) {
 func TestMem0Store_Delete_APIError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"detail": "Memory not found"}`))
+		_, _ = w.Write([]byte(`{"detail": "Memory not found"}`))
 	}))
 	defer server.Close()
 

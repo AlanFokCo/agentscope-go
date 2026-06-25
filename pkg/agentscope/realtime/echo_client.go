@@ -35,4 +35,3 @@ func (s *echoStream) Recv() (*message.Msg, error) {
 func (s *echoStream) Close() error {
 	return nil
 }
-

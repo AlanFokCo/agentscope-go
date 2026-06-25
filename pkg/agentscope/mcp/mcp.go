@@ -40,7 +40,7 @@ type StdioConfig struct {
 	Env     []string
 	WorkDir string
 
-	Stateful         bool   // true = keep subprocess alive across calls; false = ephemeral per CallTool
+	Stateful         bool     // true = keep subprocess alive across calls; false = ephemeral per CallTool
 	EnableTools      []string // whitelist; empty = all tools
 	DisableTools     []string // blacklist; applied after EnableTools
 	ExecutionTimeout int      // per-tool call timeout in seconds; 0 = no timeout
@@ -52,7 +52,7 @@ type HttpConfig struct {
 	Headers map[string]string
 	Timeout int // seconds, 0 = default (30)
 
-	Stateful         bool     // true = reuse session ID across calls
+	Stateful         bool // true = reuse session ID across calls
 	EnableTools      []string
 	DisableTools     []string
 	ExecutionTimeout int

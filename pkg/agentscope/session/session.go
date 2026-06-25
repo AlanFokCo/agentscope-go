@@ -150,4 +150,3 @@ func (s *JSONSession) persist() error {
 	}
 	return os.WriteFile(s.path, b, 0o644)
 }
-

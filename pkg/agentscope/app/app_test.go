@@ -629,20 +629,20 @@ func TestBackgroundTaskManager_Cancel(t *testing.T) {
 
 	mgr.Cancel(id)
 
-	// The underlying context should be cancelled.
+	// The underlying context should be canceled.
 	select {
 	case <-ctx.Done():
 		// success
 	default:
-		t.Error("expected context to be cancelled after Cancel")
+		t.Error("expected context to be canceled after Cancel")
 	}
 
 	tasks := mgr.List()
 	if len(tasks) != 1 {
 		t.Fatalf("expected 1 task, got %d", len(tasks))
 	}
-	if tasks[0].Status != "cancelled" {
-		t.Errorf("status = %q, want %q", tasks[0].Status, "cancelled")
+	if tasks[0].Status != "canceled" {
+		t.Errorf("status = %q, want %q", tasks[0].Status, "canceled")
 	}
 }
 
@@ -687,8 +687,8 @@ func TestBackgroundTaskManager_MultipleTasks(t *testing.T) {
 	if status[id2] != "running" {
 		t.Errorf("task %s status = %q, want %q", id2, status[id2], "running")
 	}
-	if status[id3] != "cancelled" {
-		t.Errorf("task %s status = %q, want %q", id3, status[id3], "cancelled")
+	if status[id3] != "canceled" {
+		t.Errorf("task %s status = %q, want %q", id3, status[id3], "canceled")
 	}
 }
 
@@ -709,30 +709,30 @@ func TestCancelDispatcher_CancelBySession(t *testing.T) {
 	// Cancel all tasks for session-A.
 	disp.Cancel("session-A")
 
-	// session-A tasks should be cancelled.
+	// session-A tasks should be canceled.
 	select {
 	case <-ctx1.Done():
 	default:
-		t.Error("expected ctx1 to be cancelled")
+		t.Error("expected ctx1 to be canceled")
 	}
 	select {
 	case <-ctx2.Done():
 	default:
-		t.Error("expected ctx2 to be cancelled")
+		t.Error("expected ctx2 to be canceled")
 	}
 
 	// session-B task should still be running.
 	select {
 	case <-ctx3.Done():
-		t.Error("expected ctx3 to NOT be cancelled")
+		t.Error("expected ctx3 to NOT be canceled")
 	default:
 	}
 
 	// Verify statuses.
 	tasks := bgMgr.List()
 	for _, task := range tasks {
-		if task.SessionID == "session-A" && task.Status != "cancelled" {
-			t.Errorf("session-A task %s status = %q, want %q", task.ID, task.Status, "cancelled")
+		if task.SessionID == "session-A" && task.Status != "canceled" {
+			t.Errorf("session-A task %s status = %q, want %q", task.ID, task.Status, "canceled")
 		}
 		if task.SessionID == "session-B" && task.Status != "running" {
 			t.Errorf("session-B task %s status = %q, want %q", task.ID, task.Status, "running")
@@ -766,12 +766,12 @@ func TestCancelDispatcher_SkipsNonRunningTasks(t *testing.T) {
 
 	select {
 	case <-ctx2.Done():
-		// success - running task was cancelled
+		// success - running task was canceled
 	default:
-		t.Error("expected running task context to be cancelled")
+		t.Error("expected running task context to be canceled")
 	}
 
-	// Verify: completed task stays completed, running task becomes cancelled.
+	// Verify: completed task stays completed, running task becomes canceled.
 	for _, task := range bgMgr.List() {
 		if task.ID == id1 && task.Status != "completed" {
 			t.Errorf("completed task status changed to %q", task.Status)

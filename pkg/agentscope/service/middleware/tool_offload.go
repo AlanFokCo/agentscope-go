@@ -37,7 +37,7 @@ func NewToolOffloadMiddleware(
 
 func (m *ToolOffloadMiddleware) OnActing(
 	ctx context.Context,
-	input mw.ActingInput,
+	input *mw.ActingInput,
 	next mw.ActingHandler,
 ) (*tool.ToolResponse, error) {
 	if m.shouldOffload == nil || !m.shouldOffload(input.ToolCall.Name) {

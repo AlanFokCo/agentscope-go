@@ -41,7 +41,7 @@ type OpenAICompatEmbeddingModel struct {
 	cache          EmbeddingCache
 }
 
-func newOpenAICompat(cfg OpenAICompatConfig) (*OpenAICompatEmbeddingModel, error) {
+func newOpenAICompat(cfg *OpenAICompatConfig) (*OpenAICompatEmbeddingModel, error) {
 	if cfg.Model == "" {
 		return nil, fmt.Errorf("embedding: model is required")
 	}
@@ -69,7 +69,7 @@ func newOpenAICompat(cfg OpenAICompatConfig) (*OpenAICompatEmbeddingModel, error
 }
 
 // NewOpenAIEmbeddingModel creates an embedding model using OpenAI's API.
-func NewOpenAIEmbeddingModel(cfg OpenAICompatConfig) (*OpenAICompatEmbeddingModel, error) {
+func NewOpenAIEmbeddingModel(cfg *OpenAICompatConfig) (*OpenAICompatEmbeddingModel, error) {
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("embedding: OpenAI API key is required")
 	}
@@ -84,7 +84,7 @@ func NewOpenAIEmbeddingModel(cfg OpenAICompatConfig) (*OpenAICompatEmbeddingMode
 
 // NewDashScopeEmbeddingModel creates an embedding model using DashScope's
 // OpenAI-compatible API.
-func NewDashScopeEmbeddingModel(cfg OpenAICompatConfig) (*OpenAICompatEmbeddingModel, error) {
+func NewDashScopeEmbeddingModel(cfg *OpenAICompatConfig) (*OpenAICompatEmbeddingModel, error) {
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("embedding: DashScope API key is required")
 	}
@@ -99,7 +99,7 @@ func NewDashScopeEmbeddingModel(cfg OpenAICompatConfig) (*OpenAICompatEmbeddingM
 
 // NewOllamaEmbeddingModel creates an embedding model using Ollama's
 // OpenAI-compatible API. No API key is required.
-func NewOllamaEmbeddingModel(cfg OpenAICompatConfig) (*OpenAICompatEmbeddingModel, error) {
+func NewOllamaEmbeddingModel(cfg *OpenAICompatConfig) (*OpenAICompatEmbeddingModel, error) {
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = "http://localhost:11434/v1"
 	}
@@ -109,8 +109,8 @@ func NewOllamaEmbeddingModel(cfg OpenAICompatConfig) (*OpenAICompatEmbeddingMode
 	return newOpenAICompat(cfg)
 }
 
-func (m *OpenAICompatEmbeddingModel) ModelName() string  { return m.model }
-func (m *OpenAICompatEmbeddingModel) Dimensions() int    { return m.dimensions }
+func (m *OpenAICompatEmbeddingModel) ModelName() string         { return m.model }
+func (m *OpenAICompatEmbeddingModel) Dimensions() int           { return m.dimensions }
 func (m *OpenAICompatEmbeddingModel) SetCache(c EmbeddingCache) { m.cache = c }
 
 func (m *OpenAICompatEmbeddingModel) Embed(ctx context.Context, texts []string) (*EmbeddingResponse, error) {

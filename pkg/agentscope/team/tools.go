@@ -141,7 +141,7 @@ func (t *agentCreateTool) Execute(ctx context.Context, args map[string]any) (*to
 	}
 
 	if prompt, ok := args["prompt"].(string); ok && prompt != "" {
-		team.Send(t.senderName, name, prompt)
+		_ = team.Send(t.senderName, name, prompt)
 	}
 	_ = member
 

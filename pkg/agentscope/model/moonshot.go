@@ -22,9 +22,9 @@ type MoonshotChatModel struct {
 
 // MoonshotConfig configures MoonshotChatModel.
 type MoonshotConfig struct {
-	APIKey     string
-	BaseURL    string
-	Model      string
+	APIKey        string
+	BaseURL       string
+	Model         string
 	HTTPClient    *http.Client
 	ClientOptions *ClientOptions
 }
@@ -103,7 +103,7 @@ func (m *MoonshotChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts 
 		return nil, fmt.Errorf("moonshot: %w", err)
 	}
 
-	return parseOpenAIResponse(parsed, msgs)
+	return parseOpenAIResponse(&parsed, msgs)
 }
 
 // ChatStream implements streaming chat via SSE.

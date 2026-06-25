@@ -54,7 +54,7 @@ type App struct {
 }
 
 // CreateApp assembles and returns a ready-to-serve App.
-func CreateApp(cfg AppConfig) (*App, error) {
+func CreateApp(cfg *AppConfig) (*App, error) {
 	if cfg.Addr == "" {
 		cfg.Addr = ":8080"
 	}
@@ -69,7 +69,7 @@ func CreateApp(cfg AppConfig) (*App, error) {
 	}
 
 	app := &App{
-		cfg:      cfg,
+		cfg:      *cfg,
 		mux:      http.NewServeMux(),
 		credFact: cfg.CredentialFactory,
 	}
@@ -287,13 +287,14 @@ func (a *App) handleConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ag.SubmitUserConfirm(event.NewUserConfirmResultEvent(
+	confirmResult := event.NewUserConfirmResultEvent(
 		"", // replyID not needed for routing
 		[]event.ConfirmResult{{
 			Confirmed: req.Confirmed,
 			ToolCall:  message.ToolCallBlock{ID: req.ToolCallID},
 		}},
-	))
+	)
+	ag.SubmitUserConfirm(&confirmResult)
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -420,7 +421,7 @@ func (m *BackgroundTaskManager) Cancel(id string) {
 	m.mu.Lock()
 	if t, ok := m.tasks[id]; ok {
 		t.cancel()
-		t.info.Status = "cancelled"
+		t.info.Status = "canceled"
 	}
 	m.mu.Unlock()
 }
@@ -455,7 +456,7 @@ func (d *CancelDispatcher) Cancel(sessionID string) {
 	for _, t := range d.bgMgr.tasks {
 		if t.info.SessionID == sessionID && t.info.Status == "running" {
 			t.cancel()
-			t.info.Status = "cancelled"
+			t.info.Status = "canceled"
 		}
 	}
 }
@@ -465,7 +466,7 @@ func (d *CancelDispatcher) Cancel(sessionID string) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func corsMiddleware(next http.Handler, origins []string) http.Handler {

@@ -45,4 +45,3 @@ func TestSimpleKnowledgeBase(t *testing.T) {
 		t.Fatalf("unexpected docs: %+v", docs)
 	}
 }
-

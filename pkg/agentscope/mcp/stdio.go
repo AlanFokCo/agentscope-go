@@ -24,7 +24,7 @@ type StdioClient struct {
 }
 
 // NewStdioClient starts the MCP server subprocess and initializes the session.
-func NewStdioClient(ctx context.Context, cfg StdioConfig) (*StdioClient, error) {
+func NewStdioClient(ctx context.Context, cfg *StdioConfig) (*StdioClient, error) {
 	cmd := exec.CommandContext(ctx, cfg.Command, cfg.Args...)
 	if cfg.WorkDir != "" {
 		cmd.Dir = cfg.WorkDir

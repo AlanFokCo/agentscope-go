@@ -8,19 +8,19 @@ import (
 // These map internal AgentScope events to the AG-UI standard format
 // so that AG-UI compatible frontends can consume the SSE stream.
 const (
-	AGUIRunStarted      = "RUN_STARTED"
-	AGUIRunFinished     = "RUN_FINISHED"
-	AGUIRunError        = "RUN_ERROR"
-	AGUIStepStarted     = "STEP_STARTED"
-	AGUIStepFinished    = "STEP_FINISHED"
-	AGUITextMsgStart    = "TEXT_MESSAGE_START"
-	AGUITextMsgContent  = "TEXT_MESSAGE_CONTENT"
-	AGUITextMsgEnd      = "TEXT_MESSAGE_END"
-	AGUIToolCallStart   = "TOOL_CALL_START"
-	AGUIToolCallArgs    = "TOOL_CALL_ARGS"
-	AGUIToolCallEnd     = "TOOL_CALL_END"
-	AGUIToolCallResult  = "TOOL_CALL_RESULT"
-	AGUICustomEvent     = "CUSTOM"
+	AGUIRunStarted     = "RUN_STARTED"
+	AGUIRunFinished    = "RUN_FINISHED"
+	AGUIRunError       = "RUN_ERROR"
+	AGUIStepStarted    = "STEP_STARTED"
+	AGUIStepFinished   = "STEP_FINISHED"
+	AGUITextMsgStart   = "TEXT_MESSAGE_START"
+	AGUITextMsgContent = "TEXT_MESSAGE_CONTENT"
+	AGUITextMsgEnd     = "TEXT_MESSAGE_END"
+	AGUIToolCallStart  = "TOOL_CALL_START"
+	AGUIToolCallArgs   = "TOOL_CALL_ARGS"
+	AGUIToolCallEnd    = "TOOL_CALL_END"
+	AGUIToolCallResult = "TOOL_CALL_RESULT"
+	AGUICustomEvent    = "CUSTOM"
 )
 
 // AGUIEvent is the AG-UI protocol event envelope.

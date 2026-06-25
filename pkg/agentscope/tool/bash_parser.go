@@ -358,23 +358,9 @@ func CheckSedConstraints(cmd string, dangerousFiles []string) (bool, string) {
 				reason = "sed uses -i (in-place editing) which modifies files"
 				return false
 			}
-			// Check for disallowed flags
+			// Check for disallowed flags; unrecognized flags are ignored
+			// as they may be sed expressions.
 			if strings.HasPrefix(word, "-") && !sedAllowedFlags[word] {
-				// Combined flags like -ne are OK
-				allAllowed := true
-				if len(word) > 1 && word[1] != '-' {
-					for _, c := range word[1:] {
-						if !sedAllowedFlags["-"+string(c)] {
-							allAllowed = false
-							break
-						}
-					}
-				} else {
-					allAllowed = false
-				}
-				if !allAllowed && !sedAllowedFlags[word] {
-					// Ignore unrecognized flags as they may be expressions
-				}
 				continue
 			}
 			if !strings.HasPrefix(word, "-") {

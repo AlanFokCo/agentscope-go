@@ -57,8 +57,8 @@ func TestInMemoryListSessions(t *testing.T) {
 	s := NewInMemoryStorage()
 	ctx := context.Background()
 
-	s.SaveState(ctx, "b", makeState("b"))
-	s.SaveState(ctx, "a", makeState("a"))
+	_ = s.SaveState(ctx, "b", makeState("b"))
+	_ = s.SaveState(ctx, "a", makeState("a"))
 
 	sessions, err := s.ListSessions(ctx)
 	if err != nil {
@@ -76,7 +76,7 @@ func TestInMemoryDeleteSession(t *testing.T) {
 	s := NewInMemoryStorage()
 	ctx := context.Background()
 
-	s.SaveState(ctx, "sess-1", makeState("sess-1"))
+	_ = s.SaveState(ctx, "sess-1", makeState("sess-1"))
 
 	if err := s.DeleteSession(ctx, "sess-1"); err != nil {
 		t.Fatalf("DeleteSession: %v", err)
@@ -109,7 +109,7 @@ func TestInMemoryIsolation(t *testing.T) {
 	ctx := context.Background()
 
 	state := makeState("sess-1")
-	s.SaveState(ctx, "sess-1", state)
+	_ = s.SaveState(ctx, "sess-1", state)
 
 	state.Summary = "modified"
 
@@ -123,11 +123,11 @@ func TestInMemoryOverwrite(t *testing.T) {
 	s := NewInMemoryStorage()
 	ctx := context.Background()
 
-	s.SaveState(ctx, "sess-1", makeState("sess-1"))
+	_ = s.SaveState(ctx, "sess-1", makeState("sess-1"))
 
 	updated := makeState("sess-1")
 	updated.Summary = "updated"
-	s.SaveState(ctx, "sess-1", updated)
+	_ = s.SaveState(ctx, "sess-1", updated)
 
 	loaded, _ := s.LoadState(ctx, "sess-1")
 	if loaded.Summary != "updated" {
@@ -173,8 +173,8 @@ func TestFileListSessions(t *testing.T) {
 	s := mustFileStorage(t)
 	ctx := context.Background()
 
-	s.SaveState(ctx, "beta", makeState("beta"))
-	s.SaveState(ctx, "alpha", makeState("alpha"))
+	_ = s.SaveState(ctx, "beta", makeState("beta"))
+	_ = s.SaveState(ctx, "alpha", makeState("alpha"))
 
 	sessions, err := s.ListSessions(ctx)
 	if err != nil {
@@ -192,7 +192,7 @@ func TestFileDeleteSession(t *testing.T) {
 	s := mustFileStorage(t)
 	ctx := context.Background()
 
-	s.SaveState(ctx, "sess-1", makeState("sess-1"))
+	_ = s.SaveState(ctx, "sess-1", makeState("sess-1"))
 
 	if err := s.DeleteSession(ctx, "sess-1"); err != nil {
 		t.Fatalf("DeleteSession: %v", err)
@@ -224,11 +224,11 @@ func TestFileOverwrite(t *testing.T) {
 	s := mustFileStorage(t)
 	ctx := context.Background()
 
-	s.SaveState(ctx, "sess-1", makeState("sess-1"))
+	_ = s.SaveState(ctx, "sess-1", makeState("sess-1"))
 
 	updated := makeState("sess-1")
 	updated.Summary = "v2"
-	s.SaveState(ctx, "sess-1", updated)
+	_ = s.SaveState(ctx, "sess-1", updated)
 
 	loaded, _ := s.LoadState(ctx, "sess-1")
 	if loaded.Summary != "v2" {

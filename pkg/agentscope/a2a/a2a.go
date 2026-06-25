@@ -22,4 +22,3 @@ func (c LocalClient) Call(ctx context.Context, msgs []*message.Msg) (*message.Ms
 	}
 	return c.Handler(ctx, msgs)
 }
-

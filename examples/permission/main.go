@@ -132,7 +132,7 @@ func checkAndPrint(engine *permission.Engine, t tool.Tool, input map[string]any)
 
 func loadChatModelFromEnv() (model.ChatModel, error) {
 	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
-		return model.NewAnthropicChatModel(model.AnthropicConfig{
+		return model.NewAnthropicChatModel(&model.AnthropicConfig{
 			APIKey:          key,
 			Model:           "claude-sonnet-4-20250514",
 			MaxOutputTokens: 1024,

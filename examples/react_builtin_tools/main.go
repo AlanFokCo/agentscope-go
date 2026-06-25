@@ -54,7 +54,7 @@ When the user asks to run a command or read a file, respond with JSON:
 
 func loadChatModelFromEnv() (model.ChatModel, error) {
 	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
-		return model.NewAnthropicChatModel(model.AnthropicConfig{
+		return model.NewAnthropicChatModel(&model.AnthropicConfig{
 			APIKey:          key,
 			Model:           "claude-3-opus-20240229",
 			MaxOutputTokens: 1024,

@@ -22,9 +22,9 @@ type DeepSeekChatModel struct {
 
 // DeepSeekConfig configures DeepSeekChatModel.
 type DeepSeekConfig struct {
-	APIKey     string
-	BaseURL    string
-	Model      string
+	APIKey        string
+	BaseURL       string
+	Model         string
 	HTTPClient    *http.Client
 	ClientOptions *ClientOptions
 }
@@ -103,7 +103,7 @@ func (m *DeepSeekChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts 
 		return nil, fmt.Errorf("deepseek: %w", err)
 	}
 
-	return parseOpenAIResponse(parsed, msgs)
+	return parseOpenAIResponse(&parsed, msgs)
 }
 
 // ChatStream implements streaming chat via SSE.

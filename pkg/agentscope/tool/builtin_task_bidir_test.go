@@ -86,7 +86,7 @@ func TestTaskUpdate_BidirectionalUpdate(t *testing.T) {
 	tool := TaskUpdateTool()
 
 	// Set task 1 blocks 2
-	tool.Execute(ctx, map[string]any{
+	_, _ = tool.Execute(ctx, map[string]any{
 		"task_id": "1",
 		"blocks":  []any{"2"},
 	})
@@ -97,7 +97,7 @@ func TestTaskUpdate_BidirectionalUpdate(t *testing.T) {
 	}
 
 	// Now update task 1 to block 3 instead of 2
-	tool.Execute(ctx, map[string]any{
+	_, _ = tool.Execute(ctx, map[string]any{
 		"task_id": "1",
 		"blocks":  []any{"3"},
 	})
@@ -131,11 +131,11 @@ func TestTaskUpdate_NoDuplicates(t *testing.T) {
 	tool := TaskUpdateTool()
 
 	// Set blocks twice - should not create duplicates
-	tool.Execute(ctx, map[string]any{
+	_, _ = tool.Execute(ctx, map[string]any{
 		"task_id": "1",
 		"blocks":  []any{"2"},
 	})
-	tool.Execute(ctx, map[string]any{
+	_, _ = tool.Execute(ctx, map[string]any{
 		"task_id": "1",
 		"blocks":  []any{"2"},
 	})

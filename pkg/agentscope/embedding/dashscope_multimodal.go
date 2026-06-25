@@ -38,9 +38,9 @@ type multimodalLimits struct {
 var modelLimits = map[string]multimodalLimits{
 	"qwen3-vl-embedding":            {20, 5, 1},
 	"qwen2.5-vl-embedding":          {20, 5, 1},
-	"tongyi-embedding-vision-plus":   {20, 64, 8},
-	"tongyi-embedding-vision-flash":  {20, 64, 8},
-	"multimodal-embedding-v1":        {20, 1, 1},
+	"tongyi-embedding-vision-plus":  {20, 64, 8},
+	"tongyi-embedding-vision-flash": {20, 64, 8},
+	"multimodal-embedding-v1":       {20, 1, 1},
 }
 
 var defaultLimits = multimodalLimits{20, 1, 1}
@@ -236,8 +236,7 @@ func (m *DashScopeMultimodalEmbeddingModel) formatDataBlock(db *message.DataBloc
 			return map[string]any{"image": "data:" + mt + ";base64," + src.Data}
 		}
 	case strings.HasPrefix(mt, "video/"):
-		switch src := db.Source.(type) {
-		case message.URLSource:
+		if src, ok := db.Source.(message.URLSource); ok {
 			return map[string]any{"video": src.URL}
 		}
 	}

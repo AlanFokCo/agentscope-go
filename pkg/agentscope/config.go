@@ -32,7 +32,7 @@ var (
 	logger      = log.New(os.Stdout, "[agentscope] ", log.LstdFlags|log.Lmicroseconds)
 
 	idMu      sync.RWMutex
-	idFactory = func() string { return uuid.NewString() }
+	idFactory = uuid.NewString
 )
 
 // GenerateID returns a new unique identifier using the configured ID factory.

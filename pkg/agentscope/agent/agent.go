@@ -32,11 +32,11 @@ const (
 
 // Hook signatures.
 type (
-	PreReplyHook   func(ctx context.Context, a Agent, args []any) ([]any, error)
-	PostReplyHook  func(ctx context.Context, a Agent, args []any, out *message.Msg) (*message.Msg, error)
-	PrePrintHook   func(ctx context.Context, a Agent, msg *message.Msg) (*message.Msg, error)
-	PostPrintHook  func(ctx context.Context, a Agent, msg *message.Msg) error
-	PreObserveHook func(ctx context.Context, a Agent, msgs []*message.Msg) ([]*message.Msg, error)
+	PreReplyHook    func(ctx context.Context, a Agent, args []any) ([]any, error)
+	PostReplyHook   func(ctx context.Context, a Agent, args []any, out *message.Msg) (*message.Msg, error)
+	PrePrintHook    func(ctx context.Context, a Agent, msg *message.Msg) (*message.Msg, error)
+	PostPrintHook   func(ctx context.Context, a Agent, msg *message.Msg) error
+	PreObserveHook  func(ctx context.Context, a Agent, msgs []*message.Msg) ([]*message.Msg, error)
 	PostObserveHook func(ctx context.Context, a Agent, msgs []*message.Msg) error
 )
 
@@ -150,24 +150,6 @@ func (b *AgentBase) RemoveSubscribers(msghubName string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	delete(b.subscribers, msghubName)
-}
-
-// broadcastToSubscribers pushes a message to all subscribers by calling Observe.
-func (b *AgentBase) broadcastToSubscribers(ctx context.Context, msg *message.Msg) error {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
-	for _, subs := range b.subscribers {
-		for _, a := range subs {
-			if a == nil {
-				continue
-			}
-			if err := a.Observe(ctx, []*message.Msg{msg}); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }
 
 // Instance-level hook registration.
@@ -305,54 +287,6 @@ func ClearClassHooks(hookType string) {
 
 // Internal helpers to run hooks in defined order: class-level then instance-level.
 
-func (b *AgentBase) runPreReplyHooks(ctx context.Context, a Agent, args []any) ([]any, error) {
-	classHooksMu.RLock()
-	for _, h := range classPreReplyHooks {
-		var err error
-		args, err = h(ctx, a, args)
-		if err != nil {
-			classHooksMu.RUnlock()
-			return nil, err
-		}
-	}
-	classHooksMu.RUnlock()
-
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	for _, h := range b.preReplyHooks {
-		var err error
-		args, err = h(ctx, a, args)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return args, nil
-}
-
-func (b *AgentBase) runPostReplyHooks(ctx context.Context, a Agent, args []any, out *message.Msg) (*message.Msg, error) {
-	classHooksMu.RLock()
-	for _, h := range classPostReplyHooks {
-		var err error
-		out, err = h(ctx, a, args, out)
-		if err != nil {
-			classHooksMu.RUnlock()
-			return nil, err
-		}
-	}
-	classHooksMu.RUnlock()
-
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	for _, h := range b.postReplyHooks {
-		var err error
-		out, err = h(ctx, a, args, out)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
-}
-
 func (b *AgentBase) runPrePrintHooks(ctx context.Context, msg *message.Msg) (*message.Msg, error) {
 	classHooksMu.RLock()
 	for _, h := range classPrePrintHooks {
@@ -397,50 +331,6 @@ func (b *AgentBase) runPostPrintHooks(ctx context.Context, msg *message.Msg) err
 	return nil
 }
 
-func (b *AgentBase) runPreObserveHooks(ctx context.Context, a Agent, msgs []*message.Msg) ([]*message.Msg, error) {
-	classHooksMu.RLock()
-	for _, h := range classPreObserveHooks {
-		var err error
-		msgs, err = h(ctx, a, msgs)
-		if err != nil {
-			classHooksMu.RUnlock()
-			return nil, err
-		}
-	}
-	classHooksMu.RUnlock()
-
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	for _, h := range b.preObserveHooks {
-		var err error
-		msgs, err = h(ctx, a, msgs)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return msgs, nil
-}
-
-func (b *AgentBase) runPostObserveHooks(ctx context.Context, a Agent, msgs []*message.Msg) error {
-	classHooksMu.RLock()
-	for _, h := range classPostObserveHooks {
-		if err := h(ctx, a, msgs); err != nil {
-			classHooksMu.RUnlock()
-			return err
-		}
-	}
-	classHooksMu.RUnlock()
-
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	for _, h := range b.postObserveHooks {
-		if err := h(ctx, a, msgs); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // Ensure AgentBase implements basic methods required by Agent when embedded.
 var _ fmt.Stringer = (*AgentBase)(nil)
 
@@ -465,4 +355,3 @@ func (b *AgentBase) Observe(ctx context.Context, msgs []*message.Msg) error {
 func (b *AgentBase) Interrupt(ctx context.Context, msg *message.Msg) error {
 	return nil
 }
-

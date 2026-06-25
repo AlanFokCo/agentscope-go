@@ -63,5 +63,3 @@ func (p *Pipeline) If(cond func(*Context) bool, step Step) *Pipeline {
 	p.steps = append(p.steps, wrapped)
 	return p
 }
-
-

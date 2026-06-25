@@ -15,9 +15,9 @@ const e2bBaseURL = "https://api.e2b.dev"
 
 // E2BConfig configures an E2B cloud sandbox workspace.
 type E2BConfig struct {
-	APIKey    string
-	Template  string // sandbox template ID (default: "base")
-	Timeout   time.Duration
+	APIKey   string
+	Template string // sandbox template ID (default: "base")
+	Timeout  time.Duration
 }
 
 // E2BWorkspace provides file and command operations in an E2B cloud sandbox.
@@ -167,7 +167,7 @@ func (w *E2BWorkspace) doAPI(ctx context.Context, method, path string, body map[
 
 	var result map[string]any
 	if len(respBody) > 0 {
-		json.Unmarshal(respBody, &result)
+		_ = json.Unmarshal(respBody, &result)
 	}
 	return result, nil
 }

@@ -24,9 +24,9 @@ type GeminiChatModel struct {
 
 // GeminiConfig configures GeminiChatModel.
 type GeminiConfig struct {
-	APIKey     string
-	BaseURL    string
-	Model      string
+	APIKey        string
+	BaseURL       string
+	Model         string
 	HTTPClient    *http.Client
 	ClientOptions *ClientOptions
 }
@@ -180,7 +180,7 @@ func (m *GeminiChatModel) buildRequest(msgs []*message.Msg, callOpts *CallOption
 			for _, tc := range toolCalls {
 				tcb := tc.(message.ToolCallBlock)
 				var args map[string]any
-				json.Unmarshal([]byte(tcb.Input), &args)
+				_ = json.Unmarshal([]byte(tcb.Input), &args)
 				parts = append(parts, geminiPart{
 					FunctionCall: &geminiFunctionCall{
 						Name: tcb.Name,
@@ -247,10 +247,10 @@ func (m *GeminiChatModel) buildRequest(msgs []*message.Msg, callOpts *CallOption
 // --- Gemini API types ---
 
 type geminiRequest struct {
-	Contents          []geminiContent        `json:"contents"`
-	SystemInstruction *geminiContent         `json:"system_instruction,omitempty"`
+	Contents          []geminiContent         `json:"contents"`
+	SystemInstruction *geminiContent          `json:"system_instruction,omitempty"`
 	GenerationConfig  *geminiGenerationConfig `json:"generation_config,omitempty"`
-	Tools             []geminiTool           `json:"tools,omitempty"`
+	Tools             []geminiTool            `json:"tools,omitempty"`
 }
 
 type geminiContent struct {
@@ -259,9 +259,9 @@ type geminiContent struct {
 }
 
 type geminiPart struct {
-	Text             string                 `json:"text,omitempty"`
-	Thought          bool                   `json:"thought,omitempty"`
-	FunctionCall     *geminiFunctionCall    `json:"functionCall,omitempty"`
+	Text             string                  `json:"text,omitempty"`
+	Thought          bool                    `json:"thought,omitempty"`
+	FunctionCall     *geminiFunctionCall     `json:"functionCall,omitempty"`
 	FunctionResponse *geminiFunctionResponse `json:"functionResponse,omitempty"`
 }
 
@@ -276,9 +276,9 @@ type geminiFunctionResponse struct {
 }
 
 type geminiGenerationConfig struct {
-	Temperature    *float32 `json:"temperature,omitempty"`
-	MaxOutputTokens *int    `json:"maxOutputTokens,omitempty"`
-	TopP           *float32 `json:"topP,omitempty"`
+	Temperature     *float32 `json:"temperature,omitempty"`
+	MaxOutputTokens *int     `json:"maxOutputTokens,omitempty"`
+	TopP            *float32 `json:"topP,omitempty"`
 }
 
 type geminiTool struct {
@@ -298,8 +298,8 @@ type geminiResponse struct {
 }
 
 type geminiCandidate struct {
-	Content       geminiContent `json:"content"`
-	FinishReason  string        `json:"finishReason,omitempty"`
+	Content      geminiContent `json:"content"`
+	FinishReason string        `json:"finishReason,omitempty"`
 }
 
 type geminiUsage struct {

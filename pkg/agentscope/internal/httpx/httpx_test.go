@@ -101,4 +101,3 @@ func TestDoJSONRequestTimeout(t *testing.T) {
 		t.Fatalf("expected timeout error, got nil")
 	}
 }
-

@@ -26,7 +26,7 @@ func TestTaskCreate(t *testing.T) {
 	}
 
 	var task Task
-	json.Unmarshal([]byte(getResponseText(resp)), &task)
+	_ = json.Unmarshal([]byte(getResponseText(resp)), &task)
 	if task.ID != "1" {
 		t.Fatalf("ID = %q, want '1'", task.ID)
 	}

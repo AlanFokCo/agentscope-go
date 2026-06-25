@@ -49,7 +49,7 @@ func (b *DockerBackend) ExecCommand(ctx context.Context, command string) (*ExecR
 type DockerWorkspaceConfig struct {
 	Image          string
 	ContainerName  string
-	WorkDir        string // container working directory
+	WorkDir        string   // container working directory
 	Mounts         []string // host:container mount pairs
 	CommandTimeout time.Duration
 }
@@ -62,7 +62,7 @@ type DockerWorkspace struct {
 }
 
 // NewDockerWorkspace creates and starts a Docker container for the workspace.
-func NewDockerWorkspace(ctx context.Context, cfg DockerWorkspaceConfig) (*DockerWorkspace, error) {
+func NewDockerWorkspace(ctx context.Context, cfg *DockerWorkspaceConfig) (*DockerWorkspace, error) {
 	if cfg.Image == "" {
 		cfg.Image = "ubuntu:latest"
 	}
@@ -140,7 +140,7 @@ func (w *DockerWorkspace) ListFiles(ctx context.Context, dir string) ([]FileInfo
 		}
 		isDir := parts[0] == "d"
 		var size int64
-		fmt.Sscanf(parts[1], "%d", &size)
+		_, _ = fmt.Sscanf(parts[1], "%d", &size)
 		files = append(files, FileInfo{
 			Name:  parts[2],
 			Path:  dir + "/" + parts[2],

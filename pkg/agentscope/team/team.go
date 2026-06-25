@@ -154,7 +154,7 @@ func (t *Team) Disband() {
 	t.members = make(map[string]*Member)
 }
 
-// Receive blocks until a message arrives in the member's inbox or the context is cancelled.
+// Receive blocks until a message arrives in the member's inbox or the context is canceled.
 func (m *Member) Receive(ctx context.Context) (*message.Msg, error) {
 	select {
 	case msg := <-m.Inbox:

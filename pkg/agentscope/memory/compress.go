@@ -26,4 +26,3 @@ func CompressMessages(history []*message.Msg, cfg CompressionConfig) []*message.
 	start := len(history) - cfg.KeepRecent
 	return history[start:]
 }
-

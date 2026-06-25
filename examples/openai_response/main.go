@@ -25,7 +25,7 @@ func main() {
 		return
 	}
 
-	cm, err := model.NewOpenAIResponseModel(model.OpenAIResponseConfig{
+	cm, err := model.NewOpenAIResponseModel(&model.OpenAIResponseConfig{
 		APIKey: apiKey,
 		Model:  "gpt-4.1",
 	})

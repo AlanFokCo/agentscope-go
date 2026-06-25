@@ -130,7 +130,7 @@ func TestCompressContext_BelowThresholdSkips(t *testing.T) {
 		contextSize: 32000,
 	}
 	agent := NewUnifiedAgent("test", "prompt", mock,
-		WithContextConfig(ContextConfig{TriggerRatio: 0.8}),
+		WithContextConfig(&ContextConfig{TriggerRatio: 0.8}),
 	)
 	agent.state.Context = []*message.Msg{
 		message.UserMsg("user", "hello"),
@@ -152,7 +152,7 @@ func TestCompressContext_TriggersAboveThreshold(t *testing.T) {
 		contextSize: 32000,
 	}
 	agent := NewUnifiedAgent("test", "prompt", mock,
-		WithContextConfig(ContextConfig{
+		WithContextConfig(&ContextConfig{
 			TriggerRatio: 0.8,
 			ReserveRatio: 0.1,
 		}),
@@ -189,7 +189,7 @@ func TestCompressContext_EmptyContextError(t *testing.T) {
 		contextSize: 32000,
 	}
 	agent := NewUnifiedAgent("test", "prompt", mock,
-		WithContextConfig(ContextConfig{TriggerRatio: 0.8}),
+		WithContextConfig(&ContextConfig{TriggerRatio: 0.8}),
 	)
 
 	err := agent.compressContext(context.Background())
@@ -207,7 +207,7 @@ func TestCompressContext_PreservesSummaryInInput(t *testing.T) {
 		contextSize: 32000,
 	}
 	agent := NewUnifiedAgent("test", "prompt", mock,
-		WithContextConfig(ContextConfig{TriggerRatio: 0.8}),
+		WithContextConfig(&ContextConfig{TriggerRatio: 0.8}),
 	)
 	agent.state.Summary = "previous summary content"
 	agent.state.Context = []*message.Msg{
@@ -426,7 +426,7 @@ func TestCompressContext_WithMiddleware(t *testing.T) {
 	}
 
 	agent := NewUnifiedAgent("test", "prompt", mock,
-		WithContextConfig(ContextConfig{TriggerRatio: 0.8}),
+		WithContextConfig(&ContextConfig{TriggerRatio: 0.8}),
 		WithMiddlewares(mw),
 	)
 	agent.state.Context = []*message.Msg{
@@ -479,7 +479,7 @@ func TestCompressContext_ToolResultTruncationInReply(t *testing.T) {
 	tk := tool.NewToolkit(bigTool)
 	agent := NewUnifiedAgent("test", "prompt", mock,
 		WithToolkit(tk),
-		WithContextConfig(ContextConfig{ToolResultLimit: 50}),
+		WithContextConfig(&ContextConfig{ToolResultLimit: 50}),
 	)
 
 	reply, err := agent.Reply(context.Background(), "run the big tool")

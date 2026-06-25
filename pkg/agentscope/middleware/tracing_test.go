@@ -118,13 +118,13 @@ func TestTracingMiddleware_ModelCallSpan(t *testing.T) {
 	tracer := &recordingTracer{}
 	mw := NewTracingMiddleware(tracer)
 
-	core := func(_ context.Context, _ ModelCallInput) (*model.ChatResponse, error) {
+	core := func(_ context.Context, _ *ModelCallInput) (*model.ChatResponse, error) {
 		return &model.ChatResponse{
 			Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: "hi"}},
 		}, nil
 	}
 
-	_, err := mw.OnModelCall(context.Background(), ModelCallInput{AgentName: "test"}, core)
+	_, err := mw.OnModelCall(context.Background(), &ModelCallInput{AgentName: "test"}, core)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,11 +144,11 @@ func TestTracingMiddleware_ActingSpan(t *testing.T) {
 	tracer := &recordingTracer{}
 	mw := NewTracingMiddleware(tracer)
 
-	core := func(_ context.Context, _ ActingInput) (*tool.ToolResponse, error) {
+	core := func(_ context.Context, _ *ActingInput) (*tool.ToolResponse, error) {
 		return tool.NewTextResponse("done"), nil
 	}
 
-	_, err := mw.OnActing(context.Background(), ActingInput{
+	_, err := mw.OnActing(context.Background(), &ActingInput{
 		AgentName: "test",
 		ToolCall:  message.ToolCallBlock{Name: "search"},
 	}, core)
@@ -170,19 +170,19 @@ func TestTracingMiddleware_NestedSpans(t *testing.T) {
 
 	// Simulate: OnReply wraps OnModelCall which wraps OnActing
 	// Build chains
-	modelCore := func(ctx context.Context, _ ModelCallInput) (*model.ChatResponse, error) {
+	modelCore := func(ctx context.Context, _ *ModelCallInput) (*model.ChatResponse, error) {
 		// Simulate a tool call within the model call
-		actingCore := func(ctx context.Context, _ ActingInput) (*tool.ToolResponse, error) {
+		actingCore := func(ctx context.Context, _ *ActingInput) (*tool.ToolResponse, error) {
 			return tool.NewTextResponse("tool result"), nil
 		}
-		_, _ = mw.OnActing(ctx, ActingInput{ToolCall: message.ToolCallBlock{Name: "calc"}}, actingCore)
+		_, _ = mw.OnActing(ctx, &ActingInput{ToolCall: message.ToolCallBlock{Name: "calc"}}, actingCore)
 		return &model.ChatResponse{
 			Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: "hi"}},
 		}, nil
 	}
 
 	replyCore := func(ctx context.Context, _ ReplyInput) <-chan event.Event {
-		_, _ = mw.OnModelCall(ctx, ModelCallInput{}, modelCore)
+		_, _ = mw.OnModelCall(ctx, &ModelCallInput{}, modelCore)
 		ch := make(chan event.Event)
 		close(ch)
 		return ch
@@ -319,20 +319,20 @@ func TestTracingMiddleware_OnModelCall_GenAIAttributes(t *testing.T) {
 	temp := 0.7
 	maxTok := 1024
 
-	core := func(_ context.Context, _ ModelCallInput) (*model.ChatResponse, error) {
+	core := func(_ context.Context, _ *ModelCallInput) (*model.ChatResponse, error) {
 		return &model.ChatResponse{
 			ID:        "resp-123",
 			ModelName: "gpt-4.1",
 			Content:   []message.ContentBlock{message.TextBlock{Type: "text", Text: "hi"}},
 			Usage: &model.ChatUsage{
-				InputTokens:     100,
-				OutputTokens:    50,
+				InputTokens:      100,
+				OutputTokens:     50,
 				CacheInputTokens: 25,
 			},
 		}, nil
 	}
 
-	_, err := mw.OnModelCall(context.Background(), ModelCallInput{
+	_, err := mw.OnModelCall(context.Background(), &ModelCallInput{
 		AgentName:    "test",
 		ModelName:    "gpt-4.1",
 		ProviderName: "openai",
@@ -390,7 +390,7 @@ func TestTracingMiddleware_OnModelCall_NoCacheTokens_NoAttribute(t *testing.T) {
 	tracer := &attributedRecordingTracer{}
 	mw := NewTracingMiddleware(tracer)
 
-	core := func(_ context.Context, _ ModelCallInput) (*model.ChatResponse, error) {
+	core := func(_ context.Context, _ *ModelCallInput) (*model.ChatResponse, error) {
 		return &model.ChatResponse{
 			Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: "hi"}},
 			Usage: &model.ChatUsage{
@@ -401,7 +401,7 @@ func TestTracingMiddleware_OnModelCall_NoCacheTokens_NoAttribute(t *testing.T) {
 		}, nil
 	}
 
-	_, _ = mw.OnModelCall(context.Background(), ModelCallInput{}, core)
+	_, _ = mw.OnModelCall(context.Background(), &ModelCallInput{}, core)
 
 	// Find the response span
 	if len(tracer.spans) < 2 {
@@ -417,11 +417,11 @@ func TestTracingMiddleware_OnModelCall_NilResponse_NoResponseSpan(t *testing.T) 
 	tracer := &attributedRecordingTracer{}
 	mw := NewTracingMiddleware(tracer)
 
-	core := func(_ context.Context, _ ModelCallInput) (*model.ChatResponse, error) {
+	core := func(_ context.Context, _ *ModelCallInput) (*model.ChatResponse, error) {
 		return nil, context.Canceled
 	}
 
-	_, _ = mw.OnModelCall(context.Background(), ModelCallInput{}, core)
+	_, _ = mw.OnModelCall(context.Background(), &ModelCallInput{}, core)
 
 	// Only the "chat" span should exist (no response span).
 	if len(tracer.spans) != 1 {
@@ -433,11 +433,11 @@ func TestTracingMiddleware_OnActing_GenAIAttributes(t *testing.T) {
 	tracer := &attributedRecordingTracer{}
 	mw := NewTracingMiddleware(tracer)
 
-	core := func(_ context.Context, _ ActingInput) (*tool.ToolResponse, error) {
+	core := func(_ context.Context, _ *ActingInput) (*tool.ToolResponse, error) {
 		return tool.NewTextResponse("done"), nil
 	}
 
-	_, err := mw.OnActing(context.Background(), ActingInput{
+	_, err := mw.OnActing(context.Background(), &ActingInput{
 		AgentName: "test",
 		ToolCall: message.ToolCallBlock{
 			ID:    "call-456",

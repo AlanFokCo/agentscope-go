@@ -30,4 +30,3 @@ func (NoopTuner) Status(ctx context.Context, id string) (*Job, error) {
 	_ = ctx
 	return &Job{ID: id, Status: "completed", Meta: map[string]any{}}, nil
 }
-

@@ -15,7 +15,7 @@ func budgetCtx() context.Context {
 }
 
 func modelCallCore(inputTokens, outputTokens int) ModelCallHandler {
-	return func(_ context.Context, _ ModelCallInput) (*model.ChatResponse, error) {
+	return func(_ context.Context, _ *ModelCallInput) (*model.ChatResponse, error) {
 		return &model.ChatResponse{
 			Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: "ok"}},
 			Usage:   &model.ChatUsage{InputTokens: inputTokens, OutputTokens: outputTokens},
@@ -28,7 +28,7 @@ func TestBudget_UnderBudget_NoEnforcement(t *testing.T) {
 	ctx := budgetCtx()
 
 	// Model call with small usage
-	resp, err := m.OnModelCall(ctx, ModelCallInput{}, modelCallCore(10, 5))
+	resp, err := m.OnModelCall(ctx, &ModelCallInput{}, modelCallCore(10, 5))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestBudget_ExactlyMet_Enforces(t *testing.T) {
 	ctx := budgetCtx()
 
 	// First call: uses exactly 100 tokens (50+50)
-	_, err := m.OnModelCall(ctx, ModelCallInput{}, modelCallCore(50, 50))
+	_, err := m.OnModelCall(ctx, &ModelCallInput{}, modelCallCore(50, 50))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,14 +72,14 @@ func TestBudget_ZeroBudget_ImmediateEnforcement(t *testing.T) {
 
 	// OnModelCall should force tool_choice=none
 	var receivedInput ModelCallInput
-	core := func(_ context.Context, input ModelCallInput) (*model.ChatResponse, error) {
-		receivedInput = input
+	core := func(_ context.Context, input *ModelCallInput) (*model.ChatResponse, error) {
+		receivedInput = *input
 		return &model.ChatResponse{
 			Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: "done"}},
 		}, nil
 	}
 
-	_, err := m.OnModelCall(ctx, ModelCallInput{
+	_, err := m.OnModelCall(ctx, &ModelCallInput{
 		ToolChoice: &model.ToolChoice{Mode: "auto"},
 	}, core)
 	if err != nil {
@@ -96,18 +96,18 @@ func TestBudget_ForcesToolChoiceNone(t *testing.T) {
 	ctx := budgetCtx()
 
 	// First call: uses 60 tokens, exceeding budget
-	_, _ = m.OnModelCall(ctx, ModelCallInput{}, modelCallCore(30, 30))
+	_, _ = m.OnModelCall(ctx, &ModelCallInput{}, modelCallCore(30, 30))
 
 	// Second call: should force tool_choice=none
 	var receivedInput ModelCallInput
-	core := func(_ context.Context, input ModelCallInput) (*model.ChatResponse, error) {
-		receivedInput = input
+	core := func(_ context.Context, input *ModelCallInput) (*model.ChatResponse, error) {
+		receivedInput = *input
 		return &model.ChatResponse{
 			Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: "wrap up"}},
 		}, nil
 	}
 
-	_, err := m.OnModelCall(ctx, ModelCallInput{
+	_, err := m.OnModelCall(ctx, &ModelCallInput{
 		ToolChoice: &model.ToolChoice{Mode: "auto"},
 	}, core)
 	if err != nil {
@@ -124,7 +124,7 @@ func TestBudget_AccumulatesAcrossCalls(t *testing.T) {
 	ctx := budgetCtx()
 
 	// Call 1: 100 tokens
-	_, _ = m.OnModelCall(ctx, ModelCallInput{}, modelCallCore(60, 40))
+	_, _ = m.OnModelCall(ctx, &ModelCallInput{}, modelCallCore(60, 40))
 
 	prompt1 := m.OnSystemPrompt(ctx, "agent", "Base.")
 	if strings.Contains(prompt1, "maximum token budget") {
@@ -132,7 +132,7 @@ func TestBudget_AccumulatesAcrossCalls(t *testing.T) {
 	}
 
 	// Call 2: 100 tokens (total 200)
-	_, _ = m.OnModelCall(ctx, ModelCallInput{}, modelCallCore(50, 50))
+	_, _ = m.OnModelCall(ctx, &ModelCallInput{}, modelCallCore(50, 50))
 
 	prompt2 := m.OnSystemPrompt(ctx, "agent", "Base.")
 	if strings.Contains(prompt2, "maximum token budget") {
@@ -140,7 +140,7 @@ func TestBudget_AccumulatesAcrossCalls(t *testing.T) {
 	}
 
 	// Call 3: 100 tokens (total 300, exactly budget)
-	_, _ = m.OnModelCall(ctx, ModelCallInput{}, modelCallCore(70, 30))
+	_, _ = m.OnModelCall(ctx, &ModelCallInput{}, modelCallCore(70, 30))
 
 	prompt3 := m.OnSystemPrompt(ctx, "agent", "Base.")
 	if !strings.Contains(prompt3, "maximum token budget") {
@@ -155,7 +155,7 @@ func TestBudget_WeightedCost(t *testing.T) {
 	ctx := budgetCtx()
 
 	// 50 input + 50 output = 50*1 + 50*3 = 200 weighted cost
-	_, _ = m.OnModelCall(ctx, ModelCallInput{}, modelCallCore(50, 50))
+	_, _ = m.OnModelCall(ctx, &ModelCallInput{}, modelCallCore(50, 50))
 
 	prompt := m.OnSystemPrompt(ctx, "agent", "Base.")
 	if !strings.Contains(prompt, "maximum token budget") {
@@ -170,7 +170,7 @@ func TestBudget_WeightedCost_UnderBudget(t *testing.T) {
 	ctx := budgetCtx()
 
 	// 50 input + 40 output = 50*1 + 40*3 = 170 weighted cost
-	_, _ = m.OnModelCall(ctx, ModelCallInput{}, modelCallCore(50, 40))
+	_, _ = m.OnModelCall(ctx, &ModelCallInput{}, modelCallCore(50, 40))
 
 	prompt := m.OnSystemPrompt(ctx, "agent", "Base.")
 	if strings.Contains(prompt, "maximum token budget") {
@@ -193,14 +193,14 @@ func TestBudget_NilUsage_NoAccumulation(t *testing.T) {
 	m := NewReplyBudgetControl(100)
 	ctx := budgetCtx()
 
-	core := func(_ context.Context, _ ModelCallInput) (*model.ChatResponse, error) {
+	core := func(_ context.Context, _ *ModelCallInput) (*model.ChatResponse, error) {
 		return &model.ChatResponse{
 			Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: "ok"}},
 			Usage:   nil,
 		}, nil
 	}
 
-	_, _ = m.OnModelCall(ctx, ModelCallInput{}, core)
+	_, _ = m.OnModelCall(ctx, &ModelCallInput{}, core)
 
 	mc := GetMiddleContext(ctx)
 	used := m.getUsed(mc)
@@ -213,11 +213,11 @@ func TestBudget_ModelCallError_NoAccumulation(t *testing.T) {
 	m := NewReplyBudgetControl(100)
 	ctx := budgetCtx()
 
-	core := func(_ context.Context, _ ModelCallInput) (*model.ChatResponse, error) {
+	core := func(_ context.Context, _ *ModelCallInput) (*model.ChatResponse, error) {
 		return nil, context.Canceled
 	}
 
-	_, err := m.OnModelCall(ctx, ModelCallInput{}, core)
+	_, err := m.OnModelCall(ctx, &ModelCallInput{}, core)
 	if err == nil {
 		t.Error("expected error from core")
 	}
@@ -233,7 +233,7 @@ func TestBudget_NoMiddleContext_Passthrough(t *testing.T) {
 	m := NewReplyBudgetControl(100)
 	ctx := context.Background() // no MiddleContext
 
-	resp, err := m.OnModelCall(ctx, ModelCallInput{}, modelCallCore(50, 50))
+	resp, err := m.OnModelCall(ctx, &ModelCallInput{}, modelCallCore(50, 50))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestBudget_PerReplyIsolation(t *testing.T) {
 
 	// Reply 1
 	ctx1 := budgetCtx()
-	_, _ = m.OnModelCall(ctx1, ModelCallInput{}, modelCallCore(60, 60))
+	_, _ = m.OnModelCall(ctx1, &ModelCallInput{}, modelCallCore(60, 60))
 	prompt1 := m.OnSystemPrompt(ctx1, "agent", "Base.")
 	if !strings.Contains(prompt1, "maximum token budget") {
 		t.Error("reply 1 should exceed budget")
@@ -278,7 +278,7 @@ func TestBudget_OnReply_ResetsBudget(t *testing.T) {
 	ctx := budgetCtx()
 
 	// Accumulate cost past the budget.
-	_, _ = m.OnModelCall(ctx, ModelCallInput{}, modelCallCore(60, 60))
+	_, _ = m.OnModelCall(ctx, &ModelCallInput{}, modelCallCore(60, 60))
 	mc := GetMiddleContext(ctx)
 	if m.getUsed(mc) == 0 {
 		t.Fatal("expected non-zero usage after model call")

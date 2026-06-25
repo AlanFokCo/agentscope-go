@@ -42,7 +42,7 @@ type AnthropicConfig struct {
 }
 
 // NewAnthropicChatModel creates a ChatModel backed by Anthropic.
-func NewAnthropicChatModel(cfg AnthropicConfig) (*AnthropicChatModel, error) {
+func NewAnthropicChatModel(cfg *AnthropicConfig) (*AnthropicChatModel, error) {
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("anthropic: APIKey is required")
 	}
@@ -82,13 +82,13 @@ type anthropicMessage struct {
 }
 
 type anthropicRequest struct {
-	Model      string              `json:"model"`
-	Messages   []anthropicMessage  `json:"messages"`
-	MaxTokens  int                 `json:"max_tokens"`
-	System     string              `json:"system,omitempty"`
-	Tools      []anthropicTool     `json:"tools,omitempty"`
+	Model      string               `json:"model"`
+	Messages   []anthropicMessage   `json:"messages"`
+	MaxTokens  int                  `json:"max_tokens"`
+	System     string               `json:"system,omitempty"`
+	Tools      []anthropicTool      `json:"tools,omitempty"`
 	ToolChoice *anthropicToolChoice `json:"tool_choice,omitempty"`
-	Thinking   *anthropicThinking  `json:"thinking,omitempty"`
+	Thinking   *anthropicThinking   `json:"thinking,omitempty"`
 }
 
 type anthropicToolChoice struct {
@@ -334,14 +334,14 @@ func (m *AnthropicChatModel) ChatStream(ctx context.Context, msgs []*message.Msg
 }
 
 type anthropicStreamRequest struct {
-	Model      string              `json:"model"`
-	Messages   []anthropicMessage  `json:"messages"`
-	MaxTokens  int                 `json:"max_tokens"`
-	System     string              `json:"system,omitempty"`
-	Tools      []anthropicTool     `json:"tools,omitempty"`
+	Model      string               `json:"model"`
+	Messages   []anthropicMessage   `json:"messages"`
+	MaxTokens  int                  `json:"max_tokens"`
+	System     string               `json:"system,omitempty"`
+	Tools      []anthropicTool      `json:"tools,omitempty"`
 	ToolChoice *anthropicToolChoice `json:"tool_choice,omitempty"`
-	Thinking   *anthropicThinking  `json:"thinking,omitempty"`
-	Stream     bool                `json:"stream"`
+	Thinking   *anthropicThinking   `json:"thinking,omitempty"`
+	Stream     bool                 `json:"stream"`
 }
 
 // Anthropic SSE event data types
@@ -402,7 +402,7 @@ func processAnthropicStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, ou
 		cacheCreationInputTokens int
 		cacheInputTokens         int
 		accBlocks                []anthropicAccBlock
-		currentBlockIdx          int = -1
+		currentBlockIdx          int
 	)
 
 	for evt := range sseCh {

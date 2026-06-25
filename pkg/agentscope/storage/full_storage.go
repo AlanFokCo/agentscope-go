@@ -23,12 +23,12 @@ type CredentialRecord struct {
 
 // AgentRecord stores an agent configuration.
 type AgentRecord struct {
-	ID           string   `json:"id"`
-	UserID       string   `json:"user_id"`
-	Name         string   `json:"name"`
-	SystemPrompt string   `json:"system_prompt"`
-	ModelName    string   `json:"model_name,omitempty"`
-	ToolGroups   []string `json:"tool_groups,omitempty"`
+	ID           string    `json:"id"`
+	UserID       string    `json:"user_id"`
+	Name         string    `json:"name"`
+	SystemPrompt string    `json:"system_prompt"`
+	ModelName    string    `json:"model_name,omitempty"`
+	ToolGroups   []string  `json:"tool_groups,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
@@ -56,11 +56,11 @@ type MessageRecord struct {
 
 // TeamRecord stores a team configuration.
 type TeamRecord struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	LeaderID    string   `json:"leader_id"`
-	MemberIDs   []string `json:"member_ids"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	LeaderID    string    `json:"leader_id"`
+	MemberIDs   []string  `json:"member_ids"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -123,10 +123,10 @@ type InMemoryFullStorage struct {
 	mu          sync.RWMutex
 	credentials map[string]*CredentialRecord // key: userID:id
 	agents      map[string]*AgentRecord      // key: userID:id
-	sessions    map[string]*SessionRecord     // key: id
+	sessions    map[string]*SessionRecord    // key: id
 	schedules   map[string]*ScheduleRecord   // key: id
-	messages    map[string][]*MessageRecord   // key: sessionID
-	teams       map[string]*TeamRecord        // key: id
+	messages    map[string][]*MessageRecord  // key: sessionID
+	teams       map[string]*TeamRecord       // key: id
 }
 
 // NewInMemoryFullStorage creates an empty full storage.

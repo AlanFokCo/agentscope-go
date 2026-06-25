@@ -221,12 +221,12 @@ type testLoggingMiddleware struct {
 	promptSuffix   string
 }
 
-func (m *testLoggingMiddleware) OnModelCall(ctx context.Context, input middleware.ModelCallInput, next middleware.ModelCallHandler) (*model.ChatResponse, error) {
+func (m *testLoggingMiddleware) OnModelCall(ctx context.Context, input *middleware.ModelCallInput, next middleware.ModelCallHandler) (*model.ChatResponse, error) {
 	atomic.AddInt64(&m.modelCallCount, 1)
 	return next(ctx, input)
 }
 
-func (m *testLoggingMiddleware) OnActing(ctx context.Context, input middleware.ActingInput, next middleware.ActingHandler) (*tool.ToolResponse, error) {
+func (m *testLoggingMiddleware) OnActing(ctx context.Context, input *middleware.ActingInput, next middleware.ActingHandler) (*tool.ToolResponse, error) {
 	atomic.AddInt64(&m.actingCount, 1)
 	return next(ctx, input)
 }

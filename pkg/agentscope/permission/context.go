@@ -12,10 +12,10 @@ type WorkingDirectory struct {
 // permission rules organized by behavior type.
 type Context struct {
 	Mode               PermissionMode              `json:"mode"`
-	WorkingDirectories map[string]WorkingDirectory  `json:"working_directories,omitempty"`
-	AllowRules         map[string][]Rule            `json:"allow_rules,omitempty"`
-	DenyRules          map[string][]Rule            `json:"deny_rules,omitempty"`
-	AskRules           map[string][]Rule            `json:"ask_rules,omitempty"`
+	WorkingDirectories map[string]WorkingDirectory `json:"working_directories,omitempty"`
+	AllowRules         map[string][]Rule           `json:"allow_rules,omitempty"`
+	DenyRules          map[string][]Rule           `json:"deny_rules,omitempty"`
+	AskRules           map[string][]Rule           `json:"ask_rules,omitempty"`
 }
 
 // NewContext creates a Context with the given mode and empty rule maps.

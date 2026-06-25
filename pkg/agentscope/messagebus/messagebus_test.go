@@ -18,7 +18,7 @@ func TestPublishSubscribe(t *testing.T) {
 	}
 	defer cancel()
 
-	bus.Publish(ctx, "topic-1", []byte("hello"))
+	_ = bus.Publish(ctx, "topic-1", []byte("hello"))
 
 	select {
 	case msg := <-ch:
@@ -50,7 +50,7 @@ func TestMultipleSubscribers(t *testing.T) {
 	defer cancel1()
 	defer cancel2()
 
-	bus.Publish(ctx, "t", []byte("msg"))
+	_ = bus.Publish(ctx, "t", []byte("msg"))
 
 	for _, ch := range []<-chan []byte{ch1, ch2} {
 		select {
@@ -90,7 +90,7 @@ func TestTopicIsolation(t *testing.T) {
 	defer cancel1()
 	defer cancel2()
 
-	bus.Publish(ctx, "a", []byte("for-a"))
+	_ = bus.Publish(ctx, "a", []byte("for-a"))
 
 	select {
 	case <-ch1:
@@ -110,9 +110,9 @@ func TestQueuePushAndDrain(t *testing.T) {
 	defer bus.Close()
 
 	ctx := context.Background()
-	bus.QueuePush(ctx, "q", []byte("a"))
-	bus.QueuePush(ctx, "q", []byte("b"))
-	bus.QueuePush(ctx, "q", []byte("c"))
+	_ = bus.QueuePush(ctx, "q", []byte("a"))
+	_ = bus.QueuePush(ctx, "q", []byte("b"))
+	_ = bus.QueuePush(ctx, "q", []byte("c"))
 
 	items, err := bus.QueueDrain(ctx, "q", 2)
 	if err != nil {
@@ -149,8 +149,8 @@ func TestQueueDelete(t *testing.T) {
 	defer bus.Close()
 
 	ctx := context.Background()
-	bus.QueuePush(ctx, "q", []byte("x"))
-	bus.QueueDelete(ctx, "q")
+	_ = bus.QueuePush(ctx, "q", []byte("x"))
+	_ = bus.QueueDelete(ctx, "q")
 
 	items, _ := bus.QueueDrain(ctx, "q", 10)
 	if items != nil {
@@ -165,7 +165,7 @@ func TestLogAppendAndRead(t *testing.T) {
 	ctx := context.Background()
 	id1, _ := bus.LogAppend(ctx, "log1", []byte("event-1"), 0)
 	id2, _ := bus.LogAppend(ctx, "log1", []byte("event-2"), 0)
-	bus.LogAppend(ctx, "log1", []byte("event-3"), 0)
+	_, _ = bus.LogAppend(ctx, "log1", []byte("event-3"), 0)
 
 	// Read all.
 	entries, err := bus.LogRead(ctx, "log1", "", 0)
@@ -201,7 +201,7 @@ func TestLogMaxLen(t *testing.T) {
 
 	ctx := context.Background()
 	for i := 0; i < 10; i++ {
-		bus.LogAppend(ctx, "bounded", []byte("x"), 3)
+		_, _ = bus.LogAppend(ctx, "bounded", []byte("x"), 3)
 	}
 
 	entries, _ := bus.LogRead(ctx, "bounded", "", 0)
@@ -254,7 +254,7 @@ func TestConcurrentPubSub(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func() {
 			defer wg.Done()
-			bus.Publish(ctx, "concurrent", []byte("msg"))
+			_ = bus.Publish(ctx, "concurrent", []byte("msg"))
 		}()
 	}
 	wg.Wait()
@@ -280,7 +280,7 @@ func TestPayloadIsolation(t *testing.T) {
 
 	ctx := context.Background()
 	original := []byte("original")
-	bus.QueuePush(ctx, "q", original)
+	_ = bus.QueuePush(ctx, "q", original)
 
 	original[0] = 'X'
 

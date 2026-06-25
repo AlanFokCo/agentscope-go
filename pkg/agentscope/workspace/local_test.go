@@ -196,7 +196,7 @@ func TestEnhancedLocalWorkspace_GetInstructions(t *testing.T) {
 	}
 
 	// Create CLAUDE.md
-	os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte("# Instructions\nDo good things."), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte("# Instructions\nDo good things."), 0o644)
 
 	instructions, err = ws.GetInstructions(ctx)
 	if err != nil {
@@ -215,7 +215,7 @@ func TestEnhancedLocalWorkspace_GetInstructions_README(t *testing.T) {
 	}
 
 	// Only README.md
-	os.WriteFile(filepath.Join(dir, "README.md"), []byte("# README"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "README.md"), []byte("# README"), 0o644)
 
 	instructions, err := ws.GetInstructions(context.Background())
 	if err != nil {

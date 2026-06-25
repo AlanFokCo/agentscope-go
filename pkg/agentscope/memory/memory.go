@@ -42,4 +42,3 @@ func (s *InMemoryStore) Load(_ context.Context, key string) ([]*message.Msg, err
 	copy(cp, s.data[key])
 	return cp, nil
 }
-

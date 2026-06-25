@@ -73,7 +73,7 @@ func (c *GatewayClient) ListMCPs(ctx context.Context) ([]GatewayMCPInfo, error) 
 }
 
 // ConnectMCP registers an MCP server with the gateway.
-func (c *GatewayClient) ConnectMCP(ctx context.Context, config GatewayMCPConfig) error {
+func (c *GatewayClient) ConnectMCP(ctx context.Context, config *GatewayMCPConfig) error {
 	body, _ := json.Marshal(config)
 	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/mcps", bytes.NewReader(body))
 	if err != nil {

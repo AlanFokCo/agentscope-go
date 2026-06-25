@@ -77,7 +77,7 @@ func main() {
 func createModelFromCredential(cred credential.Credential) (model.ChatModel, error) {
 	switch cred.Provider() {
 	case "anthropic":
-		return model.NewAnthropicChatModel(model.AnthropicConfig{
+		return model.NewAnthropicChatModel(&model.AnthropicConfig{
 			APIKey:          cred.APIKey(),
 			BaseURL:         cred.BaseURL(),
 			Model:           "claude-sonnet-4-20250514",

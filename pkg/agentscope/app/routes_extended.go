@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/storage"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/tts"
 )
@@ -424,11 +423,6 @@ func (a *App) handleListTTSModels(w http.ResponseWriter, _ *http.Request) {
 }
 
 // --- Model listing ---
-
-func (a *App) handleListModelsFull(w http.ResponseWriter, _ *http.Request) {
-	cards := model.ListModels()
-	writeJSON(w, http.StatusOK, cards)
-}
 
 // getFullStorage attempts to cast the StateSaver to FullStorage.
 func (a *App) getFullStorage() storage.FullStorage {

@@ -78,4 +78,3 @@ func TestMsgHubBroadcastAndRequestReply(t *testing.T) {
 		t.Fatalf("nil reply")
 	}
 }
-

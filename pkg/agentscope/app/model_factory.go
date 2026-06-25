@@ -27,7 +27,7 @@ func GetChatModelForCredential(cred credential.Credential, modelName string) (mo
 			Model:   modelName,
 		})
 	case "anthropic":
-		return model.NewAnthropicChatModel(model.AnthropicConfig{
+		return model.NewAnthropicChatModel(&model.AnthropicConfig{
 			APIKey:  cred.APIKey(),
 			BaseURL: cred.BaseURL(),
 			Model:   modelName,
@@ -95,7 +95,7 @@ func GetEmbeddingModel(config EmbeddingModelConfig, registry *credential.Registr
 
 	switch config.Provider {
 	case "openai":
-		return embedding.NewOpenAIEmbeddingModel(embedding.OpenAICompatConfig{
+		return embedding.NewOpenAIEmbeddingModel(&embedding.OpenAICompatConfig{
 			APIKey:  cred.APIKey(),
 			BaseURL: cred.BaseURL(),
 			Model:   config.Model,
@@ -107,18 +107,18 @@ func GetEmbeddingModel(config EmbeddingModelConfig, registry *credential.Registr
 				Model:  config.Model,
 			})
 		}
-		return embedding.NewDashScopeEmbeddingModel(embedding.OpenAICompatConfig{
+		return embedding.NewDashScopeEmbeddingModel(&embedding.OpenAICompatConfig{
 			APIKey:  cred.APIKey(),
 			BaseURL: cred.BaseURL(),
 			Model:   config.Model,
 		})
 	case "ollama":
-		return embedding.NewOllamaEmbeddingModel(embedding.OpenAICompatConfig{
+		return embedding.NewOllamaEmbeddingModel(&embedding.OpenAICompatConfig{
 			BaseURL: cred.BaseURL(),
 			Model:   config.Model,
 		})
 	case "gemini":
-		return embedding.NewGeminiEmbeddingModel(embedding.GeminiConfig{
+		return embedding.NewGeminiEmbeddingModel(&embedding.GeminiConfig{
 			APIKey: cred.APIKey(),
 			Model:  config.Model,
 		})

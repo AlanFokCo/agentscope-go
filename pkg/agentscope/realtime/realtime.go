@@ -17,4 +17,3 @@ type Client interface {
 	// Start begins a new streaming session using the initial messages.
 	Start(ctx context.Context, initMsgs []*message.Msg) (Stream, error)
 }
-

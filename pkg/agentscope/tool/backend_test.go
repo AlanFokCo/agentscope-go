@@ -101,7 +101,7 @@ func TestLocalBackend_FileExists(t *testing.T) {
 	ctx := context.Background()
 
 	path := filepath.Join(dir, "exists.txt")
-	os.WriteFile(path, []byte("x"), 0o644)
+	_ = os.WriteFile(path, []byte("x"), 0o644)
 
 	exists, err := b.FileExists(ctx, path)
 	if err != nil {
@@ -124,9 +124,9 @@ func TestLocalBackend_ListDir(t *testing.T) {
 	dir := t.TempDir()
 	b := &LocalBackend{}
 
-	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0o644)
-	os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b"), 0o644)
-	os.Mkdir(filepath.Join(dir, "subdir"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b"), 0o644)
+	_ = os.Mkdir(filepath.Join(dir, "subdir"), 0o755)
 
 	names, err := b.ListDir(context.Background(), dir)
 	if err != nil {
@@ -141,9 +141,9 @@ func TestLocalBackend_Glob(t *testing.T) {
 	dir := t.TempDir()
 	b := &LocalBackend{}
 
-	os.WriteFile(filepath.Join(dir, "a.go"), []byte("a"), 0o644)
-	os.WriteFile(filepath.Join(dir, "b.go"), []byte("b"), 0o644)
-	os.WriteFile(filepath.Join(dir, "c.txt"), []byte("c"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "a.go"), []byte("a"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "b.go"), []byte("b"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "c.txt"), []byte("c"), 0o644)
 
 	matches, err := b.Glob(context.Background(), filepath.Join(dir, "*.go"))
 	if err != nil {
