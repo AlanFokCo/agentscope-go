@@ -82,34 +82,27 @@ func TestHITL_RequireUserConfirmEvent_EmittedOnAsk(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// In a goroutine, listen for RequireUserConfirmEvent and confirm it
-	go func() {
-		for evt := range ch {
-			if _, ok := evt.(event.RequireUserConfirmEvent); ok {
-				agent.SubmitUserConfirm(event.UserConfirmResultEvent{
-					ConfirmResults: []event.ConfirmResult{
-						{
-							Confirmed: true,
-							ToolCall: message.ToolCallBlock{
-								Type:  "tool_call",
-								ID:    "tc_1",
-								Name:  "test_tool",
-								Input: `{}`,
-								State: message.ToolCallAllowed,
-							},
+	confirmed := false
+	for evt := range ch {
+		if _, ok := evt.(event.RequireUserConfirmEvent); ok && !confirmed {
+			confirmed = true
+			agent.SubmitUserConfirm(event.UserConfirmResultEvent{
+				ConfirmResults: []event.ConfirmResult{
+					{
+						Confirmed: true,
+						ToolCall: message.ToolCallBlock{
+							Type:  "tool_call",
+							ID:    "tc_1",
+							Name:  "test_tool",
+							Input: `{}`,
+							State: message.ToolCallAllowed,
 						},
 					},
-				})
-				return
-			}
+				},
+			})
 		}
-	}()
+	}
 
-	// Wait for the stream to finish by collecting events
-	// We already started consuming in the goroutine, but let's make sure it completes
-	time.Sleep(500 * time.Millisecond)
-
-	// Verify the agent completed
 	if mock.callCount < 1 {
 		t.Error("expected at least 1 model call")
 	}

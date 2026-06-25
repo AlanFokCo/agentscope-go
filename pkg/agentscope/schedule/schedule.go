@@ -224,7 +224,8 @@ func (s *InMemoryScheduler) Get(_ context.Context, taskID string) (*Task, error)
 	if !ok {
 		return nil, fmt.Errorf("scheduler: task %q not found", taskID)
 	}
-	return entry.task, nil
+	cp := *entry.task
+	return &cp, nil
 }
 
 // List returns all tasks.

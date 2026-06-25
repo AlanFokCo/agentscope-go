@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 )
 
@@ -315,9 +316,9 @@ func TestOpenAICompatEmbed_Empty(t *testing.T) {
 }
 
 func TestOpenAICompatEmbed_Batching(t *testing.T) {
-	callCount := 0
+	var callCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
+		n := callCount.Add(1)
 		var req openAIEmbeddingRequest
 		json.NewDecoder(r.Body).Decode(&req)
 
@@ -325,7 +326,7 @@ func TestOpenAICompatEmbed_Batching(t *testing.T) {
 		for i := range req.Input {
 			data[i] = openAIEmbeddingData{
 				Index:     i,
-				Embedding: []float32{float32(callCount), float32(i)},
+				Embedding: []float32{float32(n), float32(i)},
 			}
 		}
 
@@ -356,8 +357,8 @@ func TestOpenAICompatEmbed_Batching(t *testing.T) {
 	if len(resp.Embeddings) != 5 {
 		t.Fatalf("expected 5 embeddings, got %d", len(resp.Embeddings))
 	}
-	if callCount < 3 {
-		t.Errorf("expected at least 3 API calls for batch_size=2, got %d", callCount)
+	if callCount.Load() < 3 {
+		t.Errorf("expected at least 3 API calls for batch_size=2, got %d", callCount.Load())
 	}
 	if resp.Usage == nil || resp.Usage.Tokens != 5 {
 		t.Errorf("expected total tokens=5, got %+v", resp.Usage)
@@ -697,12 +698,12 @@ func TestBatchEmbed_SingleBatch(t *testing.T) {
 }
 
 func TestBatchEmbed_MultiBatch(t *testing.T) {
-	callCount := 0
+	var callCount atomic.Int32
 	fn := func(_ context.Context, texts []string) (*EmbeddingResponse, error) {
-		callCount++
+		n := callCount.Add(1)
 		emb := make([][]float32, len(texts))
 		for i := range texts {
-			emb[i] = []float32{float32(callCount*100 + i)}
+			emb[i] = []float32{float32(n*100 + int32(i))}
 		}
 		return &EmbeddingResponse{
 			Embeddings: emb,
