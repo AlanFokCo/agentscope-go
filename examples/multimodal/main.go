@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 
 	as "github.com/alanfokco/agentscope-go/pkg/agentscope"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
@@ -83,6 +84,7 @@ func exampleImageBase64(cm model.ChatModel) {
 		fmt.Println("Failed to download test image:", err)
 		return
 	}
+	fmt.Printf("Downloaded %d bytes, encoding to base64...\n", len(imgData))
 
 	b64 := base64.StdEncoding.EncodeToString(imgData)
 	imageBlock := message.DataBlock{
@@ -130,16 +132,19 @@ func loadChatModelFromEnv() (model.ChatModel, error) {
 	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
 		return model.NewAnthropicChatModel(model.AnthropicConfig{
 			APIKey: key, Model: "claude-sonnet-4-20250514", MaxOutputTokens: 1024,
+			ClientOptions: &model.ClientOptions{Timeout: 120 * time.Second},
 		})
 	}
 	if key := os.Getenv("DASHSCOPE_API_KEY"); key != "" {
 		return model.NewDashScopeChatModel(model.DashScopeConfig{
 			APIKey: key, BaseURL: os.Getenv("DASHSCOPE_BASE_URL"), Model: "qwen3.5-plus",
+			ClientOptions: &model.ClientOptions{Timeout: 120 * time.Second},
 		})
 	}
 	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
 		return model.NewOpenAIChatModel(model.OpenAIConfig{
 			APIKey: key, Model: "gpt-4o-mini",
+			ClientOptions: &model.ClientOptions{Timeout: 120 * time.Second},
 		})
 	}
 	return nil, fmt.Errorf("set ANTHROPIC_API_KEY, DASHSCOPE_API_KEY, or OPENAI_API_KEY")
