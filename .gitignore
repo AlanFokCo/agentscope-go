@@ -1,9 +1,27 @@
-.idea
-.vscode
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
 
-vendor
+# Go
+vendor/
 coverage.out
-.DS_Store
+coverage.html
+*.test
+*.prof
+*.pprof
 
+# OS
+.DS_Store
+Thumbs.db
+
+# Project
 CLAUDE.md
-.remember
+.claude/
+.remember/
+
+# Build artifacts
+/bin/
+/dist/
