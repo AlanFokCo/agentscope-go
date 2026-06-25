@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/internal/httpx"
@@ -23,6 +24,7 @@ type Mem0Store struct {
 	apiKey  string
 	baseURL string
 	client  *http.Client
+	hdrs    map[string]string
 }
 
 // NewMem0Store creates a new mem0-backed memory store.
@@ -42,14 +44,15 @@ func NewMem0Store(cfg Mem0Config) (*Mem0Store, error) {
 		apiKey:  cfg.APIKey,
 		baseURL: base,
 		client:  client,
+		hdrs: map[string]string{
+			"Authorization": "Token " + cfg.APIKey,
+			"Content-Type":  "application/json",
+		},
 	}, nil
 }
 
 func (s *Mem0Store) headers() map[string]string {
-	return map[string]string{
-		"Authorization": "Token " + s.apiKey,
-		"Content-Type":  "application/json",
-	}
+	return s.hdrs
 }
 
 // mem0AddRequest is the request body for POST /memories.
@@ -190,10 +193,10 @@ type mem0ListEntry struct {
 
 // List retrieves all memories for a user from mem0.
 func (s *Mem0Store) List(ctx context.Context, userID string) ([]Memory, error) {
-	url := fmt.Sprintf("%s/memories?user_id=%s", s.baseURL, userID)
+	listURL := fmt.Sprintf("%s/memories?user_id=%s", s.baseURL, url.QueryEscape(userID))
 
 	var entries []mem0ListEntry
-	if err := httpx.DoJSONRequest(ctx, s.client, http.MethodGet, url, nil, &entries, s.headers()); err != nil {
+	if err := httpx.DoJSONRequest(ctx, s.client, http.MethodGet, listURL, nil, &entries, s.headers()); err != nil {
 		return nil, fmt.Errorf("mem0: list memories: %w", err)
 	}
 

@@ -22,7 +22,7 @@ type OpenAICompatConfig struct {
 	BaseURL        string
 	Model          string
 	Dimensions     int  // 0 = provider default
-	PassDimensions *bool // nil or true = send dimensions if >0; false = never send
+	OmitDimensions bool // true = never send dimensions to API (some providers reject it)
 	BatchSize      int  // 0 = constructor-specific default
 	HTTPClient     *http.Client
 	Cache          EmbeddingCache // optional
@@ -56,13 +56,12 @@ func newOpenAICompat(cfg OpenAICompatConfig) (*OpenAICompatEmbeddingModel, error
 	if batchSize <= 0 {
 		batchSize = defaultBatchSize
 	}
-	passDim := cfg.PassDimensions == nil || *cfg.PassDimensions
 	return &OpenAICompatEmbeddingModel{
 		apiKey:         cfg.APIKey,
 		baseURL:        cfg.BaseURL,
 		model:          cfg.Model,
 		dimensions:     cfg.Dimensions,
-		passDimensions: passDim,
+		passDimensions: !cfg.OmitDimensions,
 		batchSize:      batchSize,
 		client:         client,
 		cache:          cfg.Cache,

@@ -33,6 +33,9 @@ type ProjectedEntry struct {
 
 // Publish projects an entry onto the target session.
 func (p *SessionProjection) Publish(targetSessionID string, entry ProjectedEntry) error {
+	if p.bus == nil {
+		return nil
+	}
 	data, err := json.Marshal(entry)
 	if err != nil {
 		return err

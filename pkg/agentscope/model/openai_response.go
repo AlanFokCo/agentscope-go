@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/sirupsen/logrus"
 
@@ -44,12 +45,18 @@ func NewOpenAIResponseModel(cfg OpenAIResponseConfig) (ChatModel, error) {
 		cfg.BaseURL = "https://api.openai.com"
 	}
 	var defHeaders map[string]string
+	opts := cfg.ClientOptions
+	if opts == nil {
+		opts = &ClientOptions{Timeout: 5 * time.Minute}
+	} else if opts.Timeout == 0 {
+		opts.Timeout = 5 * time.Minute
+	}
 	if cfg.ClientOptions != nil {
 		defHeaders = cfg.ClientOptions.DefaultHeaders
 	}
 	return &openaiResponseModel{
 		cfg:            cfg,
-		httpClient:     defaultHTTPClient(cfg.HTTPClient, cfg.ClientOptions),
+		httpClient:     defaultHTTPClient(cfg.HTTPClient, opts),
 		defaultHeaders: defHeaders,
 	}, nil
 }

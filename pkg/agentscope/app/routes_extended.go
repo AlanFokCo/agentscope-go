@@ -130,7 +130,10 @@ func (a *App) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 	if v, ok := patch["model_name"].(string); ok {
 		record.ModelName = v
 	}
-	_ = fs.SaveAgent(r.Context(), record)
+	if err := fs.SaveAgent(r.Context(), record); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	writeJSON(w, http.StatusOK, record)
 }
 
@@ -228,10 +231,16 @@ func (a *App) handleUpdateCredential(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if record.Data == nil {
+		record.Data = make(map[string]string)
+	}
 	for k, v := range patch {
 		record.Data[k] = v
 	}
-	_ = fs.SaveCredential(r.Context(), record)
+	if err := fs.SaveCredential(r.Context(), record); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	writeJSON(w, http.StatusOK, CredentialResponse{ID: record.ID, Provider: record.Provider})
 }
 

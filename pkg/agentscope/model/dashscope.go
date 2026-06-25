@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
@@ -180,8 +181,8 @@ func processOpenAIStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, outCh
 	defer close(outCh)
 
 	var (
-		accText      string
-		accThinking  string
+		accText      strings.Builder
+		accThinking  strings.Builder
 		accToolCalls = make(map[int]*openAIToolCall) // index → accumulated tool call
 		responseID   string
 		modelName    string
@@ -230,12 +231,12 @@ func processOpenAIStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, outCh
 
 		// Accumulate text
 		if delta.Content != "" {
-			accText += delta.Content
+			accText.WriteString(delta.Content)
 		}
 
 		// Accumulate reasoning/thinking content
 		if delta.ReasoningContent != "" {
-			accThinking += delta.ReasoningContent
+			accThinking.WriteString(delta.ReasoningContent)
 		}
 
 		// Accumulate tool calls
@@ -262,7 +263,10 @@ func processOpenAIStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, outCh
 		// Accumulate audio and fold transcript into text
 		if delta.Audio != nil {
 			if delta.Audio.Data != "" {
-				pcm, _ := base64.StdEncoding.DecodeString(delta.Audio.Data)
+				pcm, decErr := base64.StdEncoding.DecodeString(delta.Audio.Data)
+				if decErr != nil {
+					continue
+				}
 				accAudioData = append(accAudioData, pcm...)
 				if audioBlockID == "" {
 					audioBlockID = agentscope.GenerateID()
@@ -296,7 +300,7 @@ func processOpenAIStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, outCh
 				}
 			}
 			if delta.Audio.Transcript != "" {
-				accText += delta.Audio.Transcript
+				accText.WriteString(delta.Audio.Transcript)
 			}
 		}
 
@@ -332,18 +336,18 @@ func processOpenAIStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, outCh
 
 	// Build final accumulated response
 	var finalContent []message.ContentBlock
-	if accThinking != "" {
+	if accThinking.Len() > 0 {
 		finalContent = append(finalContent, message.ThinkingBlock{
 			Type:     "thinking",
 			ID:       fmt.Sprintf("thinking_%s", responseID),
-			Thinking: accThinking,
+			Thinking: accThinking.String(),
 		})
 	}
-	if accText != "" {
+	if accText.Len() > 0 {
 		finalContent = append(finalContent, message.TextBlock{
 			Type: "text",
 			ID:   fmt.Sprintf("text_%s", responseID),
-			Text: accText,
+			Text: accText.String(),
 		})
 	}
 	for i := 0; i < len(accToolCalls); i++ {
@@ -570,7 +574,10 @@ func parseOpenAIResponse(parsed openAIChatResponse, msgs []*message.Msg) (*ChatR
 
 	// Extract audio
 	if choice.Message.Audio != nil && choice.Message.Audio.Data != "" {
-		pcm, _ := base64.StdEncoding.DecodeString(choice.Message.Audio.Data)
+		pcm, decErr := base64.StdEncoding.DecodeString(choice.Message.Audio.Data)
+		if decErr != nil {
+			return nil, fmt.Errorf("decode audio data: %w", decErr)
+		}
 		wavData := buildWAV(pcm, 24000, 1, 16)
 		content = append(content, message.DataBlock{
 			Type: "data",
