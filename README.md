@@ -82,6 +82,10 @@ Additional model features: `FallbackChatModel` (automatic primary→fallback fai
 - **Observability** — `TracingMiddleware` with OpenTelemetry semantic conventions, nested spans (invoke_agent → chat → execute_tool)
 - **Workspace Sandboxing** — `LocalWorkspace`, `DockerWorkspace`, `E2BWorkspace` with `Backend` abstraction for isolated tool execution
 - **Agent Service** — HTTP service with REST + SSE streaming, session management, credential CRUD, scheduled tasks, AG-UI protocol support
+- **Agent Loop** — Configurable reasoning loop (`loop.Loop`) with pluggable `ModelCaller`, `ToolExecutor`, `SchemaProvider`, and `Hook` system for metrics/tracing/custom logic
+- **Runtime Engine** — `SessionEngine` + `Harness` for managing agent lifecycle, sessions, and turn orchestration
+- **Metrics** — `Counter`/`Histogram` interfaces with `InMemoryProvider` and `MetricsHook` for model call / tool execution / loop iteration tracking
+- **Cross-Platform** — Shell detection (`platform.Detect`) with PowerShell/Cmd safety analysis, cross-platform `DeriveExecArgs` for bash tool execution on Windows
 - **Embedding** — 4 providers (OpenAI, DashScope, Gemini, Ollama) with batch processing, caching, and multimodal support
 - **TTS** — DashScope TTS (standard + CosyVoice realtime) with streaming WAV output via `TTSMiddleware`
 
@@ -255,9 +259,16 @@ pkg/agentscope/
 ├── tracing/               # Tracer interface + OTel + LoggerTracer
 ├── schedule/              # InMemoryScheduler for periodic tasks
 ├── session/               # Session KV store (memory + JSON file)
-├── skill/                 # Reusable skill system
+├── skill/                 # Reusable skill system + SkillManager registry
 ├── memory/                # Conversation memory + compression
 ├── messagebus/            # InMemory + Redis pub/sub + registry
+├── protocol/              # LoopState, LoopEvent, ModelCallResult — shared agent-loop types
+├── loop/                  # Configurable agent loop (model call → tool exec → iterate)
+├── runtime/               # SessionEngine, Harness — manages agent lifecycle
+├── metrics/               # Counter/Histogram interfaces + InMemoryProvider + MetricsHook
+├── platform/              # Cross-platform shell detection + PowerShell safety checks
+├── sandbox/               # Sandbox execution policies (Allow/Deny/AskUser)
+├── errors/                # Typed error hierarchy (Retriable, Throttled, PermissionDenied)
 └── internal/              # httpx (HTTP+SSE helper), jsonx (repair)
 ```
 

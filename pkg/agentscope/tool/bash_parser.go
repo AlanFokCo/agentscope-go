@@ -2,10 +2,109 @@ package tool
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/platform"
 	"mvdan.cc/sh/v3/syntax"
 )
+
+func isWindowsShell() bool {
+	s := platform.Detect()
+	return s.Type == platform.ShellPowerShell || s.Type == platform.ShellCmd
+}
+
+var powerShellReadOnlyPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)^(Get-ChildItem|gci|dir|ls)\b`),
+	regexp.MustCompile(`(?i)^(Get-Content|gc|cat|type)\b`),
+	regexp.MustCompile(`(?i)^(Select-String|sls)\b`),
+	regexp.MustCompile(`(?i)^(Get-Process|gps)\b`),
+	regexp.MustCompile(`(?i)^(Get-Location|gl|pwd)\b`),
+	regexp.MustCompile(`(?i)^(Get-Item|gi)\b`),
+	regexp.MustCompile(`(?i)^(Get-ItemProperty|gp)\b`),
+	regexp.MustCompile(`(?i)^(Test-Path)\b`),
+	regexp.MustCompile(`(?i)^(Measure-Object)\b`),
+	regexp.MustCompile(`(?i)^(Get-Date)\b`),
+	regexp.MustCompile(`(?i)^(Get-Host)\b`),
+	regexp.MustCompile(`(?i)^(Get-Variable|gv)\b`),
+	regexp.MustCompile(`(?i)^(Write-Host|Write-Output|echo)\b`),
+	regexp.MustCompile(`(?i)^(Get-Service|gsv)\b`),
+	regexp.MustCompile(`(?i)^(Get-Command|gcm)\b`),
+	regexp.MustCompile(`(?i)^(Get-Help)\b`),
+	regexp.MustCompile(`(?i)^(Get-Member|gm)\b`),
+	regexp.MustCompile(`(?i)^(Format-Table|ft)\b`),
+	regexp.MustCompile(`(?i)^(Format-List|fl)\b`),
+	regexp.MustCompile(`(?i)^(Where-Object|where)\b`),
+	regexp.MustCompile(`(?i)^(Sort-Object|sort)\b`),
+}
+
+var cmdReadOnlyCommands = map[string]bool{
+	"dir": true, "type": true, "find": true, "findstr": true,
+	"where": true, "echo": true, "set": true, "ver": true,
+	"hostname": true, "whoami": true, "date": true, "time": true,
+	"tree": true, "more": true, "sort": true,
+}
+
+var powerShellInjectionPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)Invoke-Expression`),
+	regexp.MustCompile(`(?i)\biex\b`),
+	regexp.MustCompile(`(?i)&\s*\$`),
+	regexp.MustCompile(`(?i)\.\s*\$`),
+	regexp.MustCompile(`(?i)Invoke-Command.*-ScriptBlock`),
+	regexp.MustCompile(`(?i)\bpowershell\s+-[eE]`),
+	regexp.MustCompile(`(?i)\bpwsh\s+-[eE]`),
+}
+
+var powerShellDangerousRemovalPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)Remove-Item\s+.*-Recurse`),
+	regexp.MustCompile(`(?i)\bdel\s+/[sS]`),
+	regexp.MustCompile(`(?i)\brmdir\s+/[sS]`),
+	regexp.MustCompile(`(?i)\brd\s+/[sS]`),
+}
+
+func isWindowsReadOnlyCommand(cmd string) bool {
+	shell := platform.Detect()
+	return checkWindowsReadOnly(cmd, shell.Type)
+}
+
+func checkWindowsReadOnly(cmd string, shellType platform.ShellType) bool {
+	cmd = strings.TrimSpace(cmd)
+	if cmd == "" {
+		return false
+	}
+	if shellType == platform.ShellPowerShell {
+		return isPowerShellReadOnly(cmd)
+	}
+	parts := strings.Fields(cmd)
+	if len(parts) == 0 {
+		return false
+	}
+	return cmdReadOnlyCommands[strings.ToLower(parts[0])]
+}
+
+func isPowerShellReadOnly(cmd string) bool {
+	if strings.TrimSpace(cmd) == "" {
+		return false
+	}
+	segments := strings.Split(cmd, "|")
+	for _, seg := range segments {
+		seg = strings.TrimSpace(seg)
+		if seg == "" {
+			continue
+		}
+		matched := false
+		for _, re := range powerShellReadOnlyPatterns {
+			if re.MatchString(seg) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	return len(segments) > 0
+}
 
 // ReadOnlyCommands is the set of commands considered safe (read-only).
 var ReadOnlyCommands = map[string]bool{
@@ -61,6 +160,10 @@ func parseBashAST(cmd string) (*syntax.File, error) {
 // into an AST and checking each simple command against the ReadOnlyCommands set.
 // Returns true only if ALL commands in the pipeline/script are read-only.
 func IsReadOnlyCommand(cmd string) bool {
+	if isWindowsShell() {
+		return isWindowsReadOnlyCommand(cmd)
+	}
+
 	f, err := parseBashAST(cmd)
 	if err != nil {
 		return false // can't parse => not safe to assume read-only
@@ -110,6 +213,15 @@ func IsReadOnlyCommand(cmd string) bool {
 // command substitution $(...) or `...`, process substitution <(...) or >(...),
 // eval, exec, source, and similar.
 func CheckInjectionRisk(cmd string) (bool, string) {
+	if isWindowsShell() {
+		for _, re := range powerShellInjectionPatterns {
+			if re.MatchString(cmd) {
+				return true, "command matches PowerShell injection pattern"
+			}
+		}
+		return false, ""
+	}
+
 	f, err := parseBashAST(cmd)
 	if err != nil {
 		return true, "command could not be parsed as valid bash"
@@ -154,6 +266,15 @@ func CheckInjectionRisk(cmd string) (bool, string) {
 // CheckDangerousRemoval detects potentially dangerous rm commands that could
 // cause significant data loss (recursive removal, force removal of system paths, etc.).
 func CheckDangerousRemoval(cmd string) (bool, string) {
+	if isWindowsShell() {
+		for _, re := range powerShellDangerousRemovalPatterns {
+			if re.MatchString(cmd) {
+				return true, "command matches dangerous removal pattern"
+			}
+		}
+		return false, ""
+	}
+
 	f, err := parseBashAST(cmd)
 	if err != nil {
 		return false, ""

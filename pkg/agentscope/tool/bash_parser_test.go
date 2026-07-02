@@ -2,6 +2,8 @@ package tool
 
 import (
 	"testing"
+
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/platform"
 )
 
 func TestIsReadOnlyCommand(t *testing.T) {
@@ -223,6 +225,110 @@ func TestCheckSedConstraints(t *testing.T) {
 			if !containsSubstring(reason, tt.substr) {
 				t.Errorf("CheckSedConstraints(%q) reason = %q, want to contain %q", tt.cmd, reason, tt.substr)
 			}
+		}
+	}
+}
+
+func TestIsPowerShellReadOnly(t *testing.T) {
+	tests := []struct {
+		cmd      string
+		readOnly bool
+	}{
+		{"Get-ChildItem", true},
+		{"gci -Path .", true},
+		{"Get-Content file.txt", true},
+		{"Get-Process | Format-Table", true},
+		{"Get-ChildItem | Where-Object { $_.Length -gt 0 } | Sort-Object", true},
+		{"Write-Host hello", true},
+		{"Remove-Item file.txt", false},
+		{"Set-Content file.txt -Value test", false},
+		{"New-Item -Path test.txt", false},
+		{"Stop-Process -Id 1234", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		got := isPowerShellReadOnly(tt.cmd)
+		if got != tt.readOnly {
+			t.Errorf("isPowerShellReadOnly(%q) = %v, want %v", tt.cmd, got, tt.readOnly)
+		}
+	}
+}
+
+func TestCheckWindowsReadOnlyCmd(t *testing.T) {
+	tests := []struct {
+		cmd      string
+		readOnly bool
+	}{
+		{"dir", true},
+		{"type file.txt", true},
+		{"find /i test", true},
+		{"echo hello", true},
+		{"del file.txt", false},
+		{"move a.txt b.txt", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		got := checkWindowsReadOnly(tt.cmd, platform.ShellCmd)
+		if got != tt.readOnly {
+			t.Errorf("checkWindowsReadOnly(%q, Cmd) = %v, want %v", tt.cmd, got, tt.readOnly)
+		}
+	}
+}
+
+func TestPowerShellInjectionPatterns(t *testing.T) {
+	tests := []struct {
+		cmd   string
+		risky bool
+	}{
+		{"Invoke-Expression 'Get-Date'", true},
+		{"iex 'something'", true},
+		{"& $variable", true},
+		{"powershell -e ZW5jb2Rl", true},
+		{"pwsh -e ZW5jb2Rl", true},
+		{"Invoke-Command -ScriptBlock { rm -rf / }", true},
+		{"Get-ChildItem", false},
+		{"echo hello", false},
+	}
+
+	for _, tt := range tests {
+		risky := false
+		for _, re := range powerShellInjectionPatterns {
+			if re.MatchString(tt.cmd) {
+				risky = true
+				break
+			}
+		}
+		if risky != tt.risky {
+			t.Errorf("powerShellInjectionPatterns(%q) risky = %v, want %v", tt.cmd, risky, tt.risky)
+		}
+	}
+}
+
+func TestPowerShellDangerousRemovalPatterns(t *testing.T) {
+	tests := []struct {
+		cmd       string
+		dangerous bool
+	}{
+		{"Remove-Item C:\\temp -Recurse", true},
+		{"del /s C:\\temp", true},
+		{"rmdir /s /q C:\\temp", true},
+		{"rd /S C:\\temp", true},
+		{"Remove-Item file.txt", false},
+		{"Get-ChildItem", false},
+	}
+
+	for _, tt := range tests {
+		dangerous := false
+		for _, re := range powerShellDangerousRemovalPatterns {
+			if re.MatchString(tt.cmd) {
+				dangerous = true
+				break
+			}
+		}
+		if dangerous != tt.dangerous {
+			t.Errorf("powerShellDangerousRemovalPatterns(%q) dangerous = %v, want %v", tt.cmd, dangerous, tt.dangerous)
 		}
 	}
 }

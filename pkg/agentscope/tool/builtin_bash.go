@@ -9,10 +9,11 @@ import (
 	"io"
 	"os/exec"
 	"regexp"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/platform"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/permission"
@@ -122,12 +123,8 @@ func (t *bashTool) ExecuteStream(ctx context.Context, args map[string]any) (<-ch
 		runCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
 		defer cancel()
 
-		var cmd *exec.Cmd
-		if runtime.GOOS == "windows" {
-			cmd = exec.CommandContext(runCtx, "cmd", "/c", cmdStr)
-		} else {
-			cmd = exec.CommandContext(runCtx, "/bin/sh", "-c", cmdStr)
-		}
+		args := platform.Detect().DeriveExecArgs(cmdStr)
+		cmd := exec.CommandContext(runCtx, args[0], args[1:]...)
 		if t.cwd != "" {
 			cmd.Dir = t.cwd
 		}
@@ -248,12 +245,8 @@ func (t *bashTool) runCommand(ctx context.Context, cmdStr string, timeoutMs int)
 	runCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
 	defer cancel()
 
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(runCtx, "cmd", "/c", cmdStr)
-	} else {
-		cmd = exec.CommandContext(runCtx, "/bin/sh", "-c", cmdStr)
-	}
+	args := platform.Detect().DeriveExecArgs(cmdStr)
+	cmd := exec.CommandContext(runCtx, args[0], args[1:]...)
 	if t.cwd != "" {
 		cmd.Dir = t.cwd
 	}
@@ -353,6 +346,18 @@ func (t *bashTool) CheckPermissions(input map[string]any, ctx *permission.Contex
 			Behavior:     permission.BehaviorAsk,
 			Message:      reason,
 			BypassImmune: true,
+		}
+	}
+
+	// Step 1.5: PowerShell dangerous command patterns
+	shell := platform.Detect()
+	if shell.Type == platform.ShellPowerShell {
+		if dangerous, reason := platform.CheckPowerShellDangerous(cmdStr); dangerous {
+			return permission.Decision{
+				Behavior:     permission.BehaviorAsk,
+				Message:      "PowerShell dangerous command: " + reason,
+				BypassImmune: true,
+			}
 		}
 	}
 

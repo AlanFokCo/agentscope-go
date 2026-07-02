@@ -22,6 +22,9 @@ const (
 	defaultTopK = 3
 )
 
+// Deprecated: ReActAgent is the v1 agent using JSON-based tool calling.
+// Use [UnifiedAgent] with [WithToolkit] for new code.
+//
 // ReActAgent is a simplified Go implementation of a ReAct-style agent,
 // conceptually aligned with the Python ReActAgent: system prompt, model, tools,
 // memory, and a reasoning-acting loop with a max iteration count.
@@ -41,12 +44,8 @@ type ReActAgent struct {
 	MaxIters int
 }
 
-// NewReActAgent constructs a ReActAgent.
-// - name: agent name
-// - sysPrompt: system prompt
-// - m: underlying ChatModel
-// - tk: toolkit (may be nil)
-// - mem: conversation memory (may be nil; defaults to in-memory)
+// Deprecated: NewReActAgent constructs a legacy ReActAgent.
+// Use [NewUnifiedAgent] with [WithToolkit] for new code.
 func NewReActAgent(
 	name string,
 	sysPrompt string,

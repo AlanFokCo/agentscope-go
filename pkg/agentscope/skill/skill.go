@@ -21,6 +21,7 @@ import (
 type Skill struct {
 	Name        string  // from SKILL.md frontmatter
 	Description string  // from SKILL.md frontmatter
+	Category    string  // optional grouping category from SKILL.md frontmatter
 	Dir         string  // directory containing SKILL.md
 	Markdown    string  // body content (after frontmatter)
 	ModTime     float64 // file mtime for cache invalidation
@@ -131,6 +132,7 @@ func parseSKILLMD(data []byte, dir string, mtime float64) (*Skill, error) {
 	var fm struct {
 		Name        string `yaml:"name"`
 		Description string `yaml:"description"`
+		Category    string `yaml:"category"`
 	}
 	if err := yaml.Unmarshal(parts[1], &fm); err != nil {
 		return nil, fmt.Errorf("skill: parse frontmatter in %s: %w", dir, err)
@@ -144,6 +146,7 @@ func parseSKILLMD(data []byte, dir string, mtime float64) (*Skill, error) {
 	return &Skill{
 		Name:        fm.Name,
 		Description: fm.Description,
+		Category:    fm.Category,
 		Dir:         dir,
 		Markdown:    body,
 		ModTime:     mtime,

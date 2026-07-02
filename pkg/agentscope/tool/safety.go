@@ -55,6 +55,14 @@ var DangerousCommandPatterns = []string{
 	"chown -R",
 	"kill -9",
 	"> /dev/",
+	// Windows / PowerShell patterns
+	"del /s",
+	"rmdir /s",
+	"rd /s",
+	"Remove-Item.*-Recurse",
+	"Format-Volume",
+	"Stop-Process.*-Force",
+	"Clear-Content",
 }
 
 // CheckDangerousCommand returns true if cmd contains a dangerous command pattern.

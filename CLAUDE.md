@@ -71,7 +71,8 @@ The package layout intentionally mirrors the Python project (see `docs/migration
 
 - **`agent`** — `Agent` interface (`ID`, `Reply`, `Observe`, `Interrupt`, `SetConsoleOutputEnabled`) and `AgentBase` (UUID identity, console printing, msghub subscriptions, hooks). Two agent generations:
   - **`UnifiedAgent`** (v2) — aligns with Python's single `Agent` class. Native tool calling, streaming via `ReplyStream()` returning `<-chan event.Event`, middleware chain, permission engine, context compression, skill instructions injection, audio block filtering. Options: `WithToolkit`, `WithMiddlewares`, `WithContextConfig`, `WithPermissionContext`, `WithSkills`, `WithReadCache`.
-  - **`ReActAgent`** (v1, legacy) — JSON-based tool calling protocol. Supports RAG via `WithKnowledge(...)` and basic compression via `WithCompression`.
+  - **`UnifiedAgentRunner`** — bridges `UnifiedAgent` to `loop.Loop` via `modelCallerAdapter` and `toolExecutorAdapter`. `LoopOptions()` returns `[]loop.Option` for `loop.New()`. Supports `WithLoopHooks` for metrics/tracing hook injection.
+  - **`ReActAgent`** (v1, deprecated) — JSON-based tool calling protocol. Supports RAG via `WithKnowledge(...)` and basic compression via `WithCompression`.
   - **`A2AAgent`** — remote agent proxy via `a2a.Client`.
   - **`UserAgent`** — human input agent with pluggable `InputProvider`.
 
@@ -114,8 +115,8 @@ The package layout intentionally mirrors the Python project (see `docs/migration
 
 - **`tool`** — `Tool` interface embedding `permission.Checker`. `BaseTool` provides defaults. `FunctionTool` wraps plain Go functions.
   - **Built-in tools**: bash, read, write, edit, glob, grep, reset_tools, task_create/get/list/update. `NewEnhancedToolkit()` provides the full set.
-  - **Bash safety**: `bash_parser.go` uses `mvdan.cc/sh/v3/syntax` for AST-level analysis: `IsReadOnlyCommand`, `CheckInjectionRisk`, `CheckDangerousRemoval`, `ExtractFilePaths`, `CheckSedConstraints`, `ExtractCommandPrefixes`.
-  - **Per-tool permission chains**: bash has a 7-step chain (injection → read-only → dangerous cmd → sed → dangerous paths → dangerous removal → ACCEPT_EDITS → passthrough). File tools use `filepath.Match` for glob rules.
+  - **Bash safety**: `bash_parser.go` uses `mvdan.cc/sh/v3/syntax` for AST-level analysis: `IsReadOnlyCommand`, `CheckInjectionRisk`, `CheckDangerousRemoval`, `ExtractFilePaths`, `CheckSedConstraints`, `ExtractCommandPrefixes`. On Windows, regex-based patterns for PowerShell/Cmd replace AST analysis (`isPowerShellReadOnly`, injection patterns, dangerous removal patterns).
+  - **Per-tool permission chains**: bash has a 7-step chain (injection → PowerShell dangerous [Windows] → read-only → dangerous cmd → sed → dangerous paths → dangerous removal → ACCEPT_EDITS → passthrough). File tools use `filepath.Match` for glob rules.
   - **Tool streaming**: `ToolChunk` struct + `StreamingTool` optional interface with `ExecuteStream`.
   - **Backend abstraction**: `Backend` interface (`ExecShell`, `ReadFile`, `WriteFile`, `FileExists`). `LocalBackend` default. Context helpers `WithBackend`/`GetBackend`.
   - **Diff generation**: write/edit tools produce unified diff in `ToolResponse.Metadata["diff"]`.
@@ -134,8 +135,18 @@ The package layout intentionally mirrors the Python project (see `docs/migration
 - **`storage`** — `InMemoryStorage`, `FileStorage`, `RedisStorage` for agent state persistence.
 - **`pipeline`** — `Pipeline` with `Then`/`If` combinators. `MsgHub` for agent message routing.
 - **`tracing`** — `Tracer` interface + `AttributedTracer` optional extension with `SpanAttribute`. `NoopTracer`, `LoggerTracer`.
-- **`skill`** — `Skill` struct, `LocalSkillLoader`, `FormatSkillInstructions`.
+- **`skill`** — `Skill` struct with `Category` field, `LocalSkillLoader`, `FormatSkillInstructions`. `SkillManager` registry with `Register`, `Get`, `List`, `ListByCategory`, `LoadFromDir`, `FormatInstructions`.
 - **`schedule`** — `InMemoryScheduler` for periodic agent task execution.
+
+### v3 Infrastructure
+
+- **`protocol`** — Shared types for the agent loop: `LoopState` (Idle/Thinking/Acting/Done/Error), `LoopEvent` (state transitions, model results, tool results, errors), `ModelCallResult`, `ToolCallResult`. Used by `loop/`, `runtime/`, and `agent/`.
+- **`errors`** — Typed error hierarchy: `AgentScopeError` (base with Code/Retriable), `RetriableError`, `ThrottledError` (with RetryAfter), `PermissionDeniedError`, `TimeoutError`, `ValidationError`, `ModelError`, `ToolError`. `Is`/`As` compatible.
+- **`loop`** — `Loop` struct configured via `WithModelCaller`, `WithToolExecutor`, `WithSchemaProvider`, `WithMaxIters`, `WithSystemPrompt`, `WithHooks`. `RunSync` executes the full reasoning-acting cycle. `Hook` interface: `OnLoopStart/End`, `OnModelCallStart/End`, `OnToolExecStart/End`, `OnIteration`.
+- **`runtime`** — `SessionEngine` (single-session lifecycle with state machine) and `Harness` (multi-session manager with `Start`/`Stop`/`GetSession`/`ListSessions`). Uses `protocol.LoopState` for state tracking.
+- **`metrics`** — `Provider` interface (`Counter`/`Histogram` factories). `InMemoryProvider` with `Snapshot()` for testing. `MetricsHook` implements `loop.Hook` to track `model_call_total`, `model_call_duration`, `tool_exec_total`, `loop_iteration_total`, `active_loops`.
+- **`platform`** — `Detect()` returns cached `Shell` (Type, Path). `DeriveExecArgs(cmd)` returns platform-correct `exec.Command` args. `ShellType`: Bash, Zsh, Sh, PowerShell, Cmd. `CheckPowerShellDangerous` has 10 regex patterns for dangerous PowerShell commands.
+- **`sandbox`** — `Policy` interface with `Check(op Operation) Decision`. `AllowAll`, `DenyAll`, `AskUser` policies. `Operation` struct (Type, Target, Details).
 
 ### App Layer
 
