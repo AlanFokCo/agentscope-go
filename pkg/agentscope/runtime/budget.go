@@ -24,6 +24,7 @@ type BudgetTracker struct {
 	tokens    atomic.Int64
 	agents    atomic.Int64
 	startOnce sync.Once
+	mu        sync.Mutex
 	startTime time.Time
 }
 
@@ -35,7 +36,9 @@ func NewBudgetTracker(b Budget) *BudgetTracker {
 
 func (bt *BudgetTracker) start() {
 	bt.startOnce.Do(func() {
+		bt.mu.Lock()
 		bt.startTime = time.Now()
+		bt.mu.Unlock()
 	})
 }
 
@@ -90,8 +93,13 @@ func (bt *BudgetTracker) Exceeded() bool {
 	if bt.budget.MaxTokens > 0 && int(bt.tokens.Load()) >= bt.budget.MaxTokens {
 		return true
 	}
-	if bt.budget.MaxDuration > 0 && !bt.startTime.IsZero() && time.Since(bt.startTime) >= bt.budget.MaxDuration {
-		return true
+	if bt.budget.MaxDuration > 0 {
+		bt.mu.Lock()
+		st := bt.startTime
+		bt.mu.Unlock()
+		if !st.IsZero() && time.Since(st) >= bt.budget.MaxDuration {
+			return true
+		}
 	}
 	return false
 }
@@ -113,10 +121,13 @@ func (bt *BudgetTracker) ActiveAgents() int {
 
 // Elapsed returns the time since the tracker was first used.
 func (bt *BudgetTracker) Elapsed() time.Duration {
-	if bt.startTime.IsZero() {
+	bt.mu.Lock()
+	st := bt.startTime
+	bt.mu.Unlock()
+	if st.IsZero() {
 		return 0
 	}
-	return time.Since(bt.startTime)
+	return time.Since(st)
 }
 
 // Reset clears all counters and allows the tracker to be reused.
@@ -124,6 +135,8 @@ func (bt *BudgetTracker) Reset() {
 	bt.turns.Store(0)
 	bt.tokens.Store(0)
 	bt.agents.Store(0)
+	bt.mu.Lock()
 	bt.startOnce = sync.Once{}
 	bt.startTime = time.Time{}
+	bt.mu.Unlock()
 }

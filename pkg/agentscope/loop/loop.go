@@ -162,7 +162,7 @@ func (l *Loop) run(ctx context.Context, input string, ch chan<- event.Event) {
 				case ErrorActionRetry:
 					continue
 				case ErrorActionContinue:
-					state = protocol.StateReason
+					state = l.transition(state, protocol.StateReason, iter)
 					continue
 				default: // ErrorActionBreak
 					l.backfillMissingResults()
@@ -189,40 +189,39 @@ func (l *Loop) run(ctx context.Context, input string, ch chan<- event.Event) {
 			l.cfg.ContextManager.Append(assistantMsg)
 
 			lastResp = resp
-			state = protocol.StateInspect
+			state = l.transition(state, protocol.StateInspect, iter)
 
 		case protocol.StateInspect:
 			if lastResp == nil {
-				state = protocol.StateExit
+				state = l.transition(state, protocol.StateExit, iter)
 				continue
 			}
 			result := InspectResponse(lastResp.Content)
 
 			// Check custom exit condition.
 			if l.cfg.ExitCondition != nil && l.cfg.ExitCondition(lastResp) {
-				state = protocol.StateExit
+				state = l.transition(state, protocol.StateExit, iter)
 				continue
 			}
 
 			switch result {
 			case InspectHasTools:
 				if l.cfg.ToolExecutor != nil {
-					state = protocol.StateAct
+					state = l.transition(state, protocol.StateAct, iter)
 				} else {
-					// No tool executor, exit.
-					state = protocol.StateExit
+					state = l.transition(state, protocol.StateExit, iter)
 				}
 			case InspectNeedsHITL:
-				state = protocol.StateWait
+				state = l.transition(state, protocol.StateWait, iter)
 			default: // InspectNoTools
-				state = protocol.StateExit
+				state = l.transition(state, protocol.StateExit, iter)
 			}
 
 		case protocol.StateAct:
 			// Extract tool calls from the last assistant message.
 			calls := l.extractToolCalls(lastResp.Content)
 			if len(calls) == 0 {
-				state = protocol.StateReason
+				state = l.transition(state, protocol.StateReason, iter)
 				continue
 			}
 
@@ -282,7 +281,7 @@ func (l *Loop) run(ctx context.Context, input string, ch chan<- event.Event) {
 			toolMsg := message.NewMsg("", message.RoleUser, resultBlocks)
 			l.cfg.ContextManager.Append(toolMsg)
 
-			state = protocol.StateReason
+			state = l.transition(state, protocol.StateReason, iter)
 
 		case protocol.StateWait:
 			// HITL: emit reply end and return; the caller will resume.
@@ -347,7 +346,9 @@ func (l *Loop) backfillMissingResults() {
 		for _, b := range m.Content {
 			switch blk := b.(type) {
 			case message.ToolCallBlock:
-				callIDs[blk.ID] = blk
+				if blk.State != message.ToolCallAsking && blk.State != message.ToolCallSubmitted {
+					callIDs[blk.ID] = blk
+				}
 			case message.ToolResultBlock:
 				resultIDs[blk.ID] = true
 			}
@@ -400,6 +401,11 @@ func (l *Loop) emitContentEvents(ch chan<- event.Event, replyID string, content 
 			ch <- event.NewToolCallEndEvent(replyID, blk.ID)
 		}
 	}
+}
+
+func (l *Loop) transition(from, to protocol.LoopState, iter int) protocol.LoopState {
+	l.cfg.Hooks.OnStateTransition(from, to, iter)
+	return to
 }
 
 // emitError sends a custom error event.

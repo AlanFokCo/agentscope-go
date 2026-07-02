@@ -657,10 +657,23 @@ func (a *UnifiedAgent) executeTool(
 	tc *message.ToolCallBlock,
 	actingHandler middleware.ActingHandler,
 ) (message.ToolResultState, string) {
-	// Check if the tool supports streaming and we can use it directly.
 	t := a.toolkit.Get(tc.Name)
 	if st, ok := t.(tool.StreamingTool); ok {
-		return a.executeStreamingTool(ctx, ch, replyID, tc, st)
+		var resultState message.ToolResultState
+		var outputText string
+		core := func(coreCtx context.Context, _ *middleware.ActingInput) (*tool.ToolResponse, error) {
+			resultState, outputText = a.executeStreamingTool(coreCtx, ch, replyID, tc, st)
+			return &tool.ToolResponse{
+				Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: outputText}},
+				State:   resultState,
+			}, nil
+		}
+		handler := core
+		if len(a.middlewares) > 0 {
+			handler = middleware.BuildActingChain(a.middlewares, core)
+		}
+		_, _ = handler(ctx, &middleware.ActingInput{AgentName: a.name, ToolCall: *tc})
+		return resultState, outputText
 	}
 
 	toolResp, execErr := actingHandler(ctx, &middleware.ActingInput{

@@ -181,7 +181,7 @@ func (t *notebookEditTool) Execute(ctx context.Context, args map[string]any) (*T
 	}
 	output = append(output, '\n')
 
-	if err := os.WriteFile(nbPath, output, 0o644); err != nil {
+	if err := b.WriteFile(ctx, nbPath, output); err != nil {
 		return NewErrorResponse(fmt.Errorf("write notebook: %w", err)), nil
 	}
 

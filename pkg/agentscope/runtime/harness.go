@@ -132,11 +132,13 @@ func Run(ctx context.Context, r Runnable, opts ...RunOption) error {
 
 func runWithRecovery(ctx context.Context, r Runnable) error {
 	for {
+		recovered := false
 		err := func() (retErr error) {
 			defer func() {
 				if p := recover(); p != nil {
 					logging.Error(fmt.Sprintf("runtime: recovered panic: %v", p))
-					retErr = nil // allow loop to continue
+					recovered = true
+					retErr = nil
 				}
 			}()
 			return r.Run(ctx)
@@ -146,6 +148,9 @@ func runWithRecovery(ctx context.Context, r Runnable) error {
 			return err
 		}
 		if ctx.Err() != nil {
+			return nil
+		}
+		if !recovered {
 			return nil
 		}
 	}

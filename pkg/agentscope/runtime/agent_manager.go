@@ -76,7 +76,23 @@ type ManagedAgentInfo struct {
 	Status     AgentStatus
 	StartedAt  time.Time
 	FinishedAt time.Time
+	Result     *agent.SpawnResult
 	Err        error
+}
+
+// Info returns a thread-safe snapshot of the agent's current state.
+func (ma *ManagedAgent) Info() ManagedAgentInfo {
+	ma.mu.Lock()
+	defer ma.mu.Unlock()
+	return ManagedAgentInfo{
+		ID:         ma.ID,
+		Name:       ma.Name,
+		Status:     ma.Status,
+		StartedAt:  ma.StartedAt,
+		FinishedAt: ma.FinishedAt,
+		Result:     ma.Result,
+		Err:        ma.Err,
+	}
 }
 
 // AgentManager manages the lifecycle of spawned subagents, integrating with
@@ -221,14 +237,24 @@ func (am *AgentManager) executeAgent(subCtx context.Context, cancel context.Canc
 
 	result := &agent.SpawnResult{}
 	var lastText string
+	var totalTokens int
 	for ev := range ch {
 		result.Events = append(result.Events, ev)
 		if e, ok := ev.(event.TextBlockDeltaEvent); ok {
 			lastText += e.Delta
 		}
+		if e, ok := ev.(event.ModelCallEndEvent); ok {
+			result.TokensIn += e.InputTokens
+			result.TokensOut += e.OutputTokens
+			totalTokens += e.InputTokens + e.OutputTokens
+		}
 	}
 	result.Duration = time.Since(start)
 	result.Output = lastText
+
+	if am.budget != nil && totalTokens > 0 {
+		_ = am.budget.AddTokens(totalTokens)
+	}
 
 	ma.mu.Lock()
 	if subCtx.Err() != nil {
@@ -281,16 +307,8 @@ func (am *AgentManager) List() []*ManagedAgentInfo {
 	defer am.mu.RUnlock()
 	infos := make([]*ManagedAgentInfo, 0, len(am.agents))
 	for _, ma := range am.agents {
-		ma.mu.Lock()
-		infos = append(infos, &ManagedAgentInfo{
-			ID:         ma.ID,
-			Name:       ma.Name,
-			Status:     ma.Status,
-			StartedAt:  ma.StartedAt,
-			FinishedAt: ma.FinishedAt,
-			Err:        ma.Err,
-		})
-		ma.mu.Unlock()
+		info := ma.Info()
+		infos = append(infos, &info)
 	}
 	return infos
 }

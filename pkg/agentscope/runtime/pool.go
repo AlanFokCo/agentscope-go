@@ -2,12 +2,16 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 )
+
+// ErrPoolClosed is returned by Submit when the pool has been closed.
+var ErrPoolClosed = errors.New("agent pool is closed")
 
 // AgentFactory creates a fresh agent instance for a pool worker.
 type AgentFactory func() agent.Agent
@@ -56,6 +60,7 @@ type AgentPool struct {
 	queueSize int
 
 	jobs      chan job
+	closedCh  chan struct{}
 	startOnce sync.Once
 	closeOnce sync.Once
 	wg        sync.WaitGroup
@@ -64,8 +69,9 @@ type AgentPool struct {
 // NewAgentPool constructs an AgentPool and starts its workers.
 func NewAgentPool(factory AgentFactory, opts ...PoolOption) *AgentPool {
 	p := &AgentPool{
-		factory: factory,
-		workers: 1,
+		factory:  factory,
+		workers:  1,
+		closedCh: make(chan struct{}),
 	}
 	for _, opt := range opts {
 		opt(p)
@@ -104,16 +110,24 @@ func (p *AgentPool) worker() {
 }
 
 // Submit enqueues an input for processing and returns a channel that will
-// receive its single result.
-func (p *AgentPool) Submit(ctx context.Context, input string) <-chan PoolResult {
+// receive its single result. Returns ErrPoolClosed if the pool has been closed.
+func (p *AgentPool) Submit(ctx context.Context, input string) (<-chan PoolResult, error) {
 	result := make(chan PoolResult, 1)
-	p.jobs <- job{ctx: ctx, input: input, result: result}
-	return result
+	j := job{ctx: ctx, input: input, result: result}
+	select {
+	case p.jobs <- j:
+		return result, nil
+	case <-p.closedCh:
+		return nil, ErrPoolClosed
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 // Close stops accepting new work and waits for in-flight jobs to finish.
 func (p *AgentPool) Close() {
 	p.closeOnce.Do(func() {
+		close(p.closedCh)
 		close(p.jobs)
 	})
 	p.wg.Wait()

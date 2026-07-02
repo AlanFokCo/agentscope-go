@@ -262,7 +262,7 @@ func TestRunSyncHooksCalledInOrder(t *testing.T) {
 	l := New(WithModelCaller(mc), WithHooks(h))
 	_, _ = l.RunSync(context.Background(), "test")
 
-	expected := []string{"h:start", "h:before_model", "h:after_model", "h:end"}
+	expected := []string{"h:start", "h:before_model", "h:after_model", "h:transition", "h:transition", "h:end"}
 	if len(calls) != len(expected) {
 		t.Fatalf("got calls %v, want %v", calls, expected)
 	}

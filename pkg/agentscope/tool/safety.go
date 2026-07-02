@@ -3,6 +3,7 @@ package tool
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -65,6 +66,20 @@ var DangerousCommandPatterns = []string{
 	"Clear-Content",
 }
 
+var dangerousRegexPatterns []*regexp.Regexp
+var dangerousLiteralPatterns []string
+
+func init() {
+	for _, p := range DangerousCommandPatterns {
+		if strings.Contains(p, ".*") || strings.Contains(p, ".+") {
+			dangerousRegexPatterns = append(dangerousRegexPatterns,
+				regexp.MustCompile("(?i)"+p))
+		} else {
+			dangerousLiteralPatterns = append(dangerousLiteralPatterns, p)
+		}
+	}
+}
+
 // CheckDangerousCommand returns true if cmd contains a dangerous command pattern.
 // It first attempts AST-based analysis via CheckDangerousRemoval and CheckInjectionRisk,
 // then falls back to simple string matching for patterns not covered by the parser.
@@ -77,11 +92,18 @@ func CheckDangerousCommand(cmd string) (bool, string) {
 		return true, reason
 	}
 
-	// Fallback: simple pattern matching for remaining patterns
+	// Literal pattern matching
 	lower := strings.ToLower(cmd)
-	for _, pattern := range DangerousCommandPatterns {
+	for _, pattern := range dangerousLiteralPatterns {
 		if strings.Contains(lower, strings.ToLower(pattern)) {
 			return true, fmt.Sprintf("command contains dangerous pattern %q", pattern)
+		}
+	}
+
+	// Regex pattern matching
+	for _, re := range dangerousRegexPatterns {
+		if re.MatchString(cmd) {
+			return true, fmt.Sprintf("command matches dangerous pattern %q", re.String())
 		}
 	}
 	return false, ""
