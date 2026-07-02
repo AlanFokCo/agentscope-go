@@ -13,6 +13,8 @@ type OTELTracer struct {
 	Tracer trace.Tracer
 }
 
+// StartSpan creates an OpenTelemetry span with the given name and returns a
+// function that ends the span when called.
 func (o OTELTracer) StartSpan(ctx context.Context, name string) (context.Context, func()) {
 	if o.Tracer == nil {
 		// Fallback to the global noop tracer if none provided.

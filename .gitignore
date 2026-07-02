@@ -21,6 +21,7 @@ Thumbs.db
 CLAUDE.md
 .claude/
 .remember/
+docs/superpowers/
 
 # Build artifacts
 /bin/

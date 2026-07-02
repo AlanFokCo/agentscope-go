@@ -13,10 +13,12 @@ import (
 	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/exception"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/loop"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/middleware"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/permission"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/protocol"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/skill"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/tool"
 )
@@ -46,6 +48,7 @@ type UnifiedAgent struct {
 	externalCh chan event.ExternalExecutionResultEvent
 	mu         sync.Mutex
 	offloader  Offloader
+	hookRunner *loop.HookRunner
 }
 
 // ReactConfig controls the ReAct reasoning-acting loop.
@@ -174,6 +177,14 @@ type Offloader interface {
 // offloaded to the workspace so they can be referenced later.
 func WithOffloader(o Offloader) AgentOption {
 	return func(a *UnifiedAgent) { a.offloader = o }
+}
+
+// WithLoopHooks registers loop.Hook instances that receive lifecycle
+// notifications (model calls, tool executions, state transitions) from
+// within the agent's replyLoop. This enables MetricsHook and TracingHook
+// integration without changing the agent's internal control flow.
+func WithLoopHooks(hooks ...loop.Hook) AgentOption {
+	return func(a *UnifiedAgent) { a.hookRunner = loop.NewHookRunner(hooks...) }
 }
 
 // NewUnifiedAgent creates the v2 unified agent.
@@ -312,12 +323,20 @@ func (a *UnifiedAgent) ReadCache() *tool.ReadCache {
 func (a *UnifiedAgent) replyLoop(ctx context.Context, input string, ch chan<- event.Event) {
 	defer close(ch)
 
+	hooks := a.hookRunner
+	if hooks == nil {
+		hooks = loop.NewHookRunner()
+	}
+
 	replyID := agentscope.GenerateID()
 
 	a.mu.Lock()
 	a.state.ReplyID = replyID
 	a.state.CurIter = 0
 	a.mu.Unlock()
+
+	hooks.OnLoopStart()
+	defer hooks.OnLoopEnd(nil)
 
 	emit(ctx, ch, event.NewReplyStartEvent(a.state.SessionID, replyID, a.name, message.RoleAssistant))
 
@@ -329,6 +348,8 @@ func (a *UnifiedAgent) replyLoop(ctx context.Context, input string, ch chan<- ev
 	modelCallHandler := a.buildModelCallHandler()
 	actingHandler := a.buildActingHandler()
 
+	curState := protocol.StateReason
+
 reactLoop:
 	for iter := 0; iter < a.reactCfg.MaxIters; iter++ {
 		a.mu.Lock()
@@ -336,10 +357,15 @@ reactLoop:
 		a.mu.Unlock()
 
 		// State machine: decide next action based on tool call states
-		action, exitMsg := a.checkNextAction()
+		nextState, exitMsg := a.checkNextAction()
 
-		switch action {
-		case actionExit:
+		if nextState != curState {
+			hooks.OnStateTransition(curState, nextState, iter)
+			curState = nextState
+		}
+
+		switch nextState {
+		case protocol.StateWait:
 			// Waiting for external events — emit to consumer, don't save to context
 			if exitMsg != nil {
 				emitContentEvents(ctx, ch, replyID, exitMsg.Content)
@@ -347,22 +373,33 @@ reactLoop:
 			emit(ctx, ch, event.NewReplyEndEvent(a.state.SessionID, replyID))
 			return
 
-		case actionActing:
+		case protocol.StateAct:
 			// Execute pending tool calls from prior iteration
 			toolCalls := a.getExecutableToolCalls()
 			batches := batchToolCalls(toolCalls, a.toolkit)
 			for _, batch := range batches {
 				if batch.concurrent && len(batch.calls) > 1 {
+					for _, tc := range batch.calls {
+						hooks.BeforeToolExec(curState, iter, tc.Name)
+					}
 					a.executeConcurrentBatch(ctx, ch, replyID, batch.calls, actingHandler)
+					for _, tc := range batch.calls {
+						hooks.AfterToolExec(curState, iter, tc.Name, nil)
+					}
 				} else {
 					for _, tc := range batch.calls {
+						hooks.BeforeToolExec(curState, iter, tc.Name)
 						a.executeAndRecord(ctx, ch, replyID, &tc, actingHandler)
+						hooks.AfterToolExec(curState, iter, tc.Name, nil)
 					}
 				}
 			}
+			// Transition back to Reason after acting
+			hooks.OnStateTransition(curState, protocol.StateReason, iter)
+			curState = protocol.StateReason
 			continue
 
-		case actionReasoning:
+		case protocol.StateReason:
 			// Compress context before model call
 			if err := a.compressContext(ctx); err != nil {
 				logrus.WithError(err).WithField("agent", a.name).Warn("context compression failed")
@@ -371,6 +408,7 @@ reactLoop:
 			modelMsgs := a.prepareModelInput(ctx)
 			schemas := a.toolkit.GetToolSchemas()
 
+			hooks.BeforeModelCall(curState, iter)
 			emit(ctx, ch, event.NewModelCallStartEvent(replyID, ""))
 
 			resp, err := modelCallHandler(ctx, &middleware.ModelCallInput{
@@ -379,10 +417,13 @@ reactLoop:
 				Tools:     schemas,
 			})
 			if err != nil {
+				hooks.AfterModelCall(curState, iter, err)
 				logrus.WithError(err).Error("agent: model call failed")
 				emit(ctx, ch, event.NewModelCallEndEvent(replyID, 0, 0))
 				break reactLoop
 			}
+
+			hooks.AfterModelCall(curState, iter, nil)
 
 			var inputTok, outputTok int
 			if resp.Usage != nil {
@@ -391,29 +432,52 @@ reactLoop:
 			}
 			emit(ctx, ch, event.NewModelCallEndEvent(replyID, inputTok, outputTok))
 
+			// Transition to Inspect after model call
+			hooks.OnStateTransition(curState, protocol.StateInspect, iter)
+			curState = protocol.StateInspect
+
 			// Save response to context (merges into last assistant msg)
 			a.saveToContext(resp.Content, resp.Usage)
 
 			// Emit streaming events for consumers
 			emitContentEvents(ctx, ch, replyID, resp.Content)
 
-			// If no tool calls, this is the final answer
+			// Inspect: check for tool calls
 			toolCalls := extractToolCalls(resp.Content)
 			if len(toolCalls) == 0 {
+				// No tool calls — transition to Exit
+				hooks.OnStateTransition(curState, protocol.StateExit, iter)
+				curState = protocol.StateExit
 				break reactLoop
 			}
+
+			// Tool calls found — transition to Act
+			hooks.OnStateTransition(curState, protocol.StateAct, iter)
+			curState = protocol.StateAct
 
 			// Execute tool calls
 			batches := batchToolCalls(toolCalls, a.toolkit)
 			for _, batch := range batches {
 				if batch.concurrent && len(batch.calls) > 1 {
+					for _, tc := range batch.calls {
+						hooks.BeforeToolExec(curState, iter, tc.Name)
+					}
 					a.executeConcurrentBatch(ctx, ch, replyID, batch.calls, actingHandler)
+					for _, tc := range batch.calls {
+						hooks.AfterToolExec(curState, iter, tc.Name, nil)
+					}
 				} else {
 					for _, tc := range batch.calls {
+						hooks.BeforeToolExec(curState, iter, tc.Name)
 						a.executeAndRecord(ctx, ch, replyID, &tc, actingHandler)
+						hooks.AfterToolExec(curState, iter, tc.Name, nil)
 					}
 				}
 			}
+
+			// After acting, transition back to Reason
+			hooks.OnStateTransition(curState, protocol.StateReason, iter)
+			curState = protocol.StateReason
 		}
 
 		if iter == a.reactCfg.MaxIters-1 {

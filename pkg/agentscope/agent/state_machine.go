@@ -5,14 +5,7 @@ import (
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
-)
-
-type replyAction int
-
-const (
-	actionReasoning replyAction = iota
-	actionActing
-	actionExit
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/protocol"
 )
 
 // getLastAssistantMsg returns the last message in context if it belongs to
@@ -31,14 +24,14 @@ func (a *UnifiedAgent) getLastAssistantMsg() *message.Msg {
 }
 
 // checkNextAction inspects the last assistant message's tool call states to
-// determine the next loop action:
-//   - actionActing: there are pending/allowed tool calls to execute
-//   - actionExit: there are awaiting (asking/submitted) calls but nothing executable
-//   - actionReasoning: no unfinished tool calls — ready for next model call
-func (a *UnifiedAgent) checkNextAction() (replyAction, *message.Msg) {
+// determine the next loop state:
+//   - StateAct: there are pending/allowed tool calls to execute
+//   - StateWait: there are awaiting (asking/submitted) calls but nothing executable
+//   - StateReason: no unfinished tool calls — ready for next model call
+func (a *UnifiedAgent) checkNextAction() (protocol.LoopState, *message.Msg) {
 	lastMsg := a.getLastAssistantMsg()
 	if lastMsg == nil {
-		return actionReasoning, nil
+		return protocol.StateReason, nil
 	}
 
 	finishedIDs := make(map[string]bool)
@@ -63,7 +56,7 @@ func (a *UnifiedAgent) checkNextAction() (replyAction, *message.Msg) {
 	}
 
 	if len(executable) > 0 {
-		return actionActing, nil
+		return protocol.StateAct, nil
 	}
 
 	if len(awaiting) > 0 {
@@ -84,10 +77,10 @@ func (a *UnifiedAgent) checkNextAction() (replyAction, *message.Msg) {
 		}
 		text := "Waiting for " + strings.Join(parts, " and ") + "."
 		exitMsg := message.AssistantMsg(a.name, text)
-		return actionExit, exitMsg
+		return protocol.StateWait, exitMsg
 	}
 
-	return actionReasoning, nil
+	return protocol.StateReason, nil
 }
 
 // getExecutableToolCalls returns tool calls from the last assistant message

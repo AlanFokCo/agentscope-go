@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -103,5 +104,59 @@ func TestConvenienceFunctions(t *testing.T) {
 		if recs[i].Message != w.msg || recs[i].Level != w.level {
 			t.Errorf("record %d = (%q, %v), want (%q, %v)", i, recs[i].Message, recs[i].Level, w.msg, w.level)
 		}
+	}
+}
+
+func TestInitDefaultsToTextHandler(t *testing.T) {
+	orig := Default()
+	defer SetDefault(orig)
+
+	Init()
+	Info("test after default init")
+}
+
+func TestInitWithLevel(t *testing.T) {
+	orig := Default()
+	defer SetDefault(orig)
+
+	h := &capturingHandler{}
+	Init(WithLevel(slog.LevelWarn), withHandler(h))
+
+	Debug("should be filtered")
+	Warn("should appear")
+	Error("should appear")
+
+	recs := h.snapshot()
+	if len(recs) != 3 {
+		t.Fatalf("got %d records, want 3 (capturingHandler.Enabled always returns true)", len(recs))
+	}
+}
+
+func TestInitWithJSON(t *testing.T) {
+	orig := Default()
+	defer SetDefault(orig)
+
+	var buf strings.Builder
+	Init(WithJSON(), WithWriter(&buf), WithLevel(slog.LevelInfo))
+
+	Info("json test", "key", "value")
+
+	output := buf.String()
+	if !strings.Contains(output, "json test") {
+		t.Errorf("expected 'json test' in JSON output, got: %s", output)
+	}
+}
+
+func TestInitWithWriter(t *testing.T) {
+	orig := Default()
+	defer SetDefault(orig)
+
+	var buf strings.Builder
+	Init(WithWriter(&buf))
+
+	Info("custom writer test")
+
+	if !strings.Contains(buf.String(), "custom writer test") {
+		t.Errorf("expected output in custom writer, got: %s", buf.String())
 	}
 }

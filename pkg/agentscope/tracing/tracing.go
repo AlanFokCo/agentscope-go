@@ -31,6 +31,7 @@ type AttributedTracer interface {
 // NoopTracer is the default implementation that performs no tracing and only keeps the interface wired.
 type NoopTracer struct{}
 
+// StartSpan returns the context unchanged and a no-op end function.
 func (NoopTracer) StartSpan(ctx context.Context, _ string) (context.Context, func()) {
 	return ctx, func() {}
 }
@@ -42,6 +43,7 @@ type LoggerTracer struct {
 	Logger *log.Logger
 }
 
+// StartSpan logs the span start and returns an end function that logs the span duration.
 func (l LoggerTracer) StartSpan(ctx context.Context, name string) (context.Context, func()) {
 	if l.Logger == nil {
 		l.Logger = as.Logger()

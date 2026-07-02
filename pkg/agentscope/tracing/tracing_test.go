@@ -5,7 +5,10 @@ import (
 	"context"
 	"log"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/protocol"
 )
 
 func TestNoopTracer(t *testing.T) {
@@ -66,4 +69,70 @@ func TestAttributedTracer_Interface(t *testing.T) {
 	if attr.Value != "gpt-4" {
 		t.Error("unexpected value")
 	}
+}
+
+func TestTracingHookCreatesSpans(t *testing.T) {
+	recorder := &spanRecorder{}
+
+	h := NewTracingHook(recorder)
+	h.OnLoopStart()
+	h.BeforeModelCall(protocol.StateReason, 0)
+	h.AfterModelCall(protocol.StateReason, 0, nil)
+	h.OnLoopEnd(nil)
+
+	if len(recorder.spans) < 2 {
+		t.Errorf("got %d spans, want at least 2 (loop + model_call)", len(recorder.spans))
+	}
+
+	names := make(map[string]bool)
+	for _, s := range recorder.spans {
+		names[s] = true
+	}
+	if !names["loop.run"] {
+		t.Error("missing loop.run span")
+	}
+	if !names["loop.model_call"] {
+		t.Error("missing loop.model_call span")
+	}
+}
+
+func TestTracingHookToolSpans(t *testing.T) {
+	recorder := &spanRecorder{}
+
+	h := NewTracingHook(recorder)
+	h.OnLoopStart()
+	h.BeforeToolExec(protocol.StateAct, 0, "bash")
+	h.AfterToolExec(protocol.StateAct, 0, "bash", nil)
+	h.OnLoopEnd(nil)
+
+	names := make(map[string]bool)
+	for _, s := range recorder.spans {
+		names[s] = true
+	}
+	if !names["loop.tool.bash"] {
+		t.Error("missing loop.tool.bash span")
+	}
+}
+
+func TestTracingHookNoopTracerDoesNotPanic(t *testing.T) {
+	h := NewTracingHook(NoopTracer{})
+	h.OnLoopStart()
+	h.BeforeModelCall(protocol.StateReason, 0)
+	h.AfterModelCall(protocol.StateReason, 0, nil)
+	h.BeforeToolExec(protocol.StateAct, 0, "bash")
+	h.AfterToolExec(protocol.StateAct, 0, "bash", nil)
+	h.OnStateTransition(protocol.StateReason, protocol.StateInspect, 0)
+	h.OnLoopEnd(nil)
+}
+
+type spanRecorder struct {
+	mu    sync.Mutex
+	spans []string
+}
+
+func (r *spanRecorder) StartSpan(ctx context.Context, name string) (context.Context, func()) {
+	r.mu.Lock()
+	r.spans = append(r.spans, name)
+	r.mu.Unlock()
+	return ctx, func() {}
 }

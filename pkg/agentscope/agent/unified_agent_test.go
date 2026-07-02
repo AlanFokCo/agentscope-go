@@ -11,6 +11,7 @@ import (
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/middleware"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/protocol"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/tool"
 )
 
@@ -353,3 +354,141 @@ func (m *captureMockModel) ChatStream(_ context.Context, _ []*message.Msg, _ ...
 }
 
 func (m *captureMockModel) CountTokens(_ []*message.Msg, _ []model.ToolSchema) int { return 0 }
+
+// --- Loop hook integration tests ---
+
+type hookRecorder struct {
+	calls []string
+}
+
+func (h *hookRecorder) BeforeModelCall(_ protocol.LoopState, _ int) {
+	h.calls = append(h.calls, "before_model")
+}
+
+func (h *hookRecorder) AfterModelCall(_ protocol.LoopState, _ int, _ error) {
+	h.calls = append(h.calls, "after_model")
+}
+
+func (h *hookRecorder) BeforeToolExec(_ protocol.LoopState, _ int, name string) {
+	h.calls = append(h.calls, "before_tool:"+name)
+}
+
+func (h *hookRecorder) AfterToolExec(_ protocol.LoopState, _ int, name string, _ error) {
+	h.calls = append(h.calls, "after_tool:"+name)
+}
+
+func (h *hookRecorder) OnStateTransition(from, to protocol.LoopState, _ int) {
+	h.calls = append(h.calls, "transition:"+from.String()+"->"+to.String())
+}
+
+func (h *hookRecorder) OnLoopStart() {
+	h.calls = append(h.calls, "loop_start")
+}
+
+func (h *hookRecorder) OnLoopEnd(_ error) {
+	h.calls = append(h.calls, "loop_end")
+}
+
+func TestUnifiedAgentLoopHooks_SimpleChat(t *testing.T) {
+	mock := &mockChatModel{
+		responses: []model.ChatResponse{
+			{
+				Content: []message.ContentBlock{
+					message.TextBlock{Type: "text", Text: "Hello!"},
+				},
+				IsLast: true,
+			},
+		},
+	}
+
+	rec := &hookRecorder{}
+	agent := NewUnifiedAgent("bot", "prompt", mock, WithLoopHooks(rec))
+
+	_, err := agent.Reply(context.Background(), "hi")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := []string{
+		"loop_start",
+		"before_model",
+		"after_model",
+		"transition:reason->inspect",
+		"transition:inspect->exit",
+		"loop_end",
+	}
+	if len(rec.calls) != len(expected) {
+		t.Fatalf("got %d calls %v, want %d %v", len(rec.calls), rec.calls, len(expected), expected)
+	}
+	for i, want := range expected {
+		if rec.calls[i] != want {
+			t.Errorf("call[%d] = %q, want %q", i, rec.calls[i], want)
+		}
+	}
+}
+
+func TestUnifiedAgentLoopHooks_WithToolCall(t *testing.T) {
+	mock := &mockChatModel{
+		responses: []model.ChatResponse{
+			{
+				Content: []message.ContentBlock{
+					message.ToolCallBlock{Type: "tool_call", ID: "c1", Name: "add", Input: `{"x":1,"y":2}`, State: message.ToolCallPending},
+				},
+				IsLast: true,
+			},
+			{
+				Content: []message.ContentBlock{
+					message.TextBlock{Type: "text", Text: "3"},
+				},
+				IsLast: true,
+			},
+		},
+	}
+
+	schema := json.RawMessage(`{"type":"object","properties":{"x":{"type":"number"},"y":{"type":"number"}},"required":["x","y"]}`)
+	addTool := tool.NewFunctionTool("add", "Add", schema,
+		func(ctx context.Context, input map[string]any) (any, error) {
+			return input["x"].(float64) + input["y"].(float64), nil
+		},
+	)
+
+	rec := &hookRecorder{}
+	tk := tool.NewToolkit(addTool)
+	agent := NewUnifiedAgent("bot", "prompt", mock, WithToolkit(tk), WithLoopHooks(rec))
+
+	_, err := agent.Reply(context.Background(), "1+2?")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify key hook calls are present
+	hasLoopStart := false
+	hasLoopEnd := false
+	modelCallCount := 0
+	toolCallCount := 0
+	for _, c := range rec.calls {
+		switch {
+		case c == "loop_start":
+			hasLoopStart = true
+		case c == "loop_end":
+			hasLoopEnd = true
+		case c == "before_model":
+			modelCallCount++
+		case c == "before_tool:add":
+			toolCallCount++
+		}
+	}
+
+	if !hasLoopStart {
+		t.Error("missing loop_start")
+	}
+	if !hasLoopEnd {
+		t.Error("missing loop_end")
+	}
+	if modelCallCount != 2 {
+		t.Errorf("before_model called %d times, want 2", modelCallCount)
+	}
+	if toolCallCount != 1 {
+		t.Errorf("before_tool:add called %d times, want 1", toolCallCount)
+	}
+}
