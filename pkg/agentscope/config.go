@@ -1,12 +1,14 @@
 package agentscope
 
 import (
+	"io"
 	"log"
+	"log/slog"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/logging"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
@@ -148,14 +150,14 @@ func setupLogger(cfg *Config) {
 	}
 
 	logger.SetOutput(out)
-	logrus.SetOutput(out)
 
-	levelStr := strings.ToLower(cfg.LoggingLevel)
-	level, err := logrus.ParseLevel(levelStr)
-	if err != nil {
-		level = logrus.InfoLevel
-	}
-	logrus.SetLevel(level)
+	slogLevel := logging.ParseLevel(cfg.LoggingLevel)
+	slogHandler := slog.NewTextHandler(out, &slog.HandlerOptions{Level: slogLevel})
+	logging.SetDefault(slog.New(slogHandler))
+
+	logrus.AddHook(&logging.LogrusToSlogHook{})
+	logrus.SetOutput(io.Discard)
+	logrus.SetLevel(logrus.TraceLevel)
 }
 
 // ConfigSnapshot returns a copy of the current global configuration.
@@ -173,4 +175,9 @@ func Logger() *log.Logger {
 // Log returns the global logrus logger with level support.
 func Log() *logrus.Logger {
 	return logrus.StandardLogger()
+}
+
+// SLog returns the global slog.Logger. Prefer this over Log() for new code.
+func SLog() *slog.Logger {
+	return logging.Default()
 }

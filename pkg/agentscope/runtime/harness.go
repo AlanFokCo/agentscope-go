@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/logging"
 )
 
 // RunOption configures the Run function.
@@ -95,7 +95,7 @@ func Run(ctx context.Context, r Runnable, opts ...RunOption) error {
 		go func() {
 			defer wg.Done()
 			if err := healthSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
-				agentscope.Log().WithError(err).Warn("health probe serve error")
+				logging.Warn("health probe serve error", logging.Err(err))
 			}
 		}()
 	}
@@ -135,7 +135,7 @@ func runWithRecovery(ctx context.Context, r Runnable) error {
 		err := func() (retErr error) {
 			defer func() {
 				if p := recover(); p != nil {
-					agentscope.Log().Errorf("runtime: recovered panic: %v", p)
+					logging.Error(fmt.Sprintf("runtime: recovered panic: %v", p))
 					retErr = nil // allow loop to continue
 				}
 			}()
