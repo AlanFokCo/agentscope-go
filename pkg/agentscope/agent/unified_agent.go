@@ -593,6 +593,12 @@ func (a *UnifiedAgent) executeTool(
 	tc *message.ToolCallBlock,
 	actingHandler middleware.ActingHandler,
 ) (message.ToolResultState, string) {
+	// Check if the tool supports streaming and we can use it directly.
+	t := a.toolkit.Get(tc.Name)
+	if st, ok := t.(tool.StreamingTool); ok {
+		return a.executeStreamingTool(ctx, ch, replyID, tc, st)
+	}
+
 	toolResp, execErr := actingHandler(ctx, &middleware.ActingInput{
 		AgentName: a.name,
 		ToolCall:  *tc,
@@ -602,7 +608,6 @@ func (a *UnifiedAgent) executeTool(
 	var outputText string
 	switch {
 	case execErr != nil:
-		// DeveloperErrors propagate up; AgentErrors become tool results for the LLM
 		if _, ok := execErr.(exception.DeveloperError); ok {
 			logrus.WithError(execErr).Error("agent: developer error in tool execution")
 		}
@@ -619,11 +624,67 @@ func (a *UnifiedAgent) executeTool(
 		resultState = message.ToolResultSuccess
 	}
 
+	outputText = a.truncateToolResult(ctx, outputText, tc.ID)
+	return a.emitToolResult(ctx, ch, replyID, tc, resultState, outputText)
+}
+
+// executeStreamingTool runs a StreamingTool and emits incremental events.
+func (a *UnifiedAgent) executeStreamingTool(
+	ctx context.Context,
+	ch chan<- event.Event,
+	replyID string,
+	tc *message.ToolCallBlock,
+	st tool.StreamingTool,
+) (message.ToolResultState, string) {
+	input, parseErr := tc.ParseInput()
+	if parseErr != nil {
+		return a.emitToolResult(ctx, ch, replyID, tc, message.ToolResultError,
+			fmt.Sprintf("parse tool input: %v", parseErr))
+	}
+
+	streamCh, startErr := st.ExecuteStream(ctx, input)
+	if startErr != nil {
+		return a.emitToolResult(ctx, ch, replyID, tc, message.ToolResultError,
+			fmt.Sprintf("start streaming tool: %v", startErr))
+	}
+
+	emit(ctx, ch, event.NewToolResultStartEvent(replyID, tc.ID, tc.Name))
+
+	var finalState message.ToolResultState
+	var finalText string
+
+	for chunk := range streamCh {
+		if chunk.IsFinal {
+			finalState = chunk.State
+			for _, b := range chunk.Content {
+				if tb, ok := b.(message.TextBlock); ok {
+					finalText += tb.Text
+				}
+			}
+		} else {
+			for _, b := range chunk.Content {
+				if tb, ok := b.(message.TextBlock); ok {
+					emit(ctx, ch, event.NewToolResultTextDeltaEvent(replyID, tc.ID, tb.Text))
+				}
+			}
+		}
+	}
+
+	if finalState == "" {
+		finalState = message.ToolResultSuccess
+	}
+
+	finalText = a.truncateToolResult(ctx, finalText, tc.ID)
+	emit(ctx, ch, event.NewToolResultEndEvent(replyID, tc.ID, finalState))
+	return finalState, finalText
+}
+
+func (a *UnifiedAgent) truncateToolResult(ctx context.Context, outputText, toolCallID string) string {
 	if a.contextCfg != nil && a.contextCfg.ToolResultLimit > 0 {
 		truncated, wasTruncated := TruncateToolResult(outputText, a.contextCfg.ToolResultLimit)
 		if wasTruncated && a.offloader != nil {
 			path, offErr := a.offloader.OffloadContent(ctx, outputText,
-				fmt.Sprintf("tool_result_%s.txt", tc.ID))
+				fmt.Sprintf("tool_result_%s.txt", toolCallID))
 			if offErr == nil {
 				truncated += fmt.Sprintf(
 					"\n<system-reminder>The remaining content has been offloaded to '%s'.</system-reminder>",
@@ -631,10 +692,9 @@ func (a *UnifiedAgent) executeTool(
 				)
 			}
 		}
-		outputText = truncated
+		return truncated
 	}
-
-	return a.emitToolResult(ctx, ch, replyID, tc, resultState, outputText)
+	return outputText
 }
 
 func (a *UnifiedAgent) emitToolResult(

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 )
@@ -598,5 +599,130 @@ func TestEditTool_NoGuardWithoutCache(t *testing.T) {
 	}
 	if resp.State != message.ToolResultSuccess {
 		t.Fatalf("should succeed without cache context: %s", getResponseText(resp))
+	}
+}
+
+// --- Bash streaming tests ---
+
+func TestBashTool_StreamingOutput(t *testing.T) {
+	bt := BashTool()
+	st, ok := bt.(StreamingTool)
+	if !ok {
+		t.Fatal("BashTool should implement StreamingTool")
+	}
+
+	ch, err := st.ExecuteStream(context.Background(), map[string]any{
+		"command": `echo line1; echo line2; echo line3`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var chunks []ToolChunk
+	for chunk := range ch {
+		chunks = append(chunks, chunk)
+	}
+
+	if len(chunks) < 2 {
+		t.Fatalf("expected at least 2 chunks (deltas + final), got %d", len(chunks))
+	}
+
+	// Last chunk should be final
+	last := chunks[len(chunks)-1]
+	if !last.IsFinal {
+		t.Fatal("last chunk should be final")
+	}
+	if last.State != message.ToolResultSuccess {
+		t.Fatalf("final state = %s, want success", last.State)
+	}
+
+	// Non-final chunks should contain streaming lines
+	var streamedLines int
+	for _, chunk := range chunks {
+		if !chunk.IsFinal {
+			streamedLines++
+		}
+	}
+	if streamedLines < 3 {
+		t.Fatalf("expected at least 3 streamed lines, got %d", streamedLines)
+	}
+}
+
+func TestBashTool_StreamingNonZeroExit(t *testing.T) {
+	bt := BashTool()
+	st := bt.(StreamingTool)
+
+	ch, err := st.ExecuteStream(context.Background(), map[string]any{
+		"command": "echo fail; exit 1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var final ToolChunk
+	for chunk := range ch {
+		if chunk.IsFinal {
+			final = chunk
+		}
+	}
+
+	if final.State != message.ToolResultError {
+		t.Fatalf("final state = %s, want error for non-zero exit", final.State)
+	}
+}
+
+func TestBashTool_CollectStream(t *testing.T) {
+	bt := BashTool()
+	st := bt.(StreamingTool)
+
+	ch, err := st.ExecuteStream(context.Background(), map[string]any{
+		"command": "echo hello; echo world",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp := CollectStream(ch)
+	if resp.State != message.ToolResultSuccess {
+		t.Fatalf("state = %s, want success", resp.State)
+	}
+	text := getResponseText(resp)
+	if !strings.Contains(text, "hello") {
+		t.Fatalf("collected output should contain 'hello': %q", text)
+	}
+}
+
+func TestBashTool_Description(t *testing.T) {
+	bt := BashTool()
+	resp, err := bt.Execute(context.Background(), map[string]any{
+		"command":     "echo test",
+		"description": "Running a test command",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.State != message.ToolResultSuccess {
+		t.Fatal("should succeed with description param")
+	}
+}
+
+func TestBashTool_ContextCancellation(t *testing.T) {
+	bt := BashTool()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Cancel after a brief delay so the command starts
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	resp, err := bt.Execute(ctx, map[string]any{
+		"command": "sleep 10",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.State != message.ToolResultInterrupted {
+		t.Fatalf("state = %s, want interrupted", resp.State)
 	}
 }
