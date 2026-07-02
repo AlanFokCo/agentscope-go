@@ -26,6 +26,7 @@ type SessionEngine struct {
 	loopOpts   []loop.Option
 	budget     *BudgetTracker
 	hooks      *SessionHookManager
+	agents     *AgentManager
 	store      SessionStore
 	cancelFunc context.CancelFunc
 	state      *SessionState
@@ -42,11 +43,15 @@ func NewSessionEngine(cfg SessionEngineConfig) *SessionEngine {
 		store = NewInMemorySessionStore()
 	}
 
+	bt := NewBudgetTracker(cfg.Budget)
+	hooks := NewSessionHookManager()
+
 	se := &SessionEngine{
 		id:       id,
 		loopOpts: cfg.LoopOptions,
-		budget:   NewBudgetTracker(cfg.Budget),
-		hooks:    NewSessionHookManager(),
+		budget:   bt,
+		hooks:    hooks,
+		agents:   NewAgentManager(bt, hooks),
 		store:    store,
 		state: &SessionState{
 			ID:        id,
@@ -66,6 +71,9 @@ func (se *SessionEngine) Hooks() *SessionHookManager { return se.hooks }
 
 // Budget returns the budget tracker for this session.
 func (se *SessionEngine) Budget() *BudgetTracker { return se.budget }
+
+// Agents returns the agent manager for spawning and tracking subagents.
+func (se *SessionEngine) Agents() *AgentManager { return se.agents }
 
 // SubmitMessage starts a new turn with the given input and returns an event
 // channel. The channel is closed when the turn finishes. Session hooks are
