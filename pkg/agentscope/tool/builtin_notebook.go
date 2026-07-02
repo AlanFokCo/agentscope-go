@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
 )
 
 var notebookEditSchema = json.RawMessage(`{

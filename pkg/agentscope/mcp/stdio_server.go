@@ -17,12 +17,12 @@ import (
 // stdin/stdout. This allows agentscope-go tools and agents to be exposed as
 // MCP servers to Claude Desktop, Cursor, Windsurf, and other MCP clients.
 type StdioServer struct {
-	mu       sync.RWMutex
-	tools    map[string]tool.Tool
-	name     string
-	version  string
-	reader   io.Reader
-	writer   io.Writer
+	mu      sync.RWMutex
+	tools   map[string]tool.Tool
+	name    string
+	version string
+	reader  io.Reader
+	writer  io.Writer
 }
 
 // StdioServerConfig configures a StdioServer.

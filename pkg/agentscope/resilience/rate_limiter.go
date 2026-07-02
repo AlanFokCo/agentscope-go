@@ -62,7 +62,7 @@ func (r *RateLimiter) Allow() bool {
 }
 
 // Wait blocks until a token is available or ctx is done. It returns ctx.Err()
-// if the context is cancelled before a token becomes available.
+// if the context is canceled before a token becomes available.
 func (r *RateLimiter) Wait(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err

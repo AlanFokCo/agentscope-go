@@ -15,8 +15,8 @@ import (
 type SpawnIsolation int
 
 const (
-	SpawnIsolationNone    SpawnIsolation = iota // shared process
-	SpawnIsolationWorktree                      // separate git worktree
+	SpawnIsolationNone     SpawnIsolation = iota // shared process
+	SpawnIsolationWorktree                       // separate git worktree
 )
 
 // SpawnConfig configures a spawned subagent.
@@ -42,7 +42,7 @@ type SpawnResult struct {
 // Spawn creates a temporary subagent, runs it with the given task, and returns
 // the result. The subagent has its own state and toolkit but inherits the
 // parent's model if none is specified.
-func (a *UnifiedAgent) Spawn(ctx context.Context, cfg SpawnConfig, task string) (*SpawnResult, error) {
+func (a *UnifiedAgent) Spawn(ctx context.Context, cfg *SpawnConfig, task string) (*SpawnResult, error) {
 	if cfg.Name == "" {
 		cfg.Name = fmt.Sprintf("%s-sub-%s", a.name, agentscope.GenerateID()[:8])
 	}

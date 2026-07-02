@@ -56,11 +56,11 @@ func TestRateLimiterWaitContextCancel(t *testing.T) {
 	}
 }
 
-func TestRateLimiterWaitAlreadyCancelled(t *testing.T) {
+func TestRateLimiterWaitAlreadyCanceled(t *testing.T) {
 	rl := NewRateLimiter(10, 5)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := rl.Wait(ctx); err == nil {
-		t.Fatal("expected error for cancelled context")
+		t.Fatal("expected error for canceled context")
 	}
 }

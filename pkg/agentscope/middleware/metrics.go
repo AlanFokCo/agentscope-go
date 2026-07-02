@@ -107,7 +107,7 @@ func (m *MetricsMiddleware) OnModelCall(ctx context.Context, input *ModelCallInp
 	return resp, nil
 }
 
-// OnActing counts each tool execution, labelled by outcome, and increments the
+// OnActing counts each tool execution, labeled by outcome, and increments the
 // error counter on failure.
 func (m *MetricsMiddleware) OnActing(ctx context.Context, input *ActingInput, next ActingHandler) (*tool.ToolResponse, error) {
 	resp, err := next(ctx, input)

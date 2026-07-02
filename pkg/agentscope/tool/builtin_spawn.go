@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
-
 )
 
 var spawnSchema = json.RawMessage(`{
@@ -30,7 +29,7 @@ var spawnSchema = json.RawMessage(`{
 // Spawner is the interface used by the spawn tool to create subagents.
 // Implemented by *agent.UnifiedAgent via its Spawn method.
 type Spawner interface {
-	Spawn(ctx context.Context, cfg SpawnConfig, task string) (*SpawnResult, error)
+	Spawn(ctx context.Context, cfg *SpawnConfig, task string) (*SpawnResult, error)
 }
 
 // SpawnConfig mirrors agent.SpawnConfig for the tool layer.
@@ -73,7 +72,7 @@ func (t *spawnTool) Execute(ctx context.Context, args map[string]any) (*ToolResp
 
 	systemPrompt, _ := args["system_prompt"].(string)
 
-	cfg := SpawnConfig{
+	cfg := &SpawnConfig{
 		SystemPrompt: systemPrompt,
 	}
 

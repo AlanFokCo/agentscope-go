@@ -25,7 +25,7 @@ type fanOutConfig struct {
 // FanOutOption configures FanOut.
 type FanOutOption func(*fanOutConfig)
 
-// FirstN makes FanOut return after the first n results arrive, cancelling the
+// FirstN makes FanOut return after the first n results arrive, canceling the
 // remaining agents. A value <= 0 disables early return (wait for all).
 func FirstN(n int) FanOutOption {
 	return func(c *fanOutConfig) { c.firstN = n }
