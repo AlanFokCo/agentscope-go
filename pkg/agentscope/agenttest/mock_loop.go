@@ -59,7 +59,7 @@ func NewSimpleToolExecutor(output string) *SimpleToolExecutor {
 }
 
 // Execute returns a successful ToolResponse containing the configured output text.
-func (e *SimpleToolExecutor) Execute(_ context.Context, _ message.ToolCallBlock) (*tool.ToolResponse, error) {
+func (e *SimpleToolExecutor) Execute(_ context.Context, _ message.ToolCallBlock) (*tool.ToolResponse, error) { //nolint:gocritic // interface
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.callCount++

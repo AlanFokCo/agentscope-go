@@ -24,8 +24,8 @@ func main() {
 	fmt.Printf("Total: %d models across providers\n\n", len(cards))
 
 	providers := map[string]int{}
-	for _, c := range cards {
-		providers[c.Provider]++
+	for i := range cards {
+		providers[cards[i].Provider]++
 	}
 	for p, n := range providers {
 		fmt.Printf("  %s: %d models\n", p, n)

@@ -54,7 +54,7 @@ func NewStdioClient(ctx context.Context, cfg *StdioConfig) (*StdioClient, error)
 	}
 
 	if err := c.initialize(ctx); err != nil {
-		c.Close()
+		_ = c.Close()
 		return nil, err
 	}
 

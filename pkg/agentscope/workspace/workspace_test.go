@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -179,6 +180,9 @@ func TestAbsolutePathInsideAllowed(t *testing.T) {
 }
 
 func TestExecute(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	ws := mustWorkspace(t)
 	ctx := context.Background()
 
@@ -197,6 +201,9 @@ func TestExecute(t *testing.T) {
 }
 
 func TestExecuteFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	ws := mustWorkspace(t)
 
 	result, err := ws.Execute(context.Background(), "false")
@@ -209,6 +216,9 @@ func TestExecuteFailure(t *testing.T) {
 }
 
 func TestExecuteWorkingDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	ws := mustWorkspace(t)
 	ctx := context.Background()
 

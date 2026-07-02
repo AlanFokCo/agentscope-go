@@ -448,7 +448,7 @@ func (t *grepTool) goGrepContent(re *regexp.Regexp, includeRe *regexp.Regexp, se
 		if err != nil {
 			return nil
 		}
-		defer f.Close()
+		defer f.Close() //nolint:errcheck
 
 		scanner := bufio.NewScanner(f)
 		var allLines []string
@@ -513,7 +513,7 @@ func (t *grepTool) goGrepFiles(re *regexp.Regexp, includeRe *regexp.Regexp, sear
 		if err != nil {
 			return nil
 		}
-		defer f.Close()
+		defer f.Close() //nolint:errcheck
 
 		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {
@@ -547,7 +547,7 @@ func (t *grepTool) goGrepCount(re *regexp.Regexp, includeRe *regexp.Regexp, sear
 		if err != nil {
 			return nil
 		}
-		defer f.Close()
+		defer f.Close() //nolint:errcheck
 
 		count := 0
 		scanner := bufio.NewScanner(f)

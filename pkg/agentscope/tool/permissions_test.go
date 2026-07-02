@@ -4,12 +4,16 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/permission"
 )
 
 func TestBashTool_CheckPermissions_ReadOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	bt := BashTool().(*bashTool)
 	ctx := permission.NewContext(permission.ModeDefault)
 
@@ -26,6 +30,9 @@ func TestBashTool_CheckPermissions_ReadOnly(t *testing.T) {
 }
 
 func TestBashTool_CheckPermissions_Dangerous(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	bt := BashTool().(*bashTool)
 	ctx := permission.NewContext(permission.ModeDefault)
 
@@ -40,6 +47,9 @@ func TestBashTool_CheckPermissions_Dangerous(t *testing.T) {
 }
 
 func TestBashTool_CheckPermissions_InjectionRisk(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	bt := BashTool().(*bashTool)
 	ctx := permission.NewContext(permission.ModeDefault)
 
@@ -54,6 +64,9 @@ func TestBashTool_CheckPermissions_InjectionRisk(t *testing.T) {
 }
 
 func TestBashTool_CheckPermissions_AcceptEdits(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	bt := BashTool().(*bashTool)
 	ctx := permission.NewContext(permission.ModeAcceptEdits)
 
@@ -71,6 +84,9 @@ func TestBashTool_CheckPermissions_AcceptEdits(t *testing.T) {
 }
 
 func TestBashTool_CheckReadOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	bt := BashTool().(*bashTool)
 
 	if !bt.CheckReadOnly(map[string]any{"command": "ls -la"}) {

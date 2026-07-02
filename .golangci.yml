@@ -1,5 +1,11 @@
+version: "2"
+
 run:
   timeout: 5m
+
+formatters:
+  enable:
+    - gofmt
 
 linters:
   enable:
@@ -8,36 +14,46 @@ linters:
     - ineffassign
     - staticcheck
     - unused
-    - gosimple
     - gocritic
     - misspell
-    - gofmt
-
-linters-settings:
-  errcheck:
-    check-blank: false
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - performance
-    disabled-checks:
-      - ifElseChain
-  misspell:
-    locale: US
+  settings:
+    errcheck:
+      check-blank: false
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os/exec.Cmd).Run
+        - (net/http.ResponseWriter).Write
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+      disabled-checks:
+        - ifElseChain
+    misspell:
+      locale: US
+    staticcheck:
+      checks:
+        - "all"
+        - "-QF*"
+        - "-ST*"
+  exclusions:
+    rules:
+      - path: pkg/agentscope/event/
+        linters: [gocritic]
+        text: hugeParam
+      - path: pkg/agentscope/message/
+        linters: [gocritic]
+        text: hugeParam
+      - path: examples/
+        linters: [errcheck, staticcheck]
+      - path: _test\.go
+        linters: [errcheck]
+    paths:
+      - vendor
 
 issues:
-  exclude-dirs:
-    - vendor
-  exclude-rules:
-    # Event types implement the Event interface via value receivers;
-    # pointer receivers would break interface satisfaction.
-    - path: pkg/agentscope/event/
-      linters: [gocritic]
-      text: hugeParam
-    # ToolCallBlock and ToolResultBlock implement ContentBlock interface
-    # via value receivers; cannot change to pointer receivers.
-    - path: pkg/agentscope/message/
-      linters: [gocritic]
-      text: hugeParam
   max-issues-per-linter: 0
   max-same-issues: 0

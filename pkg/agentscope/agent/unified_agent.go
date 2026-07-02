@@ -447,7 +447,6 @@ reactLoop:
 			if len(toolCalls) == 0 {
 				// No tool calls — transition to Exit
 				hooks.OnStateTransition(curState, protocol.StateExit, iter)
-				curState = protocol.StateExit
 				break reactLoop
 			}
 

@@ -82,10 +82,10 @@ func (t *spawnTool) Execute(ctx context.Context, args map[string]any) (*ToolResp
 	}
 
 	out := map[string]any{
-		"output":       result.Output,
-		"tokens_in":    result.TokensIn,
-		"tokens_out":   result.TokensOut,
-		"duration_ms":  result.Duration.Milliseconds(),
+		"output":      result.Output,
+		"tokens_in":   result.TokensIn,
+		"tokens_out":  result.TokensOut,
+		"duration_ms": result.Duration.Milliseconds(),
 	}
 	b, _ := json.Marshal(out)
 	return NewTextResponse(string(b)), nil

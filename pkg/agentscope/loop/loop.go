@@ -185,7 +185,7 @@ func (l *Loop) run(ctx context.Context, input string, ch chan<- event.Event) {
 			l.emitContentEvents(ch, replyID, resp.Content)
 
 			// Append assistant response to context.
-			assistantMsg := resp.ToMsg("")
+			assistantMsg := message.AssistantMsg("", resp.Content)
 			l.cfg.ContextManager.Append(assistantMsg)
 
 			lastResp = resp

@@ -63,7 +63,7 @@ type toolExecutorAdapter struct {
 	agent *UnifiedAgent
 }
 
-func (t *toolExecutorAdapter) Execute(ctx context.Context, call message.ToolCallBlock) (*tool.ToolResponse, error) {
+func (t *toolExecutorAdapter) Execute(ctx context.Context, call message.ToolCallBlock) (*tool.ToolResponse, error) { //nolint:gocritic // interface
 	return t.agent.toolkit.CallToolFromBlock(ctx, &call)
 }
 

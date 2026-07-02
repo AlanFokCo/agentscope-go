@@ -1,12 +1,16 @@
 package tool
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/platform"
 )
 
 func TestIsReadOnlyCommand(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	tests := []struct {
 		cmd      string
 		readOnly bool
@@ -73,6 +77,9 @@ func TestIsReadOnlyCommand(t *testing.T) {
 }
 
 func TestCheckInjectionRisk(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	tests := []struct {
 		cmd    string
 		risky  bool
@@ -111,6 +118,9 @@ func TestCheckInjectionRisk(t *testing.T) {
 }
 
 func TestCheckDangerousRemoval(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	tests := []struct {
 		cmd       string
 		dangerous bool
@@ -135,6 +145,9 @@ func TestCheckDangerousRemoval(t *testing.T) {
 }
 
 func TestExtractFilePaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	tests := []struct {
 		cmd   string
 		paths []string
@@ -165,6 +178,9 @@ func TestExtractFilePaths(t *testing.T) {
 }
 
 func TestExtractCommandPrefixes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	tests := []struct {
 		cmd      string
 		max      int
@@ -191,6 +207,9 @@ func TestExtractCommandPrefixes(t *testing.T) {
 }
 
 func TestCheckSedConstraints(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	dangerousFiles := []string{".bashrc", ".env"}
 
 	tests := []struct {

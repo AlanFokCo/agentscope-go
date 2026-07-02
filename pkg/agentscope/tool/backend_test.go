@@ -4,11 +4,15 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
 
 func TestLocalBackend_ExecShell(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	b := &LocalBackend{}
 	result, err := b.ExecShell(context.Background(), "echo hello", 5*time.Second)
 	if err != nil {
@@ -23,6 +27,9 @@ func TestLocalBackend_ExecShell(t *testing.T) {
 }
 
 func TestLocalBackend_ExecShell_Failure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	b := &LocalBackend{}
 	result, err := b.ExecShell(context.Background(), "false", 5*time.Second)
 	if err != nil {
@@ -34,6 +41,9 @@ func TestLocalBackend_ExecShell_Failure(t *testing.T) {
 }
 
 func TestLocalBackend_ExecShell_WorkDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	dir := t.TempDir()
 	b := &LocalBackend{WorkDir: dir}
 	result, err := b.ExecShell(context.Background(), "pwd", 5*time.Second)
@@ -47,6 +57,9 @@ func TestLocalBackend_ExecShell_WorkDir(t *testing.T) {
 }
 
 func TestLocalBackend_ExecShell_Timeout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	b := &LocalBackend{}
 	result, err := b.ExecShell(context.Background(), "sleep 10", 100*time.Millisecond)
 	if err != nil {

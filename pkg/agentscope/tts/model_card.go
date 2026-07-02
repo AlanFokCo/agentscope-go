@@ -4,7 +4,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
-	"path/filepath"
+	"path"
 	"sort"
 	"strings"
 
@@ -49,7 +49,7 @@ func ListTTSModels(providers ...string) []TTSModelCard {
 			continue
 		}
 
-		yamlFiles, err := fs.ReadDir(ttsModelsFS, filepath.Join("models", provider))
+		yamlFiles, err := fs.ReadDir(ttsModelsFS, path.Join("models", provider))
 		if err != nil {
 			continue
 		}
@@ -58,7 +58,7 @@ func ListTTSModels(providers ...string) []TTSModelCard {
 			if f.IsDir() || !strings.HasSuffix(f.Name(), ".yaml") {
 				continue
 			}
-			card, err := loadTTSCard(ttsModelsFS, filepath.Join("models", provider, f.Name()), provider)
+			card, err := loadTTSCard(ttsModelsFS, path.Join("models", provider, f.Name()), provider)
 			if err != nil {
 				continue
 			}

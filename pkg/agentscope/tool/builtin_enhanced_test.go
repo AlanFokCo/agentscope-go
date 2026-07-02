@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,9 @@ import (
 // --- Bash tool tests ---
 
 func TestBashTool_Success(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	bt := BashTool()
 	if bt.Name() != "Bash" {
 		t.Fatalf("name = %q, want %q", bt.Name(), "Bash")
@@ -55,6 +59,9 @@ func TestBashTool_MissingCommand(t *testing.T) {
 }
 
 func TestBashTool_NonZeroExit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	bt := BashTool()
 	resp, err := bt.Execute(context.Background(), map[string]any{"command": "exit 42"})
 	if err != nil {
@@ -605,6 +612,9 @@ func TestEditTool_NoGuardWithoutCache(t *testing.T) {
 // --- Bash streaming tests ---
 
 func TestBashTool_StreamingOutput(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	bt := BashTool()
 	st, ok := bt.(StreamingTool)
 	if !ok {
@@ -649,6 +659,9 @@ func TestBashTool_StreamingOutput(t *testing.T) {
 }
 
 func TestBashTool_StreamingNonZeroExit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	bt := BashTool()
 	st := bt.(StreamingTool)
 
@@ -672,6 +685,9 @@ func TestBashTool_StreamingNonZeroExit(t *testing.T) {
 }
 
 func TestBashTool_CollectStream(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	bt := BashTool()
 	st := bt.(StreamingTool)
 
@@ -693,6 +709,9 @@ func TestBashTool_CollectStream(t *testing.T) {
 }
 
 func TestBashTool_Description(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	bt := BashTool()
 	resp, err := bt.Execute(context.Background(), map[string]any{
 		"command":     "echo test",
@@ -707,6 +726,9 @@ func TestBashTool_Description(t *testing.T) {
 }
 
 func TestBashTool_ContextCancellation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	bt := BashTool()
 	ctx, cancel := context.WithCancel(context.Background())
 

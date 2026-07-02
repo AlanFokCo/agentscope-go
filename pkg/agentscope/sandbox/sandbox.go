@@ -124,7 +124,7 @@ func ListProviders() []SandboxProvider {
 
 // AutoSelect picks the highest-priority available provider, creates a sandbox,
 // and sets it up with the given policy.
-func AutoSelect(policy Policy) (Sandbox, error) {
+func AutoSelect(policy Policy) (Sandbox, error) { //nolint:gocritic // public API
 	registryMu.RLock()
 	sorted := make([]SandboxProvider, len(providers))
 	copy(sorted, providers)

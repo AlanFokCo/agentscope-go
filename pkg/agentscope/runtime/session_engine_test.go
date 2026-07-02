@@ -51,7 +51,7 @@ func TestSessionEngineID(t *testing.T) {
 }
 
 func TestSessionEngineInterrupt(t *testing.T) {
-	// Create a model caller that blocks until context is cancelled
+	// Create a model caller that blocks until context is canceled
 	mc := &blockingModelCaller{done: make(chan struct{})}
 	se := NewSessionEngine(SessionEngineConfig{
 		LoopOptions: []loop.Option{loop.WithModelCaller(mc), loop.WithMaxIters(10)},
@@ -64,9 +64,7 @@ func TestSessionEngineInterrupt(t *testing.T) {
 	se.Interrupt()
 
 	// Drain events — should complete without hanging
-	var events []event.Event
-	for ev := range ch {
-		events = append(events, ev)
+	for range ch {
 	}
 	close(mc.done)
 	// Test passes if it doesn't hang

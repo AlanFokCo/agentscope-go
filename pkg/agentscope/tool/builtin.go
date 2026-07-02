@@ -175,6 +175,7 @@ func ViewTextFileTool() Tool {
 }
 
 // NewBuiltinToolkit returns a Toolkit with execute_shell_command and view_text_file.
+//
 // Deprecated: Use NewEnhancedToolkit for the v2 tool set.
 func NewBuiltinToolkit() *Toolkit {
 	return NewToolkit(ExecuteShellCommandTool(), ViewTextFileTool())

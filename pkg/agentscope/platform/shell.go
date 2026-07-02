@@ -4,7 +4,7 @@ package platform
 type ShellType int
 
 const (
-	ShellBash       ShellType = iota
+	ShellBash ShellType = iota
 	ShellZsh
 	ShellSh
 	ShellPowerShell

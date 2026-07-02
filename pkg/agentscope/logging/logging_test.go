@@ -16,7 +16,7 @@ type capturingHandler struct {
 
 func (h *capturingHandler) Enabled(_ context.Context, _ slog.Level) bool { return true }
 
-func (h *capturingHandler) Handle(_ context.Context, r slog.Record) error {
+func (h *capturingHandler) Handle(_ context.Context, r slog.Record) error { //nolint:gocritic // slog.Handler interface
 	h.mu.Lock()
 	h.records = append(h.records, r)
 	h.mu.Unlock()

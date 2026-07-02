@@ -45,7 +45,7 @@ func NewOrchestrator(cfg OrchestratorConfig) *Orchestrator {
 }
 
 // Execute runs a single tool call through the permission + execution pipeline.
-func (o *Orchestrator) Execute(ctx context.Context, call message.ToolCallBlock) (*ToolResponse, error) {
+func (o *Orchestrator) Execute(ctx context.Context, call message.ToolCallBlock) (*ToolResponse, error) { //nolint:gocritic // public API
 	// 1. Look up tool
 	t := o.toolkit.Get(call.Name)
 	if t == nil {
@@ -113,7 +113,7 @@ type toolExecutorAdapter struct {
 
 // Execute delegates to the underlying Orchestrator. The signature matches
 // loop.ToolExecutor.Execute.
-func (a *toolExecutorAdapter) Execute(ctx context.Context, call message.ToolCallBlock) (*ToolResponse, error) {
+func (a *toolExecutorAdapter) Execute(ctx context.Context, call message.ToolCallBlock) (*ToolResponse, error) { //nolint:gocritic // interface
 	return a.o.Execute(ctx, call)
 }
 

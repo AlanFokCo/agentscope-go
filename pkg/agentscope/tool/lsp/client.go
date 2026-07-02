@@ -153,11 +153,11 @@ func FormatDocumentSymbols(symbols []DocumentSymbol) string {
 
 func formatSymbolTree(b *strings.Builder, symbols []DocumentSymbol, indent int) {
 	prefix := strings.Repeat("  ", indent)
-	for _, s := range symbols {
-		kind := SymbolKindName(s.Kind)
-		fmt.Fprintf(b, "%s%s (%s) line %d\n", prefix, s.Name, kind, s.Range.Start.Line+1)
-		if len(s.Children) > 0 {
-			formatSymbolTree(b, s.Children, indent+1)
+	for i := range symbols {
+		kind := SymbolKindName(symbols[i].Kind)
+		fmt.Fprintf(b, "%s%s (%s) line %d\n", prefix, symbols[i].Name, kind, symbols[i].Range.Start.Line+1)
+		if len(symbols[i].Children) > 0 {
+			formatSymbolTree(b, symbols[i].Children, indent+1)
 		}
 	}
 }

@@ -76,7 +76,7 @@ func main() {
 	}
 
 	// Cancel the recurring task.
-	fmt.Println("\nCancelling heartbeat task...")
+	fmt.Println("\nCanceling heartbeat task...")
 	scheduler.Cancel(ctx, id2)
 
 	task, _ := scheduler.Get(ctx, id2)

@@ -57,7 +57,7 @@ func (NoopSandbox) Execute(ctx context.Context, req *ExecRequest) (*ExecResult, 
 }
 
 // Setup is a no-op; the sandbox has no state to initialize.
-func (NoopSandbox) Setup(_ context.Context, _ Policy) error { return nil }
+func (NoopSandbox) Setup(_ context.Context, _ Policy) error { return nil } //nolint:gocritic // interface
 
 // Teardown is a no-op; the sandbox has no state to clean up.
 func (NoopSandbox) Teardown(_ context.Context) error { return nil }

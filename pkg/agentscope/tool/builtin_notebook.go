@@ -50,12 +50,12 @@ type notebook struct {
 }
 
 type notebookCell struct {
-	ID         string         `json:"id,omitempty"`
-	CellType   string         `json:"cell_type"`
-	Source     any            `json:"source"` // string or []string
-	Metadata   map[string]any `json:"metadata,omitempty"`
-	Outputs    []any          `json:"outputs,omitempty"`
-	ExecCount  *int           `json:"execution_count,omitempty"`
+	ID        string         `json:"id,omitempty"`
+	CellType  string         `json:"cell_type"`
+	Source    any            `json:"source"` // string or []string
+	Metadata  map[string]any `json:"metadata,omitempty"`
+	Outputs   []any          `json:"outputs,omitempty"`
+	ExecCount *int           `json:"execution_count,omitempty"`
 }
 
 func (c *notebookCell) getSource() string {

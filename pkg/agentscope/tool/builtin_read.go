@@ -105,7 +105,7 @@ func (t *readTool) Execute(ctx context.Context, args map[string]any) (*ToolRespo
 		if err != nil {
 			return NewErrorResponse(fmt.Errorf("open: %w", err)), nil
 		}
-		defer f.Close()
+		defer f.Close() //nolint:errcheck
 
 		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {

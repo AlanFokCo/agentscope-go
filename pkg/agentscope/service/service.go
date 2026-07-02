@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
@@ -25,6 +26,8 @@ type Config struct {
 
 // AgentFactory creates agents by name/configuration.
 type AgentFactory func(name, systemPrompt string, cm model.ChatModel) *agent.UnifiedAgent
+
+var sessionCounter atomic.Int64
 
 // Service is the HTTP agent service.
 type Service struct {
@@ -209,7 +212,7 @@ func (s *Service) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 
 	a := s.factory(name, prompt, s.model)
 
-	sessionID := fmt.Sprintf("sess_%d", time.Now().UnixNano())
+	sessionID := fmt.Sprintf("sess_%d", sessionCounter.Add(1))
 
 	s.mu.Lock()
 	s.sessions[sessionID] = &sessionState{

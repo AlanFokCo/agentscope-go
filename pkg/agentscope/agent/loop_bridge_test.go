@@ -92,9 +92,9 @@ func TestUnifiedAgentRunnerWithToolCall(t *testing.T) {
 
 type atomicCounter struct{ val int64 }
 
-func (c *atomicCounter) Inc(_ ...string)                  { atomic.AddInt64(&c.val, 1) }
-func (c *atomicCounter) Add(v float64, _ ...string)       { atomic.AddInt64(&c.val, int64(v)) }
-func (c *atomicCounter) Value() int64                     { return atomic.LoadInt64(&c.val) }
+func (c *atomicCounter) Inc(_ ...string)            { atomic.AddInt64(&c.val, 1) }
+func (c *atomicCounter) Add(v float64, _ ...string) { atomic.AddInt64(&c.val, int64(v)) }
+func (c *atomicCounter) Value() int64               { return atomic.LoadInt64(&c.val) }
 
 type atomicHistogram struct{ count int64 }
 

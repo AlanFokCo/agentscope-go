@@ -107,7 +107,7 @@ func TestAssertNoMissingToolResults(t *testing.T) {
 		},
 		&model.ChatResponse{
 			Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: "done"}},
-			IsLast: true,
+			IsLast:  true,
 		},
 	)
 	te := NewSimpleToolExecutor("ok")

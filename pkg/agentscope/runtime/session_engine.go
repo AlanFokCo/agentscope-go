@@ -96,7 +96,7 @@ func (se *SessionEngine) SubmitMessage(ctx context.Context, input string) <-chan
 		defer close(out)
 		defer cancel()
 
-		se.hooks.Fire(HookSessionStart, map[string]any{"session_id": se.id})
+		_ = se.hooks.Fire(HookSessionStart, map[string]any{"session_id": se.id})
 
 		for ev := range turn.Run(sessionCtx, input) {
 			out <- ev
@@ -108,7 +108,7 @@ func (se *SessionEngine) SubmitMessage(ctx context.Context, input string) <-chan
 
 		se.saveState()
 
-		se.hooks.Fire(HookSessionEnd, map[string]any{"session_id": se.id})
+		_ = se.hooks.Fire(HookSessionEnd, map[string]any{"session_id": se.id})
 	}()
 
 	return out
@@ -138,6 +138,6 @@ func (se *SessionEngine) saveState() {
 	se.mu.RUnlock()
 
 	if se.store != nil {
-		se.store.Save(se.id, state)
+		_ = se.store.Save(se.id, state)
 	}
 }

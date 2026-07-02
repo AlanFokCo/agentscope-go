@@ -114,12 +114,12 @@ func TestTurnContextCancellation(t *testing.T) {
 
 	turn := NewTurn(TurnConfig{Loop: l})
 	var events []event.Event
-	for ev := range turn.Run(ctx, "cancelled") {
+	for ev := range turn.Run(ctx, "canceled") {
 		events = append(events, ev)
 	}
 	// Should complete without hanging
 	if len(events) == 0 {
-		t.Log("no events (expected with cancelled context)")
+		t.Log("no events (expected with canceled context)")
 	}
 }
 

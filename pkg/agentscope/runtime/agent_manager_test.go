@@ -47,7 +47,7 @@ func TestAgentManagerSpawnSync(t *testing.T) {
 	am := NewAgentManager(nil, nil)
 	mock := &amMockChatModel{}
 
-	ma, err := am.Spawn(context.Background(), mock, AgentConfig{
+	ma, err := am.Spawn(context.Background(), mock, &AgentConfig{
 		Name: "test-sync",
 	}, "say hello")
 	if err != nil {
@@ -69,7 +69,7 @@ func TestAgentManagerSpawnBackground(t *testing.T) {
 	am := NewAgentManager(nil, nil)
 	mock := &amMockChatModel{delay: 100 * time.Millisecond}
 
-	ma, err := am.Spawn(context.Background(), mock, AgentConfig{
+	ma, err := am.Spawn(context.Background(), mock, &AgentConfig{
 		Name:       "test-bg",
 		Background: true,
 		Timeout:    5 * time.Second,
@@ -103,7 +103,7 @@ func TestAgentManagerStop(t *testing.T) {
 	am := NewAgentManager(nil, nil)
 	mock := &amMockChatModel{delay: 10 * time.Second}
 
-	ma, err := am.Spawn(context.Background(), mock, AgentConfig{
+	ma, err := am.Spawn(context.Background(), mock, &AgentConfig{
 		Name:       "test-stop",
 		Background: true,
 		Timeout:    30 * time.Second,
@@ -128,8 +128,8 @@ func TestAgentManagerList(t *testing.T) {
 	am := NewAgentManager(nil, nil)
 	mock := &amMockChatModel{}
 
-	am.Spawn(context.Background(), mock, AgentConfig{Name: "a1"}, "task1")
-	am.Spawn(context.Background(), mock, AgentConfig{Name: "a2"}, "task2")
+	am.Spawn(context.Background(), mock, &AgentConfig{Name: "a1"}, "task1")
+	am.Spawn(context.Background(), mock, &AgentConfig{Name: "a2"}, "task2")
 
 	infos := am.List()
 	if len(infos) != 2 {
@@ -151,7 +151,7 @@ func TestAgentManagerBudgetLimit(t *testing.T) {
 	mock := &amMockChatModel{delay: 1 * time.Second}
 
 	// First background agent should succeed
-	_, err := am.Spawn(context.Background(), mock, AgentConfig{
+	_, err := am.Spawn(context.Background(), mock, &AgentConfig{
 		Name:       "first",
 		Background: true,
 		Timeout:    5 * time.Second,
@@ -161,7 +161,7 @@ func TestAgentManagerBudgetLimit(t *testing.T) {
 	}
 
 	// Second should fail due to budget
-	_, err = am.Spawn(context.Background(), mock, AgentConfig{
+	_, err = am.Spawn(context.Background(), mock, &AgentConfig{
 		Name:       "second",
 		Background: true,
 		Timeout:    5 * time.Second,
@@ -190,7 +190,7 @@ func TestAgentManagerHooks(t *testing.T) {
 		Evts: []SessionHookEvent{HookSubagentStart, HookSubagentEnd},
 	})
 
-	am.Spawn(context.Background(), mock, AgentConfig{Name: "hooked"}, "task")
+	am.Spawn(context.Background(), mock, &AgentConfig{Name: "hooked"}, "task")
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -211,7 +211,7 @@ func TestAgentManagerStopAll(t *testing.T) {
 	mock := &amMockChatModel{delay: 10 * time.Second}
 
 	for i := 0; i < 3; i++ {
-		am.Spawn(context.Background(), mock, AgentConfig{
+		am.Spawn(context.Background(), mock, &AgentConfig{
 			Name:       "bg",
 			Background: true,
 			Timeout:    30 * time.Second,

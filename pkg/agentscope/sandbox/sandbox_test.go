@@ -133,7 +133,9 @@ func (highPrioritySandbox) Type() string { return "high" }
 
 type highPriorityProvider struct{}
 
-func (highPriorityProvider) Name() string                             { return "high" }
-func (highPriorityProvider) Priority() int                            { return 100 }
-func (highPriorityProvider) Available() bool                          { return true }
-func (highPriorityProvider) Create(_ map[string]any) (Sandbox, error) { return highPrioritySandbox{}, nil }
+func (highPriorityProvider) Name() string    { return "high" }
+func (highPriorityProvider) Priority() int   { return 100 }
+func (highPriorityProvider) Available() bool { return true }
+func (highPriorityProvider) Create(_ map[string]any) (Sandbox, error) {
+	return highPrioritySandbox{}, nil
+}

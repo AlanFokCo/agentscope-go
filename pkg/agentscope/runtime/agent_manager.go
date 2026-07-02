@@ -120,7 +120,7 @@ func NewAgentManager(budget *BudgetTracker, hooks *SessionHookManager) *AgentMan
 // the agent completes.
 //
 // parentModel is used as the model when cfg.Model is nil.
-func (am *AgentManager) Spawn(ctx context.Context, parentModel model.ChatModel, cfg AgentConfig, task string) (*ManagedAgent, error) {
+func (am *AgentManager) Spawn(ctx context.Context, parentModel model.ChatModel, cfg *AgentConfig, task string) (*ManagedAgent, error) {
 	if am.budget != nil {
 		if err := am.budget.AcquireAgent(); err != nil {
 			return nil, fmt.Errorf("agent budget exceeded: %w", err)
@@ -136,7 +136,7 @@ func (am *AgentManager) Spawn(ctx context.Context, parentModel model.ChatModel, 
 	ma := &ManagedAgent{
 		ID:        id,
 		Name:      name,
-		Config:    cfg,
+		Config:    *cfg,
 		Status:    AgentStatusRunning,
 		StartedAt: time.Now(),
 		done:      make(chan struct{}),
@@ -147,7 +147,7 @@ func (am *AgentManager) Spawn(ctx context.Context, parentModel model.ChatModel, 
 	am.mu.Unlock()
 
 	if am.hooks != nil {
-		am.hooks.Fire(HookSubagentStart, map[string]any{
+		_ = am.hooks.Fire(HookSubagentStart, map[string]any{
 			"agent_id":   id,
 			"agent_name": name,
 			"task":       task,
@@ -177,7 +177,7 @@ func (am *AgentManager) Spawn(ctx context.Context, parentModel model.ChatModel, 
 	return ma, nil
 }
 
-func (am *AgentManager) executeAgent(subCtx context.Context, cancel context.CancelFunc, ma *ManagedAgent, m model.ChatModel, cfg AgentConfig, task string) {
+func (am *AgentManager) executeAgent(subCtx context.Context, cancel context.CancelFunc, ma *ManagedAgent, m model.ChatModel, cfg *AgentConfig, task string) {
 	defer cancel()
 	defer func() {
 		if r := recover(); r != nil {
@@ -195,7 +195,7 @@ func (am *AgentManager) executeAgent(subCtx context.Context, cancel context.Canc
 			ma.mu.Lock()
 			status := ma.Status
 			ma.mu.Unlock()
-			am.hooks.Fire(HookSubagentEnd, map[string]any{
+			_ = am.hooks.Fire(HookSubagentEnd, map[string]any{
 				"agent_id":   ma.ID,
 				"agent_name": ma.Name,
 				"status":     status.String(),
@@ -361,7 +361,6 @@ func (am *AgentManager) StopAll() {
 	am.mu.RUnlock()
 
 	for _, id := range ids {
-		am.Stop(id)
+		_ = am.Stop(id)
 	}
 }
-

@@ -4,7 +4,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
-	"path/filepath"
+	"path"
 	"sort"
 	"strings"
 	"time"
@@ -112,7 +112,7 @@ func ListModels(providers ...string) []ModelCard {
 			continue
 		}
 
-		yamlFiles, err := fs.ReadDir(modelsFS, filepath.Join("models", provider))
+		yamlFiles, err := fs.ReadDir(modelsFS, path.Join("models", provider))
 		if err != nil {
 			continue
 		}
@@ -121,7 +121,7 @@ func ListModels(providers ...string) []ModelCard {
 			if f.IsDir() || !strings.HasSuffix(f.Name(), ".yaml") {
 				continue
 			}
-			card, err := loadModelCard(modelsFS, filepath.Join("models", provider, f.Name()), provider)
+			card, err := loadModelCard(modelsFS, path.Join("models", provider, f.Name()), provider)
 			if err != nil {
 				continue
 			}

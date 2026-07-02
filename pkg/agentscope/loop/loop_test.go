@@ -221,7 +221,7 @@ func TestRunSyncContextCancelled(t *testing.T) {
 	l := New(WithModelCaller(mc))
 	_, err := l.RunSync(ctx, "hello")
 	if err == nil {
-		t.Error("expected error from cancelled context")
+		t.Error("expected error from canceled context")
 	}
 }
 
@@ -329,7 +329,7 @@ type mockToolExecutor struct {
 	callCount int
 }
 
-func (m *mockToolExecutor) Execute(_ context.Context, _ message.ToolCallBlock) (*tool.ToolResponse, error) {
+func (m *mockToolExecutor) Execute(_ context.Context, _ message.ToolCallBlock) (*tool.ToolResponse, error) { //nolint:gocritic // interface
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.callCount++
