@@ -28,7 +28,9 @@
 //   - protocol: Shared types for loop state, events, and results
 //   - sandbox: Sandbox execution policies (Allow/Deny/AskUser)
 //   - platform: Cross-platform shell detection and safety analysis
-//   - errors: Typed error hierarchy (Retriable, Throttled, PermissionDenied, Timeout)
+//   - errors: Structured AgentError with category classification, retryable
+//     marking, and sentinel errors (ErrModelRateLimited, ErrToolDenied, …), all
+//     compatible with errors.Is / errors.As
 //   - skill: Reusable skill system with SkillManager registry
 //   - schedule: InMemoryScheduler for periodic agent task execution
 //   - team: Agent teams with leader/worker coordination

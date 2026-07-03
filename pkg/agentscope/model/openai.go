@@ -2,7 +2,6 @@ package model
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -220,8 +219,10 @@ func convertMessagesToOpenAI(msgs []*message.Msg) []openAIChatMessage {
 		if content, ok := m["content"].(string); ok {
 			msg.Content = content
 		} else if content, ok := m["content"].([]map[string]any); ok {
-			b, _ := json.Marshal(content)
-			msg.Content = string(b)
+			// Preserve the structured multimodal array (text + image_url/input_audio
+			// parts). Marshalling it to a string would send images/audio as an inert
+			// text blob, silently disabling vision/audio input.
+			msg.Content = content
 		}
 		if tcid, ok := m["tool_call_id"].(string); ok {
 			msg.ToolCallID = tcid

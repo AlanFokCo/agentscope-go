@@ -402,6 +402,17 @@ func (t *bashTool) CheckPermissions(input map[string]any, ctx *permission.Contex
 		}
 	}
 
+	// Step 6.5: Output redirected to a dangerous path (e.g. `cat x > /etc/passwd`,
+	// `echo k >> ~/.ssh/authorized_keys`). The command executable may be read-only
+	// but the redirect writes; must not be silently allowed in any mode.
+	if dangerous, reason := CheckDangerousRedirect(cmdStr); dangerous {
+		return permission.Decision{
+			Behavior:     permission.BehaviorAsk,
+			Message:      reason,
+			BypassImmune: true,
+		}
+	}
+
 	// Step 7: AcceptEdits mode allows remaining commands
 	if ctx != nil && ctx.Mode == permission.ModeAcceptEdits {
 		return permission.Decision{Behavior: permission.BehaviorAllow}

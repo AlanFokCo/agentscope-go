@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
 )
 
@@ -197,7 +199,26 @@ func TestCORS(t *testing.T) {
 
 // --- helpers ---
 
+// stubChatModel is a no-op ChatModel so the session factory has a non-nil model
+// (NewUnifiedAgent fails fast on nil). The service tests never drive a reply.
+type stubChatModel struct{}
+
+func (stubChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts ...model.CallOption) (*model.ChatResponse, error) {
+	return &model.ChatResponse{}, nil
+}
+
+func (stubChatModel) ChatStream(ctx context.Context, msgs []*message.Msg, opts ...model.CallOption) (<-chan model.ChatResponse, error) {
+	ch := make(chan model.ChatResponse)
+	close(ch)
+	return ch, nil
+}
+
+func (stubChatModel) CountTokens(msgs []*message.Msg, tools []model.ToolSchema) int { return 0 }
+
 func testFactory(name, prompt string, cm model.ChatModel) *agent.UnifiedAgent {
+	if cm == nil {
+		cm = stubChatModel{}
+	}
 	return agent.NewUnifiedAgent(name, prompt, cm)
 }
 

@@ -131,7 +131,8 @@ var ReadOnlyCommands = map[string]bool{
 	"column": true,
 	"md5sum": true, "sha256sum": true, "sha1sum": true,
 	"xxd": true, "hexdump": true, "od": true,
-	"curl": true, "wget": true, // read-only fetches
+	// curl/wget are intentionally NOT read-only: they enable network egress
+	// (SSRF to cloud metadata endpoints, data exfiltration, remote payload fetch).
 	"ping": true, "traceroute": true, "nslookup": true, "dig": true, "host": true,
 	"ip": true, "ifconfig": true, "netstat": true, "ss": true,
 	"realpath": true, "basename": true, "dirname": true, "readlink": true,
@@ -167,6 +168,13 @@ func IsReadOnlyCommand(cmd string) bool {
 	f, err := parseBashAST(cmd)
 	if err != nil {
 		return false // can't parse => not safe to assume read-only
+	}
+
+	// A command that redirects output to a file is never read-only, even if the
+	// executable itself is (e.g. `cat x > /etc/passwd`). File-descriptor
+	// duplications (2>&1) and input redirects are ignored.
+	if len(extractWriteRedirectTargets(f)) > 0 {
+		return false
 	}
 
 	allReadOnly := true
@@ -208,6 +216,89 @@ func IsReadOnlyCommand(cmd string) bool {
 
 	return hasCommands && allReadOnly
 }
+
+// isWriteRedirOp reports whether a redirection operator writes to its file target.
+func isWriteRedirOp(op syntax.RedirOperator) bool {
+	switch op {
+	case syntax.RdrOut, syntax.AppOut, syntax.RdrInOut,
+		syntax.RdrClob, syntax.AppClob,
+		syntax.RdrAll, syntax.RdrAllClob, syntax.AppAll, syntax.AppAllClob:
+		return true
+	}
+	return false
+}
+
+// isAllDigits reports whether s is a non-empty run of ASCII digits (a file
+// descriptor number such as the "1" in `2>&1`).
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// extractWriteRedirectTargets returns the file targets of output redirections in
+// cmd's AST. File-descriptor duplications (e.g. `2>&1`) and input redirections
+// (`<`, heredocs) are ignored. A write to a non-literal target (e.g. `> $LOG`)
+// is represented by an empty string so callers can decide how conservative to be.
+func extractWriteRedirectTargets(f *syntax.File) []string {
+	var targets []string
+	syntax.Walk(f, func(node syntax.Node) bool {
+		stmt, ok := node.(*syntax.Stmt)
+		if !ok {
+			return true
+		}
+		for _, r := range stmt.Redirs {
+			if r == nil || r.Word == nil {
+				continue
+			}
+			switch {
+			case isWriteRedirOp(r.Op):
+				targets = append(targets, extractWordLiteral(r.Word))
+			case r.Op == syntax.DplOut:
+				// `>&x`: a file target unless x is a bare fd number (e.g. 2>&1).
+				if w := extractWordLiteral(r.Word); w != "" && !isAllDigits(w) {
+					targets = append(targets, w)
+				}
+			}
+		}
+		return true
+	})
+	return targets
+}
+
+// CheckDangerousRedirect reports whether cmd redirects output to a dangerous
+// path — a sensitive dotfile/config (via CheckDangerousPath) or a system
+// directory (via isSystemPath). Non-literal targets are left to the normal
+// permission flow rather than flagged here to avoid false positives.
+func CheckDangerousRedirect(cmd string) (bool, string) {
+	if isWindowsShell() {
+		return false, "" // Windows redirects covered by PowerShell dangerous patterns
+	}
+	f, err := parseBashAST(cmd)
+	if err != nil {
+		return false, ""
+	}
+	for _, target := range extractWriteRedirectTargets(f) {
+		if target == "" {
+			continue
+		}
+		if dangerous, reason := CheckDangerousPath(target); dangerous {
+			return true, reason
+		}
+		if isSystemPath(target) {
+			return true, fmt.Sprintf("output redirected to system path %q", target)
+		}
+	}
+	return false, ""
+}
+
+// CheckInjectionRisk detects potentially dangerous shell constructs:
 
 // CheckInjectionRisk detects potentially dangerous shell constructs:
 // command substitution $(...) or `...`, process substitution <(...) or >(...),

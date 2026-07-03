@@ -46,10 +46,16 @@ func NewStdioClient(ctx context.Context, cfg *StdioConfig) (*StdioClient, error)
 		return nil, fmt.Errorf("mcp stdio: start: %w", err)
 	}
 
+	// The default bufio.Scanner token limit is 64 KiB; a single tool result
+	// larger than that (common with base64-encoded images) would permanently
+	// error the scanner and kill the client. Allow up to 10 MiB per message.
+	sc := bufio.NewScanner(stdout)
+	sc.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+
 	c := &StdioClient{
 		cmd:    cmd,
 		stdin:  stdin,
-		stdout: bufio.NewScanner(stdout),
+		stdout: sc,
 		nextID: 1,
 	}
 

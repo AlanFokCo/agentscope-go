@@ -1,11 +1,18 @@
 package permission
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
 // Engine evaluates tool execution requests against configured permission rules.
 // Each PermissionMode has its own check method so mode policies are
 // self-contained and readable in isolation.
+//
+// An Engine is safe for concurrent use: AddRule takes a write lock and the
+// CheckPermission family takes a read lock over the rule maps.
 type Engine struct {
+	mu      sync.RWMutex
 	Context *Context
 }
 
@@ -16,6 +23,8 @@ func NewEngine(ctx *Context) *Engine {
 
 // AddRule adds a permission rule to the engine's context.
 func (e *Engine) AddRule(rule Rule) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	switch rule.Behavior {
 	case BehaviorAllow:
 		e.Context.AllowRules[rule.ToolName] = append(e.Context.AllowRules[rule.ToolName], rule)
@@ -28,6 +37,8 @@ func (e *Engine) AddRule(rule Rule) {
 
 // CheckPermission evaluates a tool execution request and returns a Decision.
 func (e *Engine) CheckPermission(tool Checker, input map[string]any) (Decision, error) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	switch e.Context.Mode {
 	case ModeDefault:
 		return e.checkDefault(tool, input), nil

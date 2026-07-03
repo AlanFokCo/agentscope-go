@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
@@ -10,6 +11,7 @@ import (
 
 // MsgHub manages message routing between multiple agents, conceptually similar to Python's MsgHub.
 type MsgHub struct {
+	mu     sync.RWMutex
 	agents map[string]agent.Agent
 }
 
@@ -23,16 +25,29 @@ func (h *MsgHub) Register(name string, a agent.Agent) {
 	if a == nil || name == "" {
 		return
 	}
+	h.mu.Lock()
 	h.agents[name] = a
+	h.mu.Unlock()
 }
 
 func (h *MsgHub) Get(name string) agent.Agent {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	return h.agents[name]
 }
 
 // Broadcast sends the message to all registered agents via their Observe method.
 func (h *MsgHub) Broadcast(ctx context.Context, msg *message.Msg) error {
+	// Snapshot under the read lock so Observe (which may be slow or re-enter the
+	// hub) runs without holding it.
+	h.mu.RLock()
+	agents := make([]agent.Agent, 0, len(h.agents))
 	for _, a := range h.agents {
+		agents = append(agents, a)
+	}
+	h.mu.RUnlock()
+
+	for _, a := range agents {
 		if err := a.Observe(ctx, []*message.Msg{msg}); err != nil {
 			return err
 		}
@@ -47,8 +62,10 @@ func (h *MsgHub) RequestReply(
 	to string,
 	msg *message.Msg,
 ) (*message.Msg, error) {
+	h.mu.RLock()
 	src := h.agents[from]
 	dst := h.agents[to]
+	h.mu.RUnlock()
 	if dst == nil {
 		return nil, fmt.Errorf("msghub: agent %q not found", to)
 	}

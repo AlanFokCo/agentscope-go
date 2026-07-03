@@ -161,11 +161,21 @@ type toolResultBlockJSON struct {
 
 func (b toolResultBlockJSON) toBlock() ToolResultBlock {
 	var output any
-	var s string
-	if err := json.Unmarshal(b.Output, &s); err == nil {
-		output = s
-	} else {
-		output = string(b.Output)
+	switch {
+	case len(b.Output) == 0:
+		output = ""
+	default:
+		// Try a plain string first (the common case).
+		var s string
+		if err := json.Unmarshal(b.Output, &s); err == nil {
+			output = s
+		} else if blocks, err := UnmarshalContentBlocks(b.Output); err == nil {
+			// Structured tool output (e.g. text + image) must round-trip as
+			// []ContentBlock, not degrade into a raw JSON string.
+			output = blocks
+		} else {
+			output = string(b.Output)
+		}
 	}
 	return ToolResultBlock{
 		Type:     b.Type,

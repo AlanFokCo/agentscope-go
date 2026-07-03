@@ -188,7 +188,17 @@ func WithLoopHooks(hooks ...loop.Hook) AgentOption {
 }
 
 // NewUnifiedAgent creates the v2 unified agent.
+//
+// It panics if name is empty or model is nil: both are programmer errors that
+// would otherwise surface as an obscure nil-dereference deep inside the reply
+// loop. (This mirrors message.NewMsg, which also panics on invalid construction.)
 func NewUnifiedAgent(name, systemPrompt string, m model.ChatModel, opts ...AgentOption) *UnifiedAgent {
+	if name == "" {
+		panic("agent: NewUnifiedAgent requires a non-empty name")
+	}
+	if m == nil {
+		panic("agent: NewUnifiedAgent requires a non-nil model")
+	}
 	a := &UnifiedAgent{
 		name:         name,
 		systemPrompt: systemPrompt,

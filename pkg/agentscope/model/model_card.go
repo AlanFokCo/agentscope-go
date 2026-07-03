@@ -7,6 +7,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -87,65 +88,83 @@ func (c *ModelCard) SupportsVideo() bool {
 //go:embed models
 var modelsFS embed.FS
 
+// embeddedModelCards is the parsed, sorted set of all embedded model cards. The
+// embedded FS is immutable at runtime, so it is parsed exactly once (previously
+// every ListModels/GetModelCard call re-read and re-parsed ~50 YAML files, and
+// GetModelCard sits on the reply hot path via context compression).
+var (
+	embeddedModelCardsOnce sync.Once
+	embeddedModelCards     []ModelCard
+)
+
+func loadEmbeddedModelCards() []ModelCard {
+	embeddedModelCardsOnce.Do(func() {
+		entries, err := fs.ReadDir(modelsFS, "models")
+		if err != nil {
+			return
+		}
+		var cards []ModelCard
+		for _, providerDir := range entries {
+			if !providerDir.IsDir() {
+				continue
+			}
+			provider := providerDir.Name()
+			yamlFiles, err := fs.ReadDir(modelsFS, path.Join("models", provider))
+			if err != nil {
+				continue
+			}
+			for _, f := range yamlFiles {
+				if f.IsDir() || !strings.HasSuffix(f.Name(), ".yaml") {
+					continue
+				}
+				card, err := loadModelCard(modelsFS, path.Join("models", provider, f.Name()), provider)
+				if err != nil {
+					continue
+				}
+				cards = append(cards, *card)
+			}
+		}
+		sort.Slice(cards, func(i, j int) bool {
+			if cards[i].Provider != cards[j].Provider {
+				return cards[i].Provider < cards[j].Provider
+			}
+			return cards[i].Name < cards[j].Name
+		})
+		embeddedModelCards = cards
+	})
+	return embeddedModelCards
+}
+
 // ListModels returns all embedded model cards, optionally filtered by provider.
 // If no provider is specified, all models are returned.
-// Models are sorted by provider then name.
+// Models are sorted by provider then name. The returned slice is a fresh copy;
+// callers may mutate it without affecting the shared cache.
 func ListModels(providers ...string) []ModelCard {
+	all := loadEmbeddedModelCards()
+
 	providerSet := make(map[string]bool, len(providers))
 	for _, p := range providers {
 		providerSet[strings.ToLower(p)] = true
 	}
 
-	var cards []ModelCard
-
-	entries, err := fs.ReadDir(modelsFS, "models")
-	if err != nil {
-		return nil
+	cards := make([]ModelCard, 0, len(all))
+	for _, c := range all {
+		if len(providerSet) > 0 && !providerSet[c.Provider] {
+			continue
+		}
+		cards = append(cards, c)
 	}
-
-	for _, providerDir := range entries {
-		if !providerDir.IsDir() {
-			continue
-		}
-		provider := providerDir.Name()
-		if len(providerSet) > 0 && !providerSet[provider] {
-			continue
-		}
-
-		yamlFiles, err := fs.ReadDir(modelsFS, path.Join("models", provider))
-		if err != nil {
-			continue
-		}
-
-		for _, f := range yamlFiles {
-			if f.IsDir() || !strings.HasSuffix(f.Name(), ".yaml") {
-				continue
-			}
-			card, err := loadModelCard(modelsFS, path.Join("models", provider, f.Name()), provider)
-			if err != nil {
-				continue
-			}
-			cards = append(cards, *card)
-		}
-	}
-
-	sort.Slice(cards, func(i, j int) bool {
-		if cards[i].Provider != cards[j].Provider {
-			return cards[i].Provider < cards[j].Provider
-		}
-		return cards[i].Name < cards[j].Name
-	})
-
 	return cards
 }
 
 // GetModelCard returns a specific model card by name.
-// Returns an error if the model is not found.
+// Returns an error if the model is not found. The returned pointer references a
+// copy, so mutating it does not corrupt the shared cache.
 func GetModelCard(name string) (*ModelCard, error) {
-	cards := ListModels()
-	for i := range cards {
-		if cards[i].Name == name {
-			return &cards[i], nil
+	for _, c := range loadEmbeddedModelCards() {
+		if c.Name == name {
+			cp := c
+			return &cp, nil
 		}
 	}
 	return nil, fmt.Errorf("model card %q not found", name)

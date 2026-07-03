@@ -42,6 +42,29 @@ var DangerousDirectories = []string{
 	".ssh",
 }
 
+// systemPathPrefixes are absolute directory prefixes that must never be written
+// to (system integrity + persistence surfaces such as cron). /dev and /var are
+// intentionally excluded: `> /dev/null` is ubiquitous, /var holds temp/logs, and
+// dangerous device writes like `> /dev/sda` are caught by DangerousCommandPatterns.
+var systemPathPrefixes = []string{
+	"/etc", "/usr", "/bin", "/sbin", "/lib", "/lib64",
+	"/boot", "/sys", "/proc", "/root",
+}
+
+// isSystemPath reports whether p is, or is under, a protected system directory.
+func isSystemPath(p string) bool {
+	clean := filepath.Clean(p)
+	if clean == "/" {
+		return true
+	}
+	for _, prefix := range systemPathPrefixes {
+		if clean == prefix || strings.HasPrefix(clean, prefix+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 // DangerousCommandPatterns lists command patterns (word-boundary aware) that can
 // cause data loss, system damage, or security issues.
 var DangerousCommandPatterns = []string{
