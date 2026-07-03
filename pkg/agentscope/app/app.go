@@ -11,6 +11,7 @@ import (
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/credential"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/internal/httpsec"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/messagebus"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/middleware"
@@ -91,6 +92,10 @@ func CreateApp(cfg *AppConfig) (*App, error) {
 }
 
 func (a *App) registerRoutes() {
+	// Liveness/readiness for load balancers and orchestrators.
+	a.mux.HandleFunc("GET /healthz", healthzHandler)
+	a.mux.HandleFunc("GET /readyz", healthzHandler)
+
 	// Session management
 	a.mux.HandleFunc("POST /api/session", a.handleCreateSession)
 	a.mux.HandleFunc("GET /api/session", a.handleListSessions)
@@ -134,12 +139,19 @@ func (a *App) Handler() http.Handler {
 func (a *App) ListenAndServe() error {
 	a.srv = &http.Server{
 		Addr:         a.cfg.Addr,
-		Handler:      a.Handler(),
+		Handler:      httpsec.LimitBody(a.Handler(), 0),
 		ReadTimeout:  a.cfg.ReadTimeout,
 		WriteTimeout: a.cfg.WriteTimeout,
 	}
+	httpsec.Harden(a.srv)
 	logrus.WithField("addr", a.cfg.Addr).Info("app: starting server")
 	return a.srv.ListenAndServe()
+}
+
+// healthzHandler is a minimal liveness/readiness probe.
+func healthzHandler(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ok"))
 }
 
 // Shutdown gracefully shuts down the server and all managed resources.

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/internal/httpsec"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
 )
@@ -38,6 +40,7 @@ type Service struct {
 
 	mu       sync.RWMutex
 	sessions map[string]*sessionState
+	srv      *http.Server
 }
 
 type sessionState struct {
@@ -81,14 +84,37 @@ func (s *Service) Handler() http.Handler {
 func (s *Service) ListenAndServe() error {
 	srv := &http.Server{
 		Addr:         s.cfg.Addr,
-		Handler:      s.Handler(),
+		Handler:      httpsec.LimitBody(s.Handler(), 0),
 		ReadTimeout:  s.cfg.ReadTimeout,
 		WriteTimeout: s.cfg.WriteTimeout,
 	}
+	httpsec.Harden(srv)
+	s.mu.Lock()
+	s.srv = srv
+	s.mu.Unlock()
 	return srv.ListenAndServe()
 }
 
+// Shutdown gracefully stops the server, draining in-flight requests.
+func (s *Service) Shutdown(ctx context.Context) error {
+	s.mu.RLock()
+	srv := s.srv
+	s.mu.RUnlock()
+	if srv == nil {
+		return nil
+	}
+	return srv.Shutdown(ctx)
+}
+
 func (s *Service) registerRoutes() {
+	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+	s.mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
 	s.mux.HandleFunc("POST /api/chat", s.handleChat)
 	s.mux.HandleFunc("GET /api/chat/stream", s.handleChatStream)
 	s.mux.HandleFunc("POST /api/session", s.handleCreateSession)
