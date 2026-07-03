@@ -62,7 +62,9 @@ func (t *webFetchTool) Execute(ctx context.Context, args map[string]any) (*ToolR
 
 	client := t.client
 	if client == nil {
-		client = &http.Client{Timeout: timeout}
+		// Default client blocks SSRF targets (loopback/private/link-local, incl.
+		// the cloud-metadata endpoint) at dial time, across redirects.
+		client = newSSRFSafeClient(timeout)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlStr, nil)

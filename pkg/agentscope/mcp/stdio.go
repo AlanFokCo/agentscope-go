@@ -29,9 +29,10 @@ func NewStdioClient(ctx context.Context, cfg *StdioConfig) (*StdioClient, error)
 	if cfg.WorkDir != "" {
 		cmd.Dir = cfg.WorkDir
 	}
-	if len(cfg.Env) > 0 {
-		cmd.Env = cfg.Env
-	}
+	// Do NOT inherit the full parent environment (it may contain API keys and
+	// other secrets). Start from a minimal safe allowlist and layer any
+	// caller-provided vars on top (later entries win for duplicate keys).
+	cmd.Env = append(minimalMCPEnv(), cfg.Env...)
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

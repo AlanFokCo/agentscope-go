@@ -3,6 +3,7 @@ package tool
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/exception"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
@@ -13,10 +14,12 @@ import (
 // Orchestrator composes permission checking and tool execution into a pipeline.
 // It can be adapted to loop.ToolExecutor via AsToolExecutor.
 type Orchestrator struct {
-	toolkit      *Toolkit
-	permEngine   *permission.Engine
-	sandbox      sandbox.Sandbox
-	onPermDenied func(string, permission.Decision)
+	toolkit            *Toolkit
+	permEngine         *permission.Engine
+	sandbox            sandbox.Sandbox
+	onPermDenied       func(string, permission.Decision)
+	defaultToolTimeout time.Duration
+	maxToolResultBytes int
 }
 
 // OrchestratorConfig holds the configuration for creating an Orchestrator.
@@ -25,6 +28,12 @@ type OrchestratorConfig struct {
 	PermEngine         *permission.Engine
 	Sandbox            sandbox.Sandbox
 	OnPermissionDenied func(toolName string, decision permission.Decision)
+
+	// DefaultToolTimeout bounds each tool execution. Zero means no timeout (a
+	// blocking custom/MCP tool could otherwise hang the whole loop).
+	DefaultToolTimeout time.Duration
+	// MaxToolResultBytes caps the text size of a tool result. Zero means no cap.
+	MaxToolResultBytes int
 }
 
 // OrchestratorResult pairs a tool call with its execution result or error.
@@ -37,10 +46,12 @@ type OrchestratorResult struct {
 // NewOrchestrator creates an Orchestrator from the given config.
 func NewOrchestrator(cfg OrchestratorConfig) *Orchestrator {
 	return &Orchestrator{
-		toolkit:      cfg.Toolkit,
-		permEngine:   cfg.PermEngine,
-		sandbox:      cfg.Sandbox,
-		onPermDenied: cfg.OnPermissionDenied,
+		toolkit:            cfg.Toolkit,
+		permEngine:         cfg.PermEngine,
+		sandbox:            cfg.Sandbox,
+		onPermDenied:       cfg.OnPermissionDenied,
+		defaultToolTimeout: cfg.DefaultToolTimeout,
+		maxToolResultBytes: cfg.MaxToolResultBytes,
 	}
 }
 
@@ -85,8 +96,48 @@ func (o *Orchestrator) Execute(ctx context.Context, call message.ToolCallBlock) 
 		}
 	}
 
-	// 4. Execute via toolkit (handles validation + middleware)
-	return o.toolkit.CallTool(ctx, call.Name, input)
+	// 4. Execute via toolkit (handles validation + middleware), bounded by an
+	// optional per-tool timeout and result-size cap.
+	execCtx := ctx
+	if o.defaultToolTimeout > 0 {
+		var cancel context.CancelFunc
+		execCtx, cancel = context.WithTimeout(ctx, o.defaultToolTimeout)
+		defer cancel()
+	}
+	resp, err := o.toolkit.CallTool(execCtx, call.Name, input)
+	if err != nil {
+		return resp, err
+	}
+	return truncateToolResponse(resp, o.maxToolResultBytes), nil
+}
+
+// truncateToolResponse caps the total text length of a tool response at max
+// bytes (max <= 0 disables the cap), appending a truncation notice.
+func truncateToolResponse(resp *ToolResponse, max int) *ToolResponse {
+	if resp == nil || max <= 0 {
+		return resp
+	}
+	total := 0
+	for i, b := range resp.Content {
+		tb, ok := b.(message.TextBlock)
+		if !ok {
+			continue
+		}
+		if total+len(tb.Text) <= max {
+			total += len(tb.Text)
+			continue
+		}
+		keep := max - total
+		if keep < 0 {
+			keep = 0
+		}
+		over := total + len(tb.Text) - max
+		tb.Text = tb.Text[:keep] + fmt.Sprintf("\n... [truncated, %d bytes over %d-byte limit]", over, max)
+		resp.Content[i] = tb
+		resp.Content = resp.Content[:i+1] // drop any blocks past the cap
+		break
+	}
+	return resp
 }
 
 // BatchExecute runs each call through Execute sequentially and collects results.
