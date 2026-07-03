@@ -44,8 +44,9 @@ func (a *serverAgent) Reply(ctx context.Context, args ...any) (*message.Msg, err
 	if err != nil {
 		return nil, err
 	}
-	_ = a.Print(ctx, resp.ToMsg("assistant"))
-	return resp.ToMsg("assistant"), nil
+	reply := message.AssistantMsg("assistant", resp.Content)
+	_ = a.Print(ctx, reply)
+	return reply, nil
 }
 
 func (a *serverAgent) Observe(ctx context.Context, msgs []*message.Msg) error {

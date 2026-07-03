@@ -198,7 +198,7 @@ a := agent.NewUnifiedAgent("bot", "...", cm,
 
 ## Examples
 
-25 examples in `examples/`. Run any with `go run ./examples/<name>`.
+26 examples in `examples/`. Run any with `go run ./examples/<name>`.
 
 | Example | Description |
 |---------|-------------|
@@ -206,8 +206,8 @@ a := agent.NewUnifiedAgent("bot", "...", cm,
 | `simple` | Minimal agent + single chat call |
 | `agent_v2` | UnifiedAgent with native API tool calling |
 | `streaming` | Real-time streaming via `ReplyStream` + event channel |
-| `react_tool` | Legacy ReActAgent with custom tool |
-| `react_builtin_tools` | ReActAgent with built-in Bash/Read tools |
+| `react_tool` | UnifiedAgent with custom FunctionTool |
+| `react_builtin_tools` | UnifiedAgent with enhanced built-in toolkit (bash, read, write, edit, glob, grep) |
 | **Model API** | |
 | `model_call` | Raw model API: streaming + two-round tool calling + structured output |
 | `structured_output` | Force JSON Schema-compliant output via `GenerateStructuredOutput` |
@@ -220,6 +220,7 @@ a := agent.NewUnifiedAgent("bot", "...", cm,
 | `middleware` | Custom logging middleware (model call + tool execution hooks) |
 | `permission` | Permission engine: Explore / Default / Bypass modes |
 | `tracing` | OpenTelemetry-style tracing with nested spans |
+| `agent_loop` | v3 agent loop with MetricsHook and InMemoryProvider |
 | `embedding` | Text embedding + cosine similarity matrix |
 | `long_term_memory` | Cross-session memory middleware (3 modes) |
 | `rag_react` | RAG with in-memory index + knowledge base |
@@ -238,7 +239,7 @@ a := agent.NewUnifiedAgent("bot", "...", cm,
 ```
 pkg/agentscope/
 ├── config.go              # Init, logging, ID factory
-├── agent/                 # Agent interface + UnifiedAgent, ReActAgent, UserAgent, A2AAgent
+├── agent/                 # Agent interface + UnifiedAgent, UserAgent, A2AAgent
 ├── model/                 # ChatModel interface + 9 provider adapters + 51 model cards
 ├── tool/                  # Tool interface + FunctionTool + 10 built-in tools + safety analysis
 ├── message/               # Msg + ContentBlock (text, thinking, tool_call, tool_result, data, hint)
@@ -262,9 +263,14 @@ pkg/agentscope/
 ├── skill/                 # Reusable skill system + SkillManager registry
 ├── memory/                # Conversation memory + compression
 ├── messagebus/            # InMemory + Redis pub/sub + registry
-├── protocol/              # LoopState, LoopEvent, ModelCallResult — shared agent-loop types
+├── a2a/                   # Agent-to-Agent protocol types + HTTP client
+├── prompt/                # Composable system prompt assembly from named sections
+├── resilience/            # Circuit breaker + rate limiter wrappers for ChatModel
+├── realtime/              # Realtime streaming interface + echo client
+├── logging/               # Structured logging handlers and initialization
+├── protocol/              # LoopState, LoopEvent — shared agent-loop types
 ├── loop/                  # Configurable agent loop (model call → tool exec → iterate)
-├── runtime/               # SessionEngine, Harness — manages agent lifecycle
+├── runtime/               # SessionEngine, AgentManager, BudgetTracker, AgentPool
 ├── metrics/               # Counter/Histogram interfaces + InMemoryProvider + MetricsHook
 ├── platform/              # Cross-platform shell detection + PowerShell safety checks
 ├── sandbox/               # Sandbox execution policies (Allow/Deny/AskUser)
@@ -274,6 +280,15 @@ pkg/agentscope/
 
 ## Documentation
 
+Detailed documentation is available in the [`docs/`](docs/) directory:
+
+- [Getting Started](docs/getting-started.md) — Installation, first agent, environment setup
+- [Architecture](docs/architecture.md) — Package structure, core concepts, data flow
+- [Model Providers](docs/model-providers.md) — Configure 9 LLM providers with examples
+- [Tools](docs/tools.md) — Built-in tools, custom functions, permissions
+- [Middleware](docs/middleware.md) — 5-hook system, tracing, budget, memory
+- [Examples](docs/examples.md) — Full catalog of 26 runnable examples
+- [Deployment](docs/deployment.md) — HTTP service, sandboxing, production checklist
 
 ## Contributing
 
@@ -288,13 +303,3 @@ Apache License 2.0 — see [LICENSE](./LICENSE) for details.
 If you find AgentScope helpful, please cite our papers:
 
 - [AgentScope: A Flexible yet Robust Multi-Agent Platform](https://arxiv.org/abs/2402.14034)
-
-Detailed documentation is available in the [`docs/`](docs/) directory:
-
-- [Getting Started](docs/getting-started.md) — Installation, first agent, environment setup
-- [Architecture](docs/architecture.md) — Package structure, core concepts, data flow
-- [Model Providers](docs/model-providers.md) — Configure 9 LLM providers with examples
-- [Tools](docs/tools.md) — Built-in tools, custom functions, permissions
-- [Middleware](docs/middleware.md) — 5-hook system, tracing, budget, memory
-- [Examples](docs/examples.md) — Full catalog of 25 runnable examples
-- [Deployment](docs/deployment.md) — HTTP service, sandboxing, production checklist

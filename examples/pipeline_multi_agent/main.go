@@ -40,8 +40,9 @@ func (a *EchoLLMAgent) Reply(ctx context.Context, args ...any) (*message.Msg, er
 	if err != nil {
 		return nil, err
 	}
-	_ = a.Print(ctx, resp.ToMsg("assistant"))
-	return resp.ToMsg("assistant"), nil
+	reply := message.AssistantMsg("assistant", resp.Content)
+	_ = a.Print(ctx, reply)
+	return reply, nil
 }
 
 func (a *EchoLLMAgent) Observe(ctx context.Context, msgs []*message.Msg) error {

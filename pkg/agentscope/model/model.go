@@ -249,12 +249,6 @@ func containsLower(s, sub string) bool {
 	return false
 }
 
-// Deprecated: ChatStream interface. Use the <-chan ChatResponse return from ChatModel.ChatStream instead.
-type ChatStream interface {
-	Recv() (*message.Msg, error)
-	Close() error
-}
-
 // countTokensByBytes estimates tokens from byte length across all block types.
 func countTokensByBytes(msgs []*message.Msg, tools []ToolSchema) int {
 	total := 0

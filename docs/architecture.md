@@ -12,8 +12,8 @@ pkg/agentscope/
 │
 ├── agent/                 # Agent abstractions
 │   ├── agent.go           # Agent interface + AgentBase (identity, hooks, subscribers)
-│   ├── unified_agent.go   # UnifiedAgent (v2) — native tool calling, streaming, middleware
-│   ├── react_agent.go     # ReActAgent (v1) — text-based tool calling
+│   ├── unified_agent.go   # UnifiedAgent — native tool calling, streaming, middleware
+│   ├── loop_bridge.go     # UnifiedAgentRunner — bridges UnifiedAgent to loop.Loop
 │   ├── user_agent.go      # UserAgent — human input via InputProvider
 │   ├── a2a_agent.go       # A2AAgent — remote agent proxy via HTTP
 │   ├── compress.go        # Context compression (trigger/reserve ratios, structured summary)
@@ -79,8 +79,21 @@ pkg/agentscope/
 ├── schedule/              # InMemoryScheduler for periodic tasks
 ├── messagebus/            # InMemory + Redis pub/sub + registry operations
 ├── session/               # Session KV store
-├── skill/                 # Reusable skill system
+├── skill/                 # Reusable skill system + SkillManager registry
 ├── memory/                # Conversation memory + compression
+├── a2a/                   # Agent-to-Agent protocol types + HTTP client
+├── prompt/                # Composable system prompt assembly from named sections
+├── resilience/            # Circuit breaker + rate limiter wrappers for ChatModel
+├── realtime/              # Realtime streaming interface + echo client
+├── logging/               # Structured logging handlers and initialization
+│
+├── protocol/              # Shared loop types: LoopState, LoopEvent
+├── loop/                  # Configurable agent loop (model → inspect → act → iterate)
+├── runtime/               # SessionEngine, AgentManager, BudgetTracker, AgentPool
+├── metrics/               # Counter/Histogram interfaces + InMemoryProvider + MetricsHook
+├── platform/              # Cross-platform shell detection + PowerShell safety checks
+├── sandbox/               # Sandbox execution policies (Allow/Deny/AskUser)
+├── errors/                # Typed error hierarchy (Retriable, Throttled, PermissionDenied, Timeout)
 └── internal/              # httpx (HTTP+SSE), jsonx (JSON repair)
 ```
 
@@ -107,6 +120,45 @@ The `Agent` interface defines five methods: `ID()`, `Reply()`, `Observe()`, `Int
 ### Middleware
 
 Five-hook onion chain: `OnReply` wraps the entire reply, `OnModelCall` wraps each API call, `OnActing` wraps tool execution, `OnSystemPrompt` transforms the system prompt, `OnCompressContext` wraps compression. Middleware can also provide additional tools via `ListTools()`.
+
+### Agent Loop (v3)
+
+`loop.Loop` is a lower-level reasoning engine that drives the Reason → Inspect → Act state machine. It takes pluggable components:
+
+- **`ModelCaller`** — wraps the LLM API call
+- **`ToolExecutor`** — executes tool calls (single or batch)
+- **`ContextManager`** — manages conversation history and compression
+- **`ToolSchemaProvider`** — provides tool schemas for model calls
+- **`Hook`** — lifecycle notifications (before/after model call, before/after tool exec, state transitions, loop start/end)
+
+`Run()` returns `<-chan event.Event` for streaming; `RunSync()` blocks and returns the final `ChatResponse`. `UnifiedAgentRunner` bridges `UnifiedAgent` to `loop.Loop` via adapter types.
+
+### Runtime (v3)
+
+Session lifecycle management:
+
+- **`SessionEngine`** — single-session manager with `SubmitMessage()`, interrupt support, and budget tracking
+- **`Turn`** — wraps a single loop execution with hooks and budget enforcement
+- **`AgentManager`** — spawns/stops subagents with concurrency limits via `BudgetTracker`
+- **`AgentPool`** — worker pool pattern for parallel agent execution
+- **`BudgetTracker`** — enforces limits on turns, tokens, duration, and concurrency
+
+### Metrics (v3)
+
+Provider-agnostic instrumentation:
+
+- **`Counter`** / **`Histogram`** — metric interfaces (no external dependencies)
+- **`InMemoryProvider`** — stores metrics in memory with `Snapshot()` for testing
+- **`MetricsHook`** — implements `loop.Hook` to automatically track model calls, tool executions, loop iterations, and active loops
+
+### Sandbox (v3)
+
+Sandboxed command execution:
+
+- **`Policy`** — configures filesystem, network, process, and resource restrictions
+- **`Sandbox`** interface — `Execute()`, `Setup()`, `Teardown()`
+- **`NoopSandbox`** — passthrough execution with no restrictions (default)
+- Provider registration via `RegisterProvider()` / `AutoSelect()`
 
 ## Data Flow
 
@@ -144,6 +196,8 @@ UnifiedAgent.Reply(ctx, input)
     ▼
 ChatResponse (Content: []ContentBlock, Usage, Metadata)
 ```
+
+The v3 `loop.Loop` provides the same state machine at a lower level. `UnifiedAgentRunner` bridges between the two: it wraps the agent's model and toolkit into `ModelCaller` / `ToolExecutor` adapters, letting `loop.Loop` drive the cycle while `UnifiedAgent` handles middleware, permissions, and HITL.
 
 ## Design Principles
 

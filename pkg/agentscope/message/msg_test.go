@@ -270,13 +270,6 @@ func TestFindBlockByTypeAndID(t *testing.T) {
 	}
 }
 
-func TestDeprecatedAliases(t *testing.T) {
-	// ToolUseBlock should be an alias for ToolCallBlock
-	var tu ToolUseBlock = ToolCallBlock{Type: "tool_call", ID: "tc1", Name: "test", State: ToolCallPending}
-	if tu.GetType() != ContentBlockToolCall {
-		t.Fatalf("expected tool_call type from alias, got %s", tu.GetType())
-	}
-}
 
 func TestUsage(t *testing.T) {
 	msg := AssistantMsg("bot", "reply")

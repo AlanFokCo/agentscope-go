@@ -100,37 +100,6 @@ func TestViewTextFileTool(t *testing.T) {
 	}
 }
 
-func TestNewBuiltinToolkit(t *testing.T) {
-	tk := NewBuiltinToolkit()
-	if tk == nil {
-		t.Fatal("nil toolkit")
-	}
-	if tk.Get("execute_shell_command") == nil {
-		t.Fatal("execute_shell_command not in toolkit")
-	}
-	if tk.Get("view_text_file") == nil {
-		t.Fatal("view_text_file not in toolkit")
-	}
-}
-
-func TestToolkitGetToolSchemas(t *testing.T) {
-	tk := NewBuiltinToolkit()
-	schemas := tk.GetToolSchemas()
-	if len(schemas) != 2 {
-		t.Fatalf("expected 2 schemas, got %d", len(schemas))
-	}
-	for _, s := range schemas {
-		if s.Type != "function" {
-			t.Errorf("expected type 'function', got %q", s.Type)
-		}
-		if s.Function.Name == "" {
-			t.Error("function name should not be empty")
-		}
-		if s.Function.Parameters == nil {
-			t.Error("function parameters should not be nil")
-		}
-	}
-}
 
 func TestFunctionTool(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"x":{"type":"number"},"y":{"type":"number"}},"required":["x","y"]}`)

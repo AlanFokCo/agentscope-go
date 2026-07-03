@@ -14,7 +14,7 @@
 //
 // The framework is organized into subpackages under pkg/agentscope/:
 //
-//   - agent: Agent interface and implementations (UnifiedAgent, ReActAgent, UserAgent, A2AAgent)
+//   - agent: Agent interface and implementations (UnifiedAgent, UserAgent, A2AAgent)
 //   - model: ChatModel interface with 9 provider adapters
 //   - tool: Tool interface with 10 built-in tools and safety analysis
 //   - message: Msg type with polymorphic ContentBlock variants
@@ -22,6 +22,18 @@
 //   - middleware: 5-hook onion chain for intercepting agent behavior
 //   - permission: Permission engine with 5 modes for tool execution control
 //   - pipeline: Sequential pipeline with MsgHub for multi-agent orchestration
+//   - loop: Universal agent loop with state machine and event streaming
+//   - runtime: Session engine, turn orchestration, and agent lifecycle management
+//   - metrics: Counter/Histogram interfaces with MetricsHook for loop instrumentation
+//   - protocol: Shared types for loop state, events, and results
+//   - sandbox: Sandbox execution policies (Allow/Deny/AskUser)
+//   - platform: Cross-platform shell detection and safety analysis
+//   - errors: Typed error hierarchy (Retriable, Throttled, PermissionDenied, Timeout)
+//   - skill: Reusable skill system with SkillManager registry
+//   - schedule: InMemoryScheduler for periodic agent task execution
+//   - team: Agent teams with leader/worker coordination
+//   - prompt: Composable system prompt assembly from named sections
+//   - resilience: Circuit breaker and rate limiter wrappers for ChatModel
 //
 // See the README and examples/ directory for comprehensive usage examples.
 package agentscope

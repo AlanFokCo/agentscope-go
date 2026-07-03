@@ -1,6 +1,6 @@
 # Examples
 
-25 runnable examples in `examples/`. Run any with:
+26 runnable examples in `examples/`. Run any with:
 
 ```bash
 export DASHSCOPE_API_KEY=sk-...  # or ANTHROPIC_API_KEY / OPENAI_API_KEY
@@ -14,8 +14,8 @@ go run ./examples/<name>
 | `simple` | Minimal custom agent with a single chat call | Yes |
 | `agent_v2` | UnifiedAgent with native API tool calling (get_weather) | Yes |
 | `streaming` | Real-time streaming via `ReplyStream` + event channel | Yes |
-| `react_tool` | Legacy ReActAgent with a custom sum_numbers tool | Yes |
-| `react_builtin_tools` | ReActAgent with built-in Bash/Read tools (lists files) | Yes |
+| `react_tool` | UnifiedAgent with a custom sum_numbers FunctionTool | Yes |
+| `react_builtin_tools` | UnifiedAgent with enhanced built-in toolkit (bash, read, write, edit, glob, grep) | Yes |
 
 ## Model API
 
@@ -36,6 +36,7 @@ go run ./examples/<name>
 | `middleware` | Custom logging middleware (model call + tool execution timing) | Yes |
 | `permission` | Permission engine demo: Explore / Default / Bypass modes | Yes |
 | `tracing` | OpenTelemetry-style tracing with nested spans | Yes |
+| `agent_loop` | v3 agent loop with MetricsHook and InMemoryProvider telemetry | Yes |
 | `embedding` | Text embedding vectors + cosine similarity matrix | Yes |
 | `long_term_memory` | Cross-session memory middleware with 3 modes | Yes |
 | `rag_react` | RAG with in-memory document index + knowledge base | Yes |

@@ -40,9 +40,9 @@ func (a *SimpleAgent) Reply(ctx context.Context, args ...any) (*message.Msg, err
 	if err != nil {
 		return nil, err
 	}
-	// Print the reply to stdout.
-	_ = a.Print(ctx, resp.ToMsg("assistant"))
-	return resp.ToMsg("assistant"), nil
+	reply := message.AssistantMsg("assistant", resp.Content)
+	_ = a.Print(ctx, reply)
+	return reply, nil
 }
 
 func (a *SimpleAgent) Observe(ctx context.Context, msgs []*message.Msg) error {
@@ -79,7 +79,7 @@ func loadChatModelFromEnv() (model.ChatModel, error) {
 	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
 		return model.NewAnthropicChatModel(&model.AnthropicConfig{
 			APIKey:          key,
-			Model:           "claude-3-opus-20240229",
+			Model:           "claude-sonnet-4-20250514",
 			MaxOutputTokens: 1024,
 		})
 	}
