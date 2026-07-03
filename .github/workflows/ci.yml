@@ -32,6 +32,18 @@ jobs:
       - name: Test
         run: go test -race -count=1 ./...
 
+      - name: Coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.go == '1.25'
+        run: |
+          go test -coverprofile=coverage.out ./... >/dev/null
+          go tool cover -func=coverage.out | tail -1
+
+      - name: Fuzz smoke (safety parsers)
+        if: matrix.os == 'ubuntu-latest' && matrix.go == '1.25'
+        run: |
+          go test -run=x -fuzz='FuzzBashSafety$' -fuzztime=30s ./pkg/agentscope/tool/
+          go test -run=x -fuzz='FuzzUnmarshalContentBlocks$' -fuzztime=30s ./pkg/agentscope/message/
+
       - name: Benchmark
         if: matrix.os == 'ubuntu-latest' && matrix.go == '1.25'
         run: go test -bench=. -benchmem ./pkg/agentscope/loop/
