@@ -68,9 +68,26 @@ func (t *Turn) run(ctx context.Context, input string, out chan<- event.Event) {
 		return
 	}
 
-	// Forward all events from the loop.
-	for ev := range t.cfg.Loop.Run(ctx, input) {
+	// Forward all events from the loop, enforcing the token/duration budget as
+	// events arrive. A cancelable child context lets us stop the loop the moment
+	// the budget is exceeded (previously only MaxTurns was enforced; MaxTokens
+	// and MaxDuration were dead config on this path).
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	for ev := range t.cfg.Loop.Run(runCtx, input) {
 		emitEvent(ctx, out, ev)
+		if t.cfg.Budget == nil {
+			continue
+		}
+		if mce, ok := ev.(event.ModelCallEndEvent); ok {
+			_ = t.cfg.Budget.AddTokens(mce.InputTokens + mce.OutputTokens)
+		}
+		if t.cfg.Budget.Exceeded() {
+			emitEvent(ctx, out, event.NewCustomEvent("", "turn.budget_exceeded",
+				map[string]any{"error": "budget exceeded (tokens or duration)"}))
+			cancel()
+			break
+		}
 	}
 
 	// Fire post-turn hook.
