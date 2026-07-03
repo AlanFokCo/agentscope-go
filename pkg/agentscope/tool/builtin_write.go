@@ -53,7 +53,7 @@ func (t *writeTool) Execute(ctx context.Context, args map[string]any) (*ToolResp
 		return NewErrorResponse(fmt.Errorf("content must be a string")), nil
 	}
 
-	abs, err := filepath.Abs(filepath.Clean(path))
+	abs, err := resolvePath(ctx, path)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("invalid path: %w", err)), nil
 	}

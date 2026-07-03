@@ -69,7 +69,7 @@ func (t *editTool) Execute(ctx context.Context, args map[string]any) (*ToolRespo
 		}
 	}
 
-	abs, err := filepath.Abs(filepath.Clean(path))
+	abs, err := resolvePath(ctx, path)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("invalid path: %w", err)), nil
 	}
