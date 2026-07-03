@@ -49,7 +49,7 @@ func (t *Turn) run(ctx context.Context, input string, out chan<- event.Event) {
 	// Fire pre-turn hook.
 	if t.cfg.Hooks != nil {
 		if err := t.cfg.Hooks.Fire(HookPreTurn, map[string]any{"turn_id": t.id, "input": input}); err != nil {
-			out <- event.NewCustomEvent("", "turn.hook_error", map[string]any{"error": err, "hook": "pre_turn"})
+			emitEvent(ctx, out, event.NewCustomEvent("", "turn.hook_error", map[string]any{"error": err, "hook": "pre_turn"}))
 			return
 		}
 	}
@@ -57,26 +57,26 @@ func (t *Turn) run(ctx context.Context, input string, out chan<- event.Event) {
 	// Check budget.
 	if t.cfg.Budget != nil {
 		if err := t.cfg.Budget.AddTurn(); err != nil {
-			out <- event.NewCustomEvent("", "turn.budget_exceeded", map[string]any{"error": err})
+			emitEvent(ctx, out, event.NewCustomEvent("", "turn.budget_exceeded", map[string]any{"error": err}))
 			return
 		}
 	}
 
 	// Guard against nil loop.
 	if t.cfg.Loop == nil {
-		out <- event.NewCustomEvent("", "turn.error", map[string]any{"error": "loop is nil"})
+		emitEvent(ctx, out, event.NewCustomEvent("", "turn.error", map[string]any{"error": "loop is nil"}))
 		return
 	}
 
 	// Forward all events from the loop.
 	for ev := range t.cfg.Loop.Run(ctx, input) {
-		out <- ev
+		emitEvent(ctx, out, ev)
 	}
 
 	// Fire post-turn hook.
 	if t.cfg.Hooks != nil {
 		if err := t.cfg.Hooks.Fire(HookPostTurn, map[string]any{"turn_id": t.id}); err != nil {
-			out <- event.NewCustomEvent("", "turn.hook_error", map[string]any{"error": err, "hook": "post_turn"})
+			emitEvent(ctx, out, event.NewCustomEvent("", "turn.hook_error", map[string]any{"error": err, "hook": "post_turn"}))
 		}
 	}
 }

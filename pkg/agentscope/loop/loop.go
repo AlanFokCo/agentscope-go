@@ -75,17 +75,38 @@ func (l *Loop) RunSync(ctx context.Context, input string) (*model.ChatResponse, 
 }
 
 // run is the core goroutine that drives the state machine.
+// emit sends ev on ch but never blocks past context cancellation. If ctx is
+// done it drops the event and returns; the run loop re-checks ctx.Err() every
+// iteration and exits promptly, so an abandoned/cancelled consumer can no longer
+// wedge the reasoning goroutine (and its forwarders) on a full channel.
+func (l *Loop) emit(ctx context.Context, ch chan<- event.Event, ev event.Event) {
+	// Fast path: deliver immediately when the buffer has room (or a reader is
+	// ready). This guarantees terminal events (final response, error, reply-end)
+	// still reach a consumer that is actively draining even after ctx cancels.
+	select {
+	case ch <- ev:
+		return
+	default:
+	}
+	// Slow path: the send would block. Honor cancellation so an abandoned
+	// consumer (stopped draining, buffer full) can't wedge this goroutine.
+	select {
+	case ch <- ev:
+	case <-ctx.Done():
+	}
+}
+
 func (l *Loop) run(ctx context.Context, input string, ch chan<- event.Event) {
 	defer close(ch)
 
 	// Check for context cancellation early.
 	if err := ctx.Err(); err != nil {
-		l.emitError(ch, "", err)
+		l.emitError(ctx, ch, "", err)
 		return
 	}
 
 	if l.cfg.ModelCaller == nil {
-		l.emitError(ch, "", fmt.Errorf("loop: ModelCaller is required"))
+		l.emitError(ctx, ch, "", fmt.Errorf("loop: ModelCaller is required"))
 		return
 	}
 
@@ -97,7 +118,7 @@ func (l *Loop) run(ctx context.Context, input string, ch chan<- event.Event) {
 		l.cfg.Hooks.OnLoopEnd(nil)
 	}()
 
-	ch <- event.NewReplyStartEvent(sessionID, replyID, "", message.RoleAssistant)
+	l.emit(ctx, ch, event.NewReplyStartEvent(sessionID, replyID, "", message.RoleAssistant))
 
 	// Append user message to context.
 	userMsg := message.UserMsg("user", input)
@@ -119,8 +140,8 @@ func (l *Loop) run(ctx context.Context, input string, ch chan<- event.Event) {
 	for {
 		if err := ctx.Err(); err != nil {
 			l.backfillMissingResults()
-			ch <- event.NewReplyEndEvent(sessionID, replyID)
-			l.emitError(ch, replyID, err)
+			l.emit(ctx, ch, event.NewReplyEndEvent(sessionID, replyID))
+			l.emitError(ctx, ch, replyID, err)
 			return
 		}
 
@@ -129,13 +150,13 @@ func (l *Loop) run(ctx context.Context, input string, ch chan<- event.Event) {
 			if iter >= l.cfg.MaxIters {
 				// Max iterations reached.
 				l.backfillMissingResults()
-				ch <- event.NewExceedMaxItersEvent(replyID, "")
+				l.emit(ctx, ch, event.NewExceedMaxItersEvent(replyID, ""))
 				if lastResp != nil {
-					ch <- event.NewCustomEvent(replyID, "loop.final_response", map[string]any{
+					l.emit(ctx, ch, event.NewCustomEvent(replyID, "loop.final_response", map[string]any{
 						"response": lastResp,
-					})
+					}))
 				}
-				ch <- event.NewReplyEndEvent(sessionID, replyID)
+				l.emit(ctx, ch, event.NewReplyEndEvent(sessionID, replyID))
 				return
 			}
 			iter++
@@ -144,7 +165,7 @@ func (l *Loop) run(ctx context.Context, input string, ch chan<- event.Event) {
 
 			// Model call.
 			l.cfg.Hooks.BeforeModelCall(state, iter)
-			ch <- event.NewModelCallStartEvent(replyID, "")
+			l.emit(ctx, ch, event.NewModelCallStartEvent(replyID, ""))
 
 			msgs := l.cfg.ContextManager.Messages()
 			resp, err := l.cfg.ModelCaller.Call(ctx, msgs, toolSchemas)
@@ -152,7 +173,7 @@ func (l *Loop) run(ctx context.Context, input string, ch chan<- event.Event) {
 			if err != nil {
 				l.cfg.Hooks.AfterModelCall(state, iter, err)
 				inputTokens, outputTokens := 0, 0
-				ch <- event.NewModelCallEndEvent(replyID, inputTokens, outputTokens)
+				l.emit(ctx, ch, event.NewModelCallEndEvent(replyID, inputTokens, outputTokens))
 
 				action := ErrorActionBreak
 				if l.cfg.ErrorHandler != nil {
@@ -166,8 +187,8 @@ func (l *Loop) run(ctx context.Context, input string, ch chan<- event.Event) {
 					continue
 				default: // ErrorActionBreak
 					l.backfillMissingResults()
-					ch <- event.NewReplyEndEvent(sessionID, replyID)
-					l.emitError(ch, replyID, err)
+					l.emit(ctx, ch, event.NewReplyEndEvent(sessionID, replyID))
+					l.emitError(ctx, ch, replyID, err)
 					return
 				}
 			}
@@ -179,10 +200,10 @@ func (l *Loop) run(ctx context.Context, input string, ch chan<- event.Event) {
 			}
 
 			l.cfg.Hooks.AfterModelCall(state, iter, nil)
-			ch <- event.NewModelCallEndEvent(replyID, inputTokens, outputTokens)
+			l.emit(ctx, ch, event.NewModelCallEndEvent(replyID, inputTokens, outputTokens))
 
 			// Emit content block events.
-			l.emitContentEvents(ch, replyID, resp.Content)
+			l.emitContentEvents(ctx, ch, replyID, resp.Content)
 
 			// Append assistant response to context.
 			assistantMsg := message.AssistantMsg("", resp.Content)
@@ -237,7 +258,7 @@ func (l *Loop) run(ctx context.Context, input string, ch chan<- event.Event) {
 			for _, tr := range results {
 				l.cfg.Hooks.AfterToolExec(state, iter, tr.Call.Name, tr.Err)
 
-				ch <- event.NewToolResultStartEvent(replyID, tr.Call.ID, tr.Call.Name)
+				l.emit(ctx, ch, event.NewToolResultStartEvent(replyID, tr.Call.ID, tr.Call.Name))
 
 				var resultBlock message.ToolResultBlock
 				if tr.Err != nil {
@@ -248,7 +269,7 @@ func (l *Loop) run(ctx context.Context, input string, ch chan<- event.Event) {
 						Output: []message.ContentBlock{message.TextBlock{Type: "text", Text: tr.Err.Error()}},
 						State:  message.ToolResultError,
 					}
-					ch <- event.NewToolResultTextDeltaEvent(replyID, tr.Call.ID, tr.Err.Error())
+					l.emit(ctx, ch, event.NewToolResultTextDeltaEvent(replyID, tr.Call.ID, tr.Err.Error()))
 				} else if tr.Response != nil {
 					resultBlock = message.ToolResultBlock{
 						Type:     "tool_result",
@@ -260,7 +281,7 @@ func (l *Loop) run(ctx context.Context, input string, ch chan<- event.Event) {
 					}
 					text := resultBlock.GetOutputText()
 					if text != "" {
-						ch <- event.NewToolResultTextDeltaEvent(replyID, tr.Call.ID, text)
+						l.emit(ctx, ch, event.NewToolResultTextDeltaEvent(replyID, tr.Call.ID, text))
 					}
 				} else {
 					resultBlock = message.ToolResultBlock{
@@ -272,7 +293,7 @@ func (l *Loop) run(ctx context.Context, input string, ch chan<- event.Event) {
 					}
 				}
 
-				ch <- event.NewToolResultEndEvent(replyID, tr.Call.ID, resultBlock.State)
+				l.emit(ctx, ch, event.NewToolResultEndEvent(replyID, tr.Call.ID, resultBlock.State))
 				resultBlocks = append(resultBlocks, resultBlock)
 			}
 
@@ -286,17 +307,17 @@ func (l *Loop) run(ctx context.Context, input string, ch chan<- event.Event) {
 		case protocol.StateWait:
 			// HITL: emit reply end and return; the caller will resume.
 			l.backfillMissingResults()
-			ch <- event.NewReplyEndEvent(sessionID, replyID)
+			l.emit(ctx, ch, event.NewReplyEndEvent(sessionID, replyID))
 			return
 
 		case protocol.StateExit:
 			l.backfillMissingResults()
 			if lastResp != nil {
-				ch <- event.NewCustomEvent(replyID, "loop.final_response", map[string]any{
+				l.emit(ctx, ch, event.NewCustomEvent(replyID, "loop.final_response", map[string]any{
 					"response": lastResp,
-				})
+				}))
 			}
-			ch <- event.NewReplyEndEvent(sessionID, replyID)
+			l.emit(ctx, ch, event.NewReplyEndEvent(sessionID, replyID))
 			return
 		}
 	}
@@ -376,29 +397,29 @@ func (l *Loop) backfillMissingResults() {
 }
 
 // emitContentEvents emits text and thinking block events for model response content.
-func (l *Loop) emitContentEvents(ch chan<- event.Event, replyID string, content []message.ContentBlock) {
+func (l *Loop) emitContentEvents(ctx context.Context, ch chan<- event.Event, replyID string, content []message.ContentBlock) {
 	for _, b := range content {
 		switch blk := b.(type) {
 		case message.TextBlock:
 			blockID := agentscope.GenerateID()
-			ch <- event.NewTextBlockStartEvent(replyID, blockID)
+			l.emit(ctx, ch, event.NewTextBlockStartEvent(replyID, blockID))
 			if blk.Text != "" {
-				ch <- event.NewTextBlockDeltaEvent(replyID, blockID, blk.Text)
+				l.emit(ctx, ch, event.NewTextBlockDeltaEvent(replyID, blockID, blk.Text))
 			}
-			ch <- event.NewTextBlockEndEvent(replyID, blockID)
+			l.emit(ctx, ch, event.NewTextBlockEndEvent(replyID, blockID))
 		case message.ThinkingBlock:
 			blockID := agentscope.GenerateID()
-			ch <- event.NewThinkingBlockStartEvent(replyID, blockID)
+			l.emit(ctx, ch, event.NewThinkingBlockStartEvent(replyID, blockID))
 			if blk.Thinking != "" {
-				ch <- event.NewThinkingBlockDeltaEvent(replyID, blockID, blk.Thinking)
+				l.emit(ctx, ch, event.NewThinkingBlockDeltaEvent(replyID, blockID, blk.Thinking))
 			}
-			ch <- event.NewThinkingBlockEndEvent(replyID, blockID)
+			l.emit(ctx, ch, event.NewThinkingBlockEndEvent(replyID, blockID))
 		case message.ToolCallBlock:
-			ch <- event.NewToolCallStartEvent(replyID, blk.ID, blk.Name)
+			l.emit(ctx, ch, event.NewToolCallStartEvent(replyID, blk.ID, blk.Name))
 			if blk.Input != "" {
-				ch <- event.NewToolCallDeltaEvent(replyID, blk.ID, blk.Input)
+				l.emit(ctx, ch, event.NewToolCallDeltaEvent(replyID, blk.ID, blk.Input))
 			}
-			ch <- event.NewToolCallEndEvent(replyID, blk.ID)
+			l.emit(ctx, ch, event.NewToolCallEndEvent(replyID, blk.ID))
 		}
 	}
 }
@@ -409,8 +430,8 @@ func (l *Loop) transition(from, to protocol.LoopState, iter int) protocol.LoopSt
 }
 
 // emitError sends a custom error event.
-func (l *Loop) emitError(ch chan<- event.Event, replyID string, err error) {
-	ch <- event.NewCustomEvent(replyID, "loop.error", map[string]any{
+func (l *Loop) emitError(ctx context.Context, ch chan<- event.Event, replyID string, err error) {
+	l.emit(ctx, ch, event.NewCustomEvent(replyID, "loop.error", map[string]any{
 		"error": err,
-	})
+	}))
 }

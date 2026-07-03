@@ -99,7 +99,7 @@ func (se *SessionEngine) SubmitMessage(ctx context.Context, input string) <-chan
 		_ = se.hooks.Fire(HookSessionStart, map[string]any{"session_id": se.id})
 
 		for ev := range turn.Run(sessionCtx, input) {
-			out <- ev
+			emitEvent(sessionCtx, out, ev)
 		}
 
 		se.mu.Lock()

@@ -235,7 +235,10 @@ func (s *InMemoryScheduler) List(_ context.Context) ([]*Task, error) {
 
 	tasks := make([]*Task, 0, len(s.tasks))
 	for _, e := range s.tasks {
-		tasks = append(tasks, e.task)
+		// Copy each task: executeOnce/setStatus mutate task fields concurrently,
+		// so handing out the live pointer (as Get avoids by copying) would race.
+		cp := *e.task
+		tasks = append(tasks, &cp)
 	}
 	return tasks, nil
 }

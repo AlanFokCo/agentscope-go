@@ -93,21 +93,28 @@ func (m *BackgroundTaskManager) Cancel(id string) error {
 	return nil
 }
 
-// Get returns a task by ID.
+// Get returns a snapshot of the task with the given ID. The returned value is a
+// copy taken under the read lock, so reading its fields cannot race the Submit
+// goroutine that mutates Status/Error/DoneAt.
 func (m *BackgroundTaskManager) Get(id string) (*BackgroundTask, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	t, ok := m.tasks[id]
-	return t, ok
+	if !ok {
+		return nil, false
+	}
+	cp := *t
+	return &cp, true
 }
 
-// List returns all tasks.
+// List returns snapshots of all tasks (see Get for why copies are returned).
 func (m *BackgroundTaskManager) List() []*BackgroundTask {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	result := make([]*BackgroundTask, 0, len(m.tasks))
 	for _, t := range m.tasks {
-		result = append(result, t)
+		cp := *t
+		result = append(result, &cp)
 	}
 	return result
 }

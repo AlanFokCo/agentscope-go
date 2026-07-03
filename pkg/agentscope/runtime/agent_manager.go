@@ -293,7 +293,10 @@ func (am *AgentManager) Stop(id string) error {
 	return ma.Wait(ctx)
 }
 
-// Get returns the managed agent with the given ID.
+// Get returns the live managed-agent handle with the given ID, for control
+// operations (Wait, etc.). Do NOT read its mutable fields (Status/Result/Err/
+// FinishedAt) directly — those are written by the background goroutine; use
+// ManagedAgent.Info() for a race-free snapshot (as List does).
 func (am *AgentManager) Get(id string) (*ManagedAgent, bool) {
 	am.mu.RLock()
 	defer am.mu.RUnlock()
