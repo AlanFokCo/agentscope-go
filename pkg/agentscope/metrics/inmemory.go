@@ -1,28 +1,51 @@
 package metrics
 
-import "sync"
+import (
+	"strings"
+	"sync"
+)
 
-// InMemoryCounter is a thread-safe Counter that keeps its total in memory.
+// seriesKey joins label values into a stable per-series key.
+func seriesKey(labels []string) string { return strings.Join(labels, "\x1f") }
+
+// InMemoryCounter is a thread-safe Counter that keeps its total in memory and,
+// additionally, a per-label-set breakdown so labeled metrics do not collapse to
+// a single series.
 type InMemoryCounter struct {
-	mu    sync.Mutex
-	value float64
+	mu     sync.Mutex
+	value  float64
+	series map[string]float64
 }
 
-// Inc increments the counter by 1. Label values are ignored.
-func (c *InMemoryCounter) Inc(_ ...string) { c.Add(1) }
+// Inc increments the counter by 1.
+func (c *InMemoryCounter) Inc(labels ...string) { c.Add(1, labels...) }
 
-// Add increments the counter by value. Label values are ignored.
-func (c *InMemoryCounter) Add(value float64, _ ...string) {
+// Add increments the counter by value for the given label set.
+func (c *InMemoryCounter) Add(value float64, labels ...string) {
 	c.mu.Lock()
 	c.value += value
+	if c.series == nil {
+		c.series = make(map[string]float64)
+	}
+	c.series[seriesKey(labels)] += value
 	c.mu.Unlock()
 }
 
-// Value returns the current counter total.
+// Value returns the counter total across all label sets.
 func (c *InMemoryCounter) Value() float64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.value
+}
+
+// ValueFor returns the counter total for a specific label set.
+func (c *InMemoryCounter) ValueFor(labels ...string) float64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.series == nil {
+		return 0
+	}
+	return c.series[seriesKey(labels)]
 }
 
 // InMemoryHistogram is a thread-safe Histogram that retains every observation.
