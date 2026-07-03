@@ -7,8 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -17,6 +20,7 @@ import (
 const (
 	defaultMaxAttempts = 3
 	defaultBaseBackoff = 200 * time.Millisecond
+	maxBackoff         = 30 * time.Second
 )
 
 // DoJSONRequest sends a JSON request and decodes a JSON response with basic retries.
@@ -40,12 +44,25 @@ func DoJSONRequest(
 	}
 
 	var lastErr error
+	var retryAfter time.Duration // server-requested delay carried from the previous attempt
 
 	for attempt := 0; attempt < defaultMaxAttempts; attempt++ {
 		if attempt > 0 {
-			// Exponential backoff with jitter could be added here if needed.
-			time.Sleep(defaultBaseBackoff * time.Duration(1<<attempt))
+			// Full-jitter exponential backoff, overridden by a larger server
+			// Retry-After. Cancellable so a cancelled context is not slept through.
+			delay := backoffWithJitter(attempt)
+			if retryAfter > delay {
+				delay = retryAfter
+			}
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
 		}
+		retryAfter = 0
 
 		req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(payload))
 		if err != nil {
@@ -83,14 +100,16 @@ func DoJSONRequest(
 		}
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			// Retry 5xx errors.
-			if resp.StatusCode >= 500 && attempt < defaultMaxAttempts-1 {
+			// Retry 429 (Too Many Requests) and 5xx, honoring Retry-After.
+			if isRetryableStatus(resp.StatusCode) && attempt < defaultMaxAttempts-1 {
+				retryAfter = parseRetryAfter(resp.Header.Get("Retry-After"))
 				logrus.WithFields(logrus.Fields{
 					"method":     method,
 					"url":        url,
 					"statusCode": resp.StatusCode,
 					"attempt":    attempt + 1,
-				}).Warn("httpx: server error, will retry")
+					"retryAfter": retryAfter,
+				}).Warn("httpx: retryable status, will retry")
 				lastErr = fmt.Errorf("httpx: unexpected status %d: %s", resp.StatusCode, string(body))
 				continue
 			}
@@ -126,4 +145,40 @@ func isRetryableError(err error) bool {
 		return netErr.Timeout()
 	}
 	return false
+}
+
+// isRetryableStatus reports whether an HTTP status code warrants a retry.
+func isRetryableStatus(code int) bool {
+	return code == http.StatusTooManyRequests || code >= 500
+}
+
+// backoffWithJitter returns a full-jitter exponential backoff for the given
+// attempt (1-based), capped at maxBackoff.
+func backoffWithJitter(attempt int) time.Duration {
+	ceil := defaultBaseBackoff * time.Duration(1<<attempt)
+	if ceil > maxBackoff || ceil <= 0 {
+		ceil = maxBackoff
+	}
+	return time.Duration(rand.Int63n(int64(ceil)))
+}
+
+// parseRetryAfter parses a Retry-After header value, which may be either an
+// integer number of seconds or an HTTP-date. Returns 0 if absent/invalid.
+func parseRetryAfter(h string) time.Duration {
+	h = strings.TrimSpace(h)
+	if h == "" {
+		return 0
+	}
+	if secs, err := strconv.Atoi(h); err == nil {
+		if secs <= 0 {
+			return 0
+		}
+		return time.Duration(secs) * time.Second
+	}
+	if t, err := http.ParseTime(h); err == nil {
+		if d := time.Until(t); d > 0 {
+			return d
+		}
+	}
+	return 0
 }

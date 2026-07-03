@@ -9,16 +9,18 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// FallbackChatModel wraps a primary ChatModel with automatic failover to a
-// fallback model.  If the primary model fails (for non-cancellation errors),
-// the call is retried on the fallback.
+// FallbackChatModel wraps an ordered list of ChatModels with automatic failover.
+// If a model fails (for non-cancellation errors), the call advances to the next
+// model in the chain. The first model may additionally be retried MaxRetries
+// times before advancing (back-compat with the two-model constructor).
 type FallbackChatModel struct {
-	Primary    ChatModel
-	Fallback   ChatModel
-	MaxRetries int // retries on primary before trying fallback; 0 means try once
+	Primary    ChatModel // first model (also index 0 of Models when set)
+	Fallback   ChatModel // second model, when constructed via NewFallbackChatModel
+	Models     []ChatModel
+	MaxRetries int // extra retries on the FIRST model before advancing; 0 means try once
 }
 
-// NewFallbackChatModel creates a FallbackChatModel.
+// NewFallbackChatModel creates a two-model failover (primary -> fallback).
 func NewFallbackChatModel(primary, fallback ChatModel) *FallbackChatModel {
 	return &FallbackChatModel{
 		Primary:  primary,
@@ -26,55 +28,120 @@ func NewFallbackChatModel(primary, fallback ChatModel) *FallbackChatModel {
 	}
 }
 
-func (f *FallbackChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts ...CallOption) (*ChatResponse, error) {
-	retries := f.MaxRetries + 1
-	var lastErr error
-	for i := 0; i < retries; i++ {
-		if i > 0 {
-			time.Sleep(time.Duration(i) * time.Second)
-		}
-		resp, err := f.Primary.Chat(ctx, msgs, opts...)
-		if err == nil {
-			return resp, nil
-		}
-		if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, err
-		}
-		lastErr = err
+// NewFallbackChain creates an ordered failover chain of any length. Models are
+// tried in order until one succeeds.
+func NewFallbackChain(models ...ChatModel) *FallbackChatModel {
+	f := &FallbackChatModel{Models: models}
+	if len(models) > 0 {
+		f.Primary = models[0]
 	}
+	if len(models) > 1 {
+		f.Fallback = models[1]
+	}
+	return f
+}
 
-	logrus.WithError(lastErr).Warn("primary model failed, falling back")
-	return f.Fallback.Chat(ctx, msgs, opts...)
+// effectiveModels returns the ordered failover list, deriving it from
+// Primary/Fallback when Models was not set explicitly.
+func (f *FallbackChatModel) effectiveModels() []ChatModel {
+	if len(f.Models) > 0 {
+		return f.Models
+	}
+	var models []ChatModel
+	if f.Primary != nil {
+		models = append(models, f.Primary)
+	}
+	if f.Fallback != nil {
+		models = append(models, f.Fallback)
+	}
+	return models
+}
+
+func isCanceled(ctx context.Context, err error) bool {
+	return ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+func (f *FallbackChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts ...CallOption) (*ChatResponse, error) {
+	models := f.effectiveModels()
+	var lastErr error
+	for idx, m := range models {
+		attempts := 1
+		if idx == 0 {
+			attempts = f.MaxRetries + 1
+		}
+		for i := 0; i < attempts; i++ {
+			if i > 0 {
+				timer := time.NewTimer(time.Duration(i) * time.Second)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return nil, ctx.Err()
+				case <-timer.C:
+				}
+			}
+			resp, err := m.Chat(ctx, msgs, opts...)
+			if err == nil {
+				return resp, nil
+			}
+			if isCanceled(ctx, err) {
+				return nil, err
+			}
+			lastErr = err
+		}
+		if idx < len(models)-1 {
+			logrus.WithError(lastErr).Warn("model failed, falling back to next in chain")
+		}
+	}
+	return nil, lastErr
 }
 
 func (f *FallbackChatModel) ChatStream(ctx context.Context, msgs []*message.Msg, opts ...CallOption) (<-chan ChatResponse, error) {
-	ch, err := f.Primary.ChatStream(ctx, msgs, opts...)
-	if err == nil {
-		return ch, nil
+	// NOTE: this fails over only on stream *setup* error. Mid-stream failover
+	// (buffering the first chunk to detect a failed generation) is a planned
+	// enhancement; consumers should also check ChatResponse.Error on each chunk.
+	models := f.effectiveModels()
+	var lastErr error
+	for idx, m := range models {
+		ch, err := m.ChatStream(ctx, msgs, opts...)
+		if err == nil {
+			return ch, nil
+		}
+		if isCanceled(ctx, err) {
+			return nil, err
+		}
+		lastErr = err
+		if idx < len(models)-1 {
+			logrus.WithError(err).Warn("model stream setup failed, falling back to next in chain")
+		}
 	}
-	if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return nil, err
-	}
-	logrus.WithError(err).Warn("primary model stream failed, falling back")
-	return f.Fallback.ChatStream(ctx, msgs, opts...)
+	return nil, lastErr
 }
 
 func (f *FallbackChatModel) CountTokens(msgs []*message.Msg, tools []ToolSchema) int {
-	return f.Primary.CountTokens(msgs, tools)
-}
-
-// ContextSize delegates to the primary model if it implements ContextSizer.
-func (f *FallbackChatModel) ContextSize() int {
-	if cs, ok := f.Primary.(ContextSizer); ok {
-		return cs.ContextSize()
+	for _, m := range f.effectiveModels() {
+		return m.CountTokens(msgs, tools)
 	}
 	return 0
 }
 
-// ModelName delegates to the primary model if it implements ModelNamer.
+// ContextSize delegates to the first model if it implements ContextSizer.
+func (f *FallbackChatModel) ContextSize() int {
+	for _, m := range f.effectiveModels() {
+		if cs, ok := m.(ContextSizer); ok {
+			return cs.ContextSize()
+		}
+		break
+	}
+	return 0
+}
+
+// ModelName delegates to the first model if it implements ModelNamer.
 func (f *FallbackChatModel) ModelName() string {
-	if mn, ok := f.Primary.(ModelNamer); ok {
-		return mn.ModelName()
+	for _, m := range f.effectiveModels() {
+		if mn, ok := m.(ModelNamer); ok {
+			return mn.ModelName()
+		}
+		break
 	}
 	return ""
 }

@@ -10,6 +10,7 @@ package errors
 import (
 	"errors"
 	"fmt"
+	"time"
 )
 
 // Category classifies the origin of an error.
@@ -51,10 +52,35 @@ type AgentError struct {
 	Message   string
 	Cause     error
 	Retryable bool
+
+	// RetryAfter, when > 0, is the minimum delay a caller should wait before
+	// retrying (populated from a provider 429/503 Retry-After header).
+	RetryAfter time.Duration
 }
 
 func (e *AgentError) Error() string { return e.Message }
 func (e *AgentError) Unwrap() error { return e.Cause }
+
+// NewThrottled creates a retryable rate-limit error carrying a Retry-After delay.
+func NewThrottled(retryAfter time.Duration, format string, args ...any) *AgentError {
+	return &AgentError{
+		Category:   CategoryModel,
+		Code:       "model.rate_limited",
+		Message:    fmt.Sprintf(format, args...),
+		Retryable:  true,
+		RetryAfter: retryAfter,
+	}
+}
+
+// RetryAfterOf returns the Retry-After delay from an AgentError in the chain, if
+// any. The bool reports whether a delay was found.
+func RetryAfterOf(err error) (time.Duration, bool) {
+	var ae *AgentError
+	if errors.As(err, &ae) && ae.RetryAfter > 0 {
+		return ae.RetryAfter, true
+	}
+	return 0, false
+}
 
 // Newf creates a new AgentError with a formatted message.
 func Newf(category Category, code string, format string, args ...any) *AgentError {

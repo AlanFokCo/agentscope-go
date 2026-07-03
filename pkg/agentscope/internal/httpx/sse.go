@@ -35,6 +35,15 @@ func DoSSERequest(
 		client = http.DefaultClient
 	}
 
+	// A streaming request must not be bounded by the client's whole-request
+	// Timeout (that caps total wall-clock and truncates long generations). Clone
+	// the client with Timeout=0; the stream's lifetime is governed by ctx instead.
+	if client.Timeout != 0 {
+		clone := *client
+		clone.Timeout = 0
+		client = &clone
+	}
+
 	payload, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("httpx: marshal request: %w", err)
@@ -95,7 +104,11 @@ func parseSSEStream(ctx context.Context, body io.ReadCloser, ch chan<- SSEEvent)
 				event.Data = dataBuf.String()
 				// Trim trailing newline added by multi-line data
 				event.Data = strings.TrimSuffix(event.Data, "\n")
-				ch <- event
+				select {
+				case ch <- event:
+				case <-ctx.Done():
+					return
+				}
 			}
 			event = SSEEvent{}
 			dataBuf.Reset()
@@ -124,7 +137,11 @@ func parseSSEStream(ctx context.Context, body io.ReadCloser, ch chan<- SSEEvent)
 	// Flush any remaining buffered event
 	if dataBuf.Len() > 0 {
 		event.Data = strings.TrimSuffix(dataBuf.String(), "\n")
-		ch <- event
+		select {
+		case ch <- event:
+		case <-ctx.Done():
+			return
+		}
 	}
 
 	if err := scanner.Err(); err != nil && ctx.Err() == nil {

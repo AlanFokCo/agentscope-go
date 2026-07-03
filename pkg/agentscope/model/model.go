@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	aserr "github.com/alanfokco/agentscope-go/pkg/agentscope/errors"
 	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
 )
 
@@ -32,7 +33,26 @@ type ChatResponse struct {
 	Usage     *ChatUsage             `json:"usage,omitempty"`
 	Metadata  map[string]any         `json:"metadata,omitempty"`
 	ModelName string                 `json:"model_name,omitempty"`
+
+	// StopReason is the normalized reason generation stopped: "stop", "length"
+	// (max tokens / truncated), "tool_calls", or "content_filter". Empty when the
+	// provider did not report one.
+	StopReason string `json:"stop_reason,omitempty"`
+
+	// Error carries a terminal streaming failure. A streaming consumer must check
+	// this on every chunk: a non-nil Error means the stream failed mid-flight and
+	// the accumulated content is incomplete (previously such failures were only
+	// logged, so a truncated stream looked complete with IsLast=true).
+	Error error `json:"-"`
 }
+
+// Normalized StopReason values.
+const (
+	StopReasonStop          = "stop"
+	StopReasonLength        = "length"
+	StopReasonToolCalls     = "tool_calls"
+	StopReasonContentFilter = "content_filter"
+)
 
 // GetTextContent concatenates all TextBlock content from the response.
 func (r *ChatResponse) GetTextContent() string {
@@ -223,9 +243,14 @@ func ValidateToolChoice(tc *ToolChoice, tools []ToolSchema) error {
 }
 
 // IsRetryableError checks if an error is a transient error worth retrying.
+// It first honors a typed AgentError.Retryable flag, then falls back to
+// substring classification of the error message.
 func IsRetryableError(err error) bool {
 	if err == nil {
 		return false
+	}
+	if aserr.IsRetryable(err) {
+		return true
 	}
 	s := err.Error()
 	for _, pattern := range []string{"429", "rate limit", "timeout", "connection reset", "connection refused", "500", "502", "503", "overloaded"} {

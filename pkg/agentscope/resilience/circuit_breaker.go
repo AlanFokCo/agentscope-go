@@ -43,10 +43,11 @@ type CircuitBreaker struct {
 	threshold    int
 	resetTimeout time.Duration
 
-	mu          sync.Mutex
-	state       CircuitState
-	failures    int
-	lastFailure time.Time
+	mu              sync.Mutex
+	state           CircuitState
+	failures        int
+	lastFailure     time.Time
+	halfOpenProbing bool // true while a single half-open trial call is in flight
 }
 
 // NewCircuitBreaker creates a breaker that trips after threshold consecutive
@@ -79,12 +80,22 @@ func (cb *CircuitBreaker) beforeCall() error {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
-	if cb.state == StateOpen {
+	switch cb.state {
+	case StateOpen:
 		if time.Since(cb.lastFailure) >= cb.resetTimeout {
+			// Transition to half-open and admit this call as the single probe.
 			cb.state = StateHalfOpen
+			cb.halfOpenProbing = true
 			return nil
 		}
 		return ErrCircuitOpen
+	case StateHalfOpen:
+		// Only one probe is allowed at a time while recovering.
+		if cb.halfOpenProbing {
+			return ErrCircuitOpen
+		}
+		cb.halfOpenProbing = true
+		return nil
 	}
 	return nil
 }
@@ -100,12 +111,14 @@ func (cb *CircuitBreaker) afterCall(err error) {
 		if cb.state == StateHalfOpen || cb.failures >= cb.threshold {
 			cb.state = StateOpen
 		}
+		cb.halfOpenProbing = false
 		return
 	}
 
 	// Success: recover fully.
 	cb.failures = 0
 	cb.state = StateClosed
+	cb.halfOpenProbing = false
 }
 
 // State returns the current state, applying the Open→HalfOpen transition if the
