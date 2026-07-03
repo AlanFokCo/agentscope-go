@@ -88,7 +88,7 @@ type toolkitExecutor struct {
 	tk *tool.Toolkit
 }
 
-func (e *toolkitExecutor) Execute(ctx context.Context, call message.ToolCallBlock) (*tool.ToolResponse, error) {
+func (e *toolkitExecutor) Execute(ctx context.Context, call message.ToolCallBlock) (*tool.ToolResponse, error) { //nolint:gocritic // interface requirement
 	return e.tk.CallToolFromBlock(ctx, &call)
 }
 

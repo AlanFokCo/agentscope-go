@@ -350,4 +350,3 @@ func (m *Msg) findBlockByTypeAndID(blockType ContentBlockType, blockID string) i
 	}
 	return -1
 }
-

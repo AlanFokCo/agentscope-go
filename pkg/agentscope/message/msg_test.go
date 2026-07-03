@@ -270,7 +270,6 @@ func TestFindBlockByTypeAndID(t *testing.T) {
 	}
 }
 
-
 func TestUsage(t *testing.T) {
 	msg := AssistantMsg("bot", "reply")
 	msg.Usage = &Usage{InputTokens: 100, OutputTokens: 50}

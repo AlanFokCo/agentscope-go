@@ -100,7 +100,6 @@ func TestViewTextFileTool(t *testing.T) {
 	}
 }
 
-
 func TestFunctionTool(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"x":{"type":"number"},"y":{"type":"number"}},"required":["x","y"]}`)
 	ft := NewFunctionTool("add", "Add two numbers", schema, func(ctx context.Context, input map[string]any) (any, error) {
