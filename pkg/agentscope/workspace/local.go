@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/internal/fsutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -257,7 +258,7 @@ func (w *EnhancedLocalWorkspace) saveMCPConfigs(configs map[string]any) error {
 		return fmt.Errorf("workspace: marshal MCP config: %w", err)
 	}
 	path := filepath.Join(w.basePath, mcpConfigFile)
-	return os.WriteFile(path, data, 0o644)
+	return fsutil.WriteFileAtomic(path, data, 0o644)
 }
 
 // loadSkillsIndex loads the skills index from .skills.
@@ -286,7 +287,7 @@ func (w *EnhancedLocalWorkspace) saveSkillsIndex(skills []SkillInfo) error {
 		return fmt.Errorf("workspace: marshal skills index: %w", err)
 	}
 	path := filepath.Join(w.basePath, skillsIndexFile)
-	return os.WriteFile(path, data, 0o644)
+	return fsutil.WriteFileAtomic(path, data, 0o644)
 }
 
 // Compile-time interface checks.

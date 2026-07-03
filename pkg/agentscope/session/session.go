@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/internal/fsutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -148,5 +149,5 @@ func (s *JSONSession) persist() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, b, 0o644)
+	return fsutil.WriteFileAtomic(s.path, b, 0o644)
 }

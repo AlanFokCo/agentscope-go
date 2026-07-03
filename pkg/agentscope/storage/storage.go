@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/internal/fsutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -127,7 +128,7 @@ func (s *FileStorage) SaveState(_ context.Context, sessionID string, state *agen
 	if err != nil {
 		return fmt.Errorf("storage: marshal: %w", err)
 	}
-	return os.WriteFile(s.path(sessionID), data, 0o644)
+	return fsutil.WriteFileAtomic(s.path(sessionID), data, 0o644)
 }
 
 func (s *FileStorage) LoadState(_ context.Context, sessionID string) (*agent.AgentState, error) {

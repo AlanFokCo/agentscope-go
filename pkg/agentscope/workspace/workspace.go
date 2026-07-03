@@ -9,6 +9,7 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/internal/fsutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -102,7 +103,7 @@ func (w *LocalWorkspace) WriteFile(ctx context.Context, path string, data []byte
 		return fmt.Errorf("workspace: create parent dir: %w", err)
 	}
 
-	return os.WriteFile(resolved, data, 0o644)
+	return fsutil.WriteFileAtomic(resolved, data, 0o644)
 }
 
 // ReadFile reads a file from the workspace.
