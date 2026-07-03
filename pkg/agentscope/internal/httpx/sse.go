@@ -59,7 +59,7 @@ func DoSSERequest(
 
 	logrus.WithFields(logrus.Fields{
 		"method": method,
-		"url":    url,
+		"url":    redactURL(url),
 	}).Debug("httpx: starting SSE stream")
 
 	resp, err := client.Do(req)

@@ -69,7 +69,9 @@ func (m *GeminiChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts ..
 
 	reqBody := m.buildRequest(msgs, callOpts)
 
-	url := fmt.Sprintf("%s/models/%s:generateContent?key=%s", m.baseURL, m.model, m.apiKey)
+	// Send the API key via the x-goog-api-key header rather than a ?key= query
+	// param so it never appears in URLs (which httpx logs and wraps into errors).
+	url := fmt.Sprintf("%s/models/%s:generateContent", m.baseURL, m.model)
 
 	var parsed geminiResponse
 	if err := httpx.DoJSONRequest(
@@ -80,7 +82,8 @@ func (m *GeminiChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts ..
 		reqBody,
 		&parsed,
 		mergeHeaders(map[string]string{
-			"Content-Type": "application/json",
+			"Content-Type":   "application/json",
+			"x-goog-api-key": m.apiKey,
 		}, m.defaultHeaders),
 	); err != nil {
 		return nil, fmt.Errorf("gemini: %w", err)
@@ -102,7 +105,7 @@ func (m *GeminiChatModel) ChatStream(ctx context.Context, msgs []*message.Msg, o
 
 	reqBody := m.buildRequest(msgs, callOpts)
 
-	url := fmt.Sprintf("%s/models/%s:streamGenerateContent?alt=sse&key=%s", m.baseURL, m.model, m.apiKey)
+	url := fmt.Sprintf("%s/models/%s:streamGenerateContent?alt=sse", m.baseURL, m.model)
 
 	sseCh, err := httpx.DoSSERequest(
 		ctx,
@@ -111,7 +114,8 @@ func (m *GeminiChatModel) ChatStream(ctx context.Context, msgs []*message.Msg, o
 		url,
 		reqBody,
 		mergeHeaders(map[string]string{
-			"Content-Type": "application/json",
+			"Content-Type":   "application/json",
+			"x-goog-api-key": m.apiKey,
 		}, m.defaultHeaders),
 	)
 	if err != nil {

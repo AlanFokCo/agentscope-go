@@ -74,7 +74,7 @@ func DoJSONRequest(
 
 		logrus.WithFields(logrus.Fields{
 			"method":  method,
-			"url":     url,
+			"url":     redactURL(url),
 			"attempt": attempt + 1,
 		}).Debug("httpx: sending JSON request")
 
@@ -84,7 +84,7 @@ func DoJSONRequest(
 			if isRetryableError(err) && attempt < defaultMaxAttempts-1 {
 				logrus.WithError(err).WithFields(logrus.Fields{
 					"method":  method,
-					"url":     url,
+					"url":     redactURL(url),
 					"attempt": attempt + 1,
 				}).Warn("httpx: retrying after network error")
 				lastErr = err
@@ -105,7 +105,7 @@ func DoJSONRequest(
 				retryAfter = parseRetryAfter(resp.Header.Get("Retry-After"))
 				logrus.WithFields(logrus.Fields{
 					"method":     method,
-					"url":        url,
+					"url":        redactURL(url),
 					"statusCode": resp.StatusCode,
 					"attempt":    attempt + 1,
 					"retryAfter": retryAfter,
@@ -123,7 +123,7 @@ func DoJSONRequest(
 		}
 		logrus.WithFields(logrus.Fields{
 			"method":     method,
-			"url":        url,
+			"url":        redactURL(url),
 			"statusCode": resp.StatusCode,
 		}).Debug("httpx: request succeeded")
 		return nil
@@ -132,7 +132,7 @@ func DoJSONRequest(
 	if lastErr != nil {
 		logrus.WithError(lastErr).WithFields(logrus.Fields{
 			"method": method,
-			"url":    url,
+			"url":    redactURL(url),
 		}).Error("httpx: request failed after retries")
 		return lastErr
 	}
