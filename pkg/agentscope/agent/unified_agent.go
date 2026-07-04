@@ -435,12 +435,14 @@ reactLoop:
 
 			hooks.AfterModelCall(curState, iter, nil)
 
-			var inputTok, outputTok int
+			var inputTok, outputTok, cacheCreate, cacheRead int
 			if resp.Usage != nil {
 				inputTok = resp.Usage.InputTokens
 				outputTok = resp.Usage.OutputTokens
+				cacheCreate = resp.Usage.CacheCreationInputTokens
+				cacheRead = resp.Usage.CacheInputTokens
 			}
-			emit(ctx, ch, event.NewModelCallEndEvent(replyID, inputTok, outputTok))
+			emit(ctx, ch, event.NewModelCallEndEventWithCache(replyID, inputTok, outputTok, cacheCreate, cacheRead))
 
 			// Transition to Inspect after model call
 			hooks.OnStateTransition(curState, protocol.StateInspect, iter)

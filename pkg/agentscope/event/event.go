@@ -133,9 +133,11 @@ func NewModelCallStartEvent(replyID, modelName string) ModelCallStartEvent {
 
 type ModelCallEndEvent struct {
 	Base
-	ReplyID      string `json:"reply_id"`
-	InputTokens  int    `json:"input_tokens"`
-	OutputTokens int    `json:"output_tokens"`
+	ReplyID             string `json:"reply_id"`
+	InputTokens         int    `json:"input_tokens"`
+	OutputTokens        int    `json:"output_tokens"`
+	CacheCreationTokens int    `json:"cache_creation_tokens,omitempty"`
+	CacheReadTokens     int    `json:"cache_read_tokens,omitempty"`
 }
 
 func (e ModelCallEndEvent) GetEventType() EventType { return EventModelCallEnd }
@@ -144,6 +146,20 @@ func (e ModelCallEndEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewModelCallEndEvent(replyID string, inputTokens, outputTokens int) ModelCallEndEvent {
 	return ModelCallEndEvent{Base: newBase(), ReplyID: replyID, InputTokens: inputTokens, OutputTokens: outputTokens}
+}
+
+// NewModelCallEndEventWithCache is like NewModelCallEndEvent but also carries
+// prompt-cache token counts (e.g. Anthropic cache_creation_input_tokens /
+// cache_read_input_tokens). Use when the model's ChatUsage reports them.
+func NewModelCallEndEventWithCache(replyID string, inputTokens, outputTokens, cacheCreation, cacheRead int) ModelCallEndEvent {
+	return ModelCallEndEvent{
+		Base:                newBase(),
+		ReplyID:             replyID,
+		InputTokens:         inputTokens,
+		OutputTokens:        outputTokens,
+		CacheCreationTokens: cacheCreation,
+		CacheReadTokens:     cacheRead,
+	}
 }
 
 // --- Text block streaming ---
