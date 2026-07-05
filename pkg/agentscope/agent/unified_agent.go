@@ -410,9 +410,22 @@ reactLoop:
 			continue
 
 		case protocol.StateReason:
-			// Compress context before model call
+			// Compress context before model call. Detect whether compression
+			// actually happened by observing state.Summary change, and emit a
+			// "compacted" CustomEvent so consumers can surface it (e.g. lathe's
+			// TUI / stream-json). This avoids changing compressContext's return
+			// signature or the middleware CompressHandler API.
+			a.mu.Lock()
+			prevSummary := a.state.Summary
+			a.mu.Unlock()
 			if err := a.compressContext(ctx); err != nil {
 				logrus.WithError(err).WithField("agent", a.name).Warn("context compression failed")
+			}
+			a.mu.Lock()
+			compacted := a.state.Summary != prevSummary && a.state.Summary != ""
+			a.mu.Unlock()
+			if compacted {
+				emit(ctx, ch, event.NewCustomEvent(replyID, "compacted", nil))
 			}
 
 			modelMsgs := a.prepareModelInput(ctx)
