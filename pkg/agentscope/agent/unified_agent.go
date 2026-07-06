@@ -386,7 +386,7 @@ reactLoop:
 		case protocol.StateAct:
 			// Execute pending tool calls from prior iteration
 			toolCalls := a.getExecutableToolCalls()
-			batches := batchToolCalls(toolCalls, a.toolkit)
+			batches := batchToolCalls(toolCalls, a.toolkit, a.wouldRequireHITL)
 			for _, batch := range batches {
 				if batch.concurrent && len(batch.calls) > 1 {
 					for _, tc := range batch.calls {
@@ -480,7 +480,7 @@ reactLoop:
 			curState = protocol.StateAct
 
 			// Execute tool calls
-			batches := batchToolCalls(toolCalls, a.toolkit)
+			batches := batchToolCalls(toolCalls, a.toolkit, a.wouldRequireHITL)
 			for _, batch := range batches {
 				if batch.concurrent && len(batch.calls) > 1 {
 					for _, tc := range batch.calls {
@@ -930,9 +930,40 @@ type toolResult struct {
 	text  string
 }
 
+// wouldRequireHITL reports whether executing tc would block for human-in-the-loop
+// confirmation or external execution — in which case it must not run in a
+// concurrent batch (see batchToolCalls). It mirrors the permission decision made
+// in executeToolCallWithPermission.
+func (a *UnifiedAgent) wouldRequireHITL(tc message.ToolCallBlock) bool {
+	t := a.toolkit.Get(tc.Name)
+	if t == nil {
+		return false
+	}
+	if t.IsExternalTool() {
+		return true
+	}
+	if a.engine == nil || tc.State == message.ToolCallAllowed {
+		return false
+	}
+	input, err := tc.ParseInput()
+	if err != nil {
+		return true // will be handled (error/ask) on the sequential path
+	}
+	decision, err := a.engine.CheckPermission(t, input)
+	if err != nil {
+		return true
+	}
+	// Ask/Passthrough both block waiting for a user confirmation.
+	return decision.Behavior == permission.BehaviorAsk || decision.Behavior == permission.BehaviorPassthrough
+}
+
 // batchToolCalls groups consecutive concurrency-safe tool calls into concurrent
-// batches. Non-concurrent-safe calls form single-item sequential batches.
-func batchToolCalls(calls []message.ToolCallBlock, tk *tool.Toolkit) []toolBatch {
+// batches. Non-concurrent-safe calls form single-item sequential batches. A tool
+// that would block on human-in-the-loop confirmation (or external execution) is
+// also kept sequential: concurrent goroutines cannot each wait on the agent's
+// single confirm/external channel without losing or crossing confirmations, so
+// such tools must run one at a time on the (correct) sequential path.
+func batchToolCalls(calls []message.ToolCallBlock, tk *tool.Toolkit, blocksHITL func(message.ToolCallBlock) bool) []toolBatch {
 	if len(calls) <= 1 {
 		return []toolBatch{{calls: calls, concurrent: false}}
 	}
@@ -945,6 +976,9 @@ func batchToolCalls(calls []message.ToolCallBlock, tk *tool.Toolkit) []toolBatch
 		safe := true
 		if t := tk.Get(tc.Name); t != nil {
 			safe = t.IsConcurrencySafe()
+		}
+		if safe && blocksHITL != nil && blocksHITL(tc) {
+			safe = false // needs HITL/external → force sequential
 		}
 
 		if i == 0 {
