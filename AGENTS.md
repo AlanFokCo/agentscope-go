@@ -1,0 +1,62 @@
+# AGENTS.md
+
+Handoff guide for coding agents (and humans) working on **agentscope-go**. Read this first, then `CLAUDE.md` for the full architecture and `STABILITY.md` for what's shipped vs. open.
+
+## What this is
+
+A Go port of the Python [AgentScope](https://github.com/agentscope-ai/agentscope) multi-agent LLM framework.
+
+- **Module path: `github.com/alanfokco/agentscope-go/v2`** (v2+ line). Imports use `github.com/alanfokco/agentscope-go/v2/pkg/agentscope/...`. Latest tag: **`v2.1.0`**.
+- Library under `pkg/agentscope/`; runnable demos under `examples/`.
+- `go.mod` says `go 1.25.0`, but keep code **Go 1.22+ compatible** (per `CONTRIBUTING.md`) — don't reach for ≥1.23 stdlib features without checking.
+- Python reference (for design parity) at `/Users/alanfokco/Github/agentscope/`.
+
+## Build / test / lint
+
+```bash
+go build ./... && go build ./examples/...
+go vet ./...
+go test -race -count=1 ./...                       # CI runs with -race
+golangci-lint run ./...                             # v2; go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+go test ./pkg/agentscope/tool -run TestName -v      # single test
+```
+
+CI (`.github/workflows/ci.yml`) is a 3-OS matrix — **ubuntu / macos / windows** — plus lint, a loop benchmark, a coverage step, and a 30s fuzz smoke. Windows exercises the PowerShell/Cmd paths, so:
+- shell-specific Unix tests guard with `if runtime.GOOS == "windows" { t.Skip("requires Unix shell") }`;
+- sandbox/workspace-relative paths use the `path` package (forward slash), **not** `filepath` (which is `\` on Windows).
+
+## Commit / deploy workflow (READ THIS — it's non-obvious)
+
+Git lives on **builder** (`root@builder:/opt/Projects/agentscope-go`), not in the local checkout. Never `git commit`/`push` locally.
+
+1. Edit locally.
+2. **Check builder is clean first**: `ssh root@builder 'cd /opt/Projects/agentscope-go && git branch --show-current && git status --short'`. The maintainer sometimes works directly on builder — don't rsync over uncommitted edits, and note which branch is checked out (commits land on whatever is checked out).
+3. `rsync` only the files you changed (see below), then verify on builder:
+   `ssh root@builder 'cd /opt/Projects/agentscope-go && export PATH=$PATH:/usr/local/go/bin && go build ./... && go vet ./... && go test -race -count=1 ./...'`
+4. `git add ... && git commit -F <msgfile> && git push` **on builder**.
+
+Gotchas that will bite you:
+- **Local git HEAD lags builder.** Don't trust local `git diff`/`status` to enumerate your changes. Rsync your edited files, then `git status` on builder shows the true diff against HEAD.
+- **`vendor/` is `.gitignore`d.** Adding a dependency: on builder run `go get <pkg> && go mod tidy && go mod vendor`, then commit **only `go.mod` + `go.sum`**. CI restores deps from the proxy.
+- **Tag pushes/deletes need `git push --no-verify`.** The pre-push AK-leak-scan hook errors on tag refs (`invalid local oid`); the commit was already scanned on the branch push, so bypassing for tags is safe.
+- **Commit messages: no "Claude"/AI mentions, no `Co-Authored-By`.** Use `git commit -F <file>` (rsync a message file) to dodge ssh quoting issues.
+
+Rsync example (single file, preserving path):
+```bash
+rsync -azR pkg/agentscope/model/model.go root@builder:/opt/Projects/agentscope-go/
+```
+
+## Current state (2026-07)
+
+Feature-complete Python parity **plus** a large production-hardening pass (see `STABILITY.md` for the full list). Highlights already shipped: bash-redirect safety, workspace jail + Docker/E2B backend routing for file/shell tools, WebFetch SSRF guard, MCP env isolation, per-tool timeout/result caps, 429/Retry-After+jitter retries, ordered fallback chain, single-probe circuit breaker, streaming-error propagation (`ChatResponse.Error`/`StopReason`), ctx-aware event emission (goroutine-leak fixes), atomic file writes, token/duration budget enforcement, HTTP hardening + `/healthz`+`/readyz`+`/metrics`, a Prometheus metrics provider, JSON-Schema tool-input validation, MultiEdit + ApplyPatch tools, and fuzz targets. All green under `-race` and golangci-lint.
+
+**Open / decision-gated** (tracked in `STABILITY.md` "Planned"): USD cost cap (needs model-card pricing), OTLP exporter + `loop.Hook` ctx-threading (API break, needs sign-off), durable `FullStorage` + session-history resume, Anthropic prompt-caching write path (needs live-API validation), record/replay eval harness, WebSearch/generic-HTTP tools (dependency decision).
+
+## Conventions (summary; full list in CLAUDE.md)
+
+- `context.Context` first arg; return `(T, error)` — don't panic (exceptions: `message.NewMsg`, `agent.NewUnifiedAgent` panic on programmer error).
+- Interfaces + embeddable `BaseXxx` defaults; functional options (`opts ...XxxOption`).
+- Streaming = `<-chan T`, deltas then final `IsLast=true`, `defer close(ch)`; sends should be ctx-aware.
+- **TDD** for behavior changes: write the failing test, watch it fail, then implement.
+- New example → own `examples/<name>/main.go` + add to `README.md` (CI builds all examples).
+- Errors: structured `errors.AgentError` + sentinels (`errors.Is`/`As`); `IsRetryableError` honors the typed retryable flag.

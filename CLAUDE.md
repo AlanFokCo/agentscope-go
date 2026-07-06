@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-`agentscope-go` is a Go port of the Python [AgentScope](https://github.com/agentscope-ai/agentscope) multi-agent LLM framework. The module path is `github.com/alanfokco/agentscope-go`. All library code lives under `pkg/agentscope/`; runnable demos live under `examples/`.
+`agentscope-go` is a Go port of the Python [AgentScope](https://github.com/agentscope-ai/agentscope) multi-agent LLM framework. The module path is **`github.com/alanfokco/agentscope-go/v2`** (v2+ line): internal and consumer imports use `github.com/alanfokco/agentscope-go/v2/pkg/agentscope/...`. Latest release tag: **`v2.1.0`**. All library code lives under `pkg/agentscope/`; runnable demos live under `examples/`.
+
+See `STABILITY.md` for the API-stability policy, stability tiers, and the production-hardening status (what's done, what's open) — read it before large changes.
 
 Python reference code is at `/Users/alanfokco/Github/agentscope/` (main branch). When adding features, check the Python implementation first for design consistency.
 
@@ -53,9 +55,16 @@ go run ./examples/multiagent
 
 LLM-backed examples need one of: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `DASHSCOPE_API_KEY` (+ optional `DASHSCOPE_BASE_URL`). The `loadChatModelFromEnv` helpers inside the examples pick a backend in the order Anthropic → DashScope → OpenAI.
 
-## Deployment
+## Deployment / commit workflow (important)
 
-Code must be rsync'd to `root@builder:/opt/Projects/agentscope-go` for commit and push. Do NOT commit or push locally — always rsync first, then `git add/commit/push` on builder.
+Git lives on **builder** (`root@builder:/opt/Projects/agentscope-go`), not locally. Do NOT commit or push from the local checkout — edit locally, `rsync` to builder, then `git add/commit/push` **on builder**. Hard-won gotchas:
+
+- **The local git HEAD is behind builder** — do not use local `git diff`/`git status` to figure out "what I changed" (it over-reports). Instead: rsync only the files you actually edited, then run `git status` **on builder** — it shows exactly your changes against the real HEAD.
+- **Check the tree is clean before every rsync.** The maintainer sometimes works directly on builder (feature branches, uncommitted edits). Run `ssh root@builder 'cd .../agentscope-go && git branch --show-current && git status --short'` first; if there are uncommitted changes, don't rsync over them — coordinate. Also note **which branch** is checked out (commits land on whatever is checked out).
+- **`vendor/` is `.gitignore`d** (local convenience, not committed). Adding a dependency: on builder run `go get <pkg> && go mod tidy && go mod vendor`, then commit **`go.mod` + `go.sum`** (vendor is not committed; CI restores deps from the module proxy).
+- **Tag pushes need `--no-verify`.** The builder pre-push hook runs an AK-leak scanner that errors on tag refs (`invalid local oid`). For `git push origin <tag>` / tag deletes, use `git push --no-verify ...`. The commit content was already scanned on the `main` push, so this is safe.
+- **Commit messages must not mention Claude/AI** or include `Co-Authored-By`. Prefer committing the message via `git commit -F <file>` (rsync a message file) to avoid ssh quoting issues.
+- Verify on builder before committing: `go build ./... && go build ./examples/... && go vet ./... && go test -race -count=1 ./...` and `golangci-lint run ./...` (install via `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`). CI is a 3-OS matrix (ubuntu/macos/**windows**) — Windows exercises the PowerShell/Cmd code paths, so shell-specific Unix tests use `if runtime.GOOS == "windows" { t.Skip("requires Unix shell") }`, and sandbox/workspace-relative paths use `path` (forward slash), not `filepath`.
 
 ## Architecture
 
@@ -80,8 +89,10 @@ The package layout intentionally mirrors the Python project (see `docs/migration
 
 - **`model`** — `ChatModel` interface: `Chat`, `ChatStream` (`<-chan ChatResponse`), `CountTokens`. 9 provider adapters: `openai.go`, `anthropic.go`, `dashscope.go`, `deepseek.go`, `gemini.go`, `moonshot.go`, `ollama.go`, `xai.go`, `openai_response.go`. All share `internal/httpx` for HTTP calls.
   - **Call options**: `WithTemperature`, `WithMaxTokens`, `WithTools`, `WithToolChoice`, `WithThinking(enable, budget)`, `WithReasoningEffort(effort)`, `WithRetries(max, delay)`.
-  - **`ChatUsage`** tracks `InputTokens`, `OutputTokens`, `CacheCreationInputTokens`, `CacheInputTokens`.
-  - **`FallbackChatModel`** — automatic primary → fallback failover.
+  - **`ChatResponse`** carries `Error` (terminal streaming failure — consumers MUST check it per chunk) and `StopReason` (normalized `stop`/`length`/`tool_calls`/`content_filter`, via `normalizeStopReason`). Stream consumers emit `ChatResponse{Error: ...}` on scanner/transport failure instead of ending silently (see `stream_error_test.go`).
+  - **`ChatUsage`** tracks `InputTokens`, `OutputTokens`, `CacheCreationInputTokens`, `CacheInputTokens`; loop + budget account all dimensions.
+  - **Retry**: `internal/httpx` is the transport-level retry authority — retries 429 + 5xx, honors `Retry-After`, full-jitter exponential backoff, ctx-aware (no sleeping through a cancelled context). `IsRetryableError` also honors typed `errors.AgentError.Retryable`.
+  - **`FallbackChatModel`** — `NewFallbackChatModel(primary, fallback)` or `NewFallbackChain(models...)` (ordered failover chain), ctx-aware backoff.
   - **`SecretStr`** — wrapper type that redacts API keys in `String()`/`MarshalJSON()`.
   - **`GenerateStructuredOutput`** — forces tool call, auto-retries with `tool_choice: "auto"` when thinking-mode conflicts.
   - **`ValidateToolChoice`** — validates tool names against available schemas.
@@ -114,13 +125,16 @@ The package layout intentionally mirrors the Python project (see `docs/migration
 ### Tool
 
 - **`tool`** — `Tool` interface embedding `permission.Checker`. `BaseTool` provides defaults. `FunctionTool` wraps plain Go functions.
-  - **Built-in tools**: bash, read, write, edit, glob, grep, reset_tools, task_create/get/list/update. `NewEnhancedToolkit()` provides the full set.
+  - **Built-in tools**: bash, read, write, edit, **MultiEdit** (atomic multi-edit of one file, `applyStringEdit`), **ApplyPatch** (apply a unified diff atomically, `applyUnifiedDiff`), glob, grep, webfetch (SSRF-guarded), reset_tools, task_create/get/list/update. `NewEnhancedToolkit()` provides the full set. TodoWrite is intentionally absent — the `task_*` tools cover it (bidirectional block/blocked_by deps).
   - **Bash safety**: `bash_parser.go` uses `mvdan.cc/sh/v3/syntax` for AST-level analysis: `IsReadOnlyCommand`, `CheckInjectionRisk`, `CheckDangerousRemoval`, `ExtractFilePaths`, `CheckSedConstraints`, `ExtractCommandPrefixes`. On Windows, regex-based patterns for PowerShell/Cmd replace AST analysis (`isPowerShellReadOnly`, injection patterns, dangerous removal patterns).
-  - **Per-tool permission chains**: bash has a 7-step chain (injection → PowerShell dangerous [Windows] → read-only → dangerous cmd → sed → dangerous paths → dangerous removal → ACCEPT_EDITS → passthrough). File tools use `filepath.Match` for glob rules.
+  - **Bash redirect safety**: `IsReadOnlyCommand` rejects output redirects (`cat x > /etc/passwd` is NOT read-only); `CheckDangerousRedirect` routes redirect targets through the dotfile + system-path checks (bypass-immune). curl/wget are NOT on the read-only allowlist (network egress). See `redirect_safety_test.go`.
+  - **Per-tool permission chains**: bash chain (injection → PowerShell dangerous [Windows] → read-only → dangerous cmd → sed → dangerous paths → dangerous removal → **dangerous redirect** → ACCEPT_EDITS → passthrough). File tools use `filepath.Match` for glob rules.
+  - **Workspace jail**: `WithWorkspaceRoot(ctx, root)` + `resolvePath` confine read/write/edit to a root (symlink-aware) when set; unset = unconfined (default, backward-compatible).
   - **Tool streaming**: `ToolChunk` struct + `StreamingTool` optional interface with `ExecuteStream`.
-  - **Backend abstraction**: `Backend` interface (`ExecShell`, `ReadFile`, `WriteFile`, `FileExists`). `LocalBackend` default. Context helpers `WithBackend`/`GetBackend`.
-  - **Diff generation**: write/edit tools produce unified diff in `ToolResponse.Metadata["diff"]`.
-  - **Input validation**: `ValidateInput(schema, input)` does basic JSON Schema type checking before execution.
+  - **Backend abstraction / sandbox execution**: `Backend` interface (`ExecShell`, `ReadFile`, `WriteFile`, `FileExists`, `ListDir`, `Glob`). `LocalBackend` default; `getBackendIfSet(ctx)` detects an explicitly-configured backend. When one is set, bash + read/write/edit/multiedit/apply_patch route through it using **workspace-relative paths** (so a `workspace.ToolBackend` over a Docker/E2B workspace gives real isolation); otherwise the rich local path (streaming/cwd/read-cache/jail) is used. Wire via `tool.WithBackend(ctx, workspace.NewToolBackend(ws))`.
+  - **Orchestrator limits**: `OrchestratorConfig.DefaultToolTimeout` (per-tool `context.WithTimeout`) and `MaxToolResultBytes` (result cap).
+  - **Diff generation**: write/edit/multiedit/apply_patch produce a unified diff in `ToolResponse.Metadata["diff"]`.
+  - **Input validation**: `ValidateInput(schema, input)` is a real recursive JSON-Schema validator (type, required, `enum`, string `minLength/maxLength/pattern`, number `minimum/maximum`, nested `properties`, array `items`). Fuzzed (`safety_fuzz_test.go`).
   - **Task dependencies**: bidirectional updates for blocks/blocked_by.
   - **Read line truncation**: lines > 2000 chars get `[truncated]`.
 
@@ -132,7 +146,8 @@ The package layout intentionally mirrors the Python project (see `docs/migration
 - **`mcp`** — MCP client (Stdio + HTTP). Name validation (`^[a-zA-Z0-9_-]+$`), execution timeout wiring.
 - **`workspace`** — `Workspace` interface + `LocalWorkspace`, `DockerWorkspace`, `E2BWorkspace`. `ManagedWorkspace` extends with MCP/Skill management (`.mcp.json` persistence, `skills/` directory). `Offloader` interface.
 - **`permission`** — `Engine` with 5 modes (default, accept_edits, explore, bypass, dont_ask). `Checker` interface embedded by `Tool`. `Decision` with bypass-immune safety checks.
-- **`storage`** — `InMemoryStorage`, `FileStorage`, `RedisStorage` for agent state persistence.
+- **`storage`** — `InMemoryStorage`, `FileStorage`, `RedisStorage` for agent state persistence. All file-backed writes go through **`internal/fsutil.WriteFileAtomic`** (temp + fsync + rename) so a crash mid-write cannot corrupt state.
+- **`internal/fsutil`** — `WriteFileAtomic`. **`internal/httpsec`** — `Harden(*http.Server)` (ReadHeaderTimeout/IdleTimeout/MaxHeaderBytes) + `LimitBody` (MaxBytesReader) for the HTTP servers.
 - **`pipeline`** — `Pipeline` with `Then`/`If` combinators. `MsgHub` for agent message routing.
 - **`tracing`** — `Tracer` interface + `AttributedTracer` optional extension with `SpanAttribute`. `NoopTracer`, `LoggerTracer`.
 - **`skill`** — `Skill` struct with `Category` field, `LocalSkillLoader`, `FormatSkillInstructions`. `SkillManager` registry with `Register`, `Get`, `List`, `ListByCategory`, `LoadFromDir`, `FormatInstructions`.
@@ -141,17 +156,17 @@ The package layout intentionally mirrors the Python project (see `docs/migration
 ### v3 Infrastructure
 
 - **`protocol`** — Shared types for the agent loop: `LoopState` (Idle/Thinking/Acting/Done/Error), `LoopEvent` (state transitions, model results, tool results, errors), `ModelCallResult`, `ToolCallResult`. Used by `loop/`, `runtime/`, and `agent/`.
-- **`errors`** — Typed error hierarchy: `AgentScopeError` (base with Code/Retriable), `RetriableError`, `ThrottledError` (with RetryAfter), `PermissionDeniedError`, `TimeoutError`, `ValidationError`, `ModelError`, `ToolError`. `Is`/`As` compatible.
+- **`errors`** — Structured `AgentError{Category, Code, Message, Cause, Retryable, RetryAfter}` (single type, NOT a per-kind type hierarchy) with a `Category` enum (Model/Tool/Permission/Context/Config/Platform/Network/Resource). Sentinels for `errors.Is`: `ErrModelRateLimited`, `ErrModelTimeout`, `ErrModelContextLimit`, `ErrToolDenied`, `ErrToolTimeout`, `ErrSandboxDenied`, `ErrLoopInterrupted`, `ErrLoopMaxIters`, `ErrBudgetExceeded`. Helpers: `Newf`, `Wrap`, `IsRetryable`, `NewThrottled(retryAfter, ...)`, `RetryAfterOf(err)`. (A legacy `exception` package coexists for LLM-facing messages; kept intentionally separate.)
 - **`loop`** — `Loop` struct configured via `WithModelCaller`, `WithToolExecutor`, `WithSchemaProvider`, `WithMaxIters`, `WithSystemPrompt`, `WithHooks`. `RunSync` executes the full reasoning-acting cycle. `Hook` interface: `OnLoopStart/End`, `OnModelCallStart/End`, `OnToolExecStart/End`, `OnIteration`.
 - **`runtime`** — `SessionEngine` (single-session lifecycle with state machine) and `Harness` (multi-session manager with `Start`/`Stop`/`GetSession`/`ListSessions`). `AgentManager` (subagent lifecycle: `Spawn`/`Stop`/`List`/`WaitAll` with `BudgetTracker` concurrency limits and `SessionHookManager` notifications via `HookSubagentStart`/`HookSubagentEnd`). Uses `protocol.LoopState` for state tracking.
-- **`metrics`** — `Provider` interface (`Counter`/`Histogram` factories). `InMemoryProvider` with `Snapshot()` for testing. `MetricsHook` implements `loop.Hook` to track `model_call_total`, `model_call_duration`, `tool_exec_total`, `loop_iteration_total`, `active_loops`.
+- **`metrics`** — `MetricsProvider` interface (`Counter`/`Histogram` factories, label-aware) + `Noop`. `InMemoryProvider` (label-aware, `Snapshot()`/`ValueFor`) for testing. **`metrics/prometheus`** subpackage: a real `MetricsProvider` over `prometheus/client_golang` + `Handler()` (promhttp) — the only place that pulls the prometheus dep; wire `app.Config.MetricsHandler = provider.Handler()` to expose `GET /metrics`. `MetricsHook` implements `loop.Hook`.
 - **`platform`** — `Detect()` returns cached `Shell` (Type, Path). `DeriveExecArgs(cmd)` returns platform-correct `exec.Command` args. `ShellType`: Bash, Zsh, Sh, PowerShell, Cmd. `CheckPowerShellDangerous` has 10 regex patterns for dangerous PowerShell commands.
 - **`sandbox`** — `Policy` interface with `Check(op Operation) Decision`. `AllowAll`, `DenyAll`, `AskUser` policies. `Operation` struct (Type, Target, Details).
 
 ### App Layer
 
-- **`app`** — `CreateApp(cfg)` factory wiring session management, chat (sync + SSE streaming), credentials, models, background tasks. HTTP routes: `/api/session`, `/api/chat/{id}`, `/api/chat/{id}/stream`, `/api/credential/schemas`, `/api/model`, `/api/task`. `BackgroundTaskManager`, `CancelDispatcher`.
-- **`service`** — Lower-level HTTP service with `SSEWriter`. AG-UI protocol constants. Service middleware (inbox, state change, tool offload).
+- **`app`** — `CreateApp(cfg)` factory wiring session management, chat (sync + SSE streaming), credentials, models, background tasks. HTTP routes: `/api/session`, `/api/chat/{id}`, `/api/chat/{id}/stream`, `/api/credential/schemas`, `/api/model`, `/api/task`, plus `GET /healthz`, `GET /readyz`, and optional `GET /metrics` (`Config.MetricsHandler`). Servers apply `httpsec.Harden` + `LimitBody`. `BackgroundTaskManager`, `CancelDispatcher`.
+- **`service`** — Lower-level HTTP service with `SSEWriter` + `Shutdown` (graceful drain), `/healthz`, `/readyz`, hardened server. AG-UI protocol constants. Service middleware (inbox, state change, tool offload).
 
 ### Context Compression
 
