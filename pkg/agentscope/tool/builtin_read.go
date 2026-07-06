@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"strings"
 
@@ -75,7 +76,7 @@ func (t *readTool) Execute(ctx context.Context, args map[string]any) (*ToolRespo
 	// If a custom backend (Docker/E2B) is configured, read from it using the
 	// caller-provided (workspace-relative) path.
 	if b, ok := getBackendIfSet(ctx); ok {
-		p := filepath.Clean(path)
+		p := pathpkg.Clean(path)
 		data, err := b.ReadFile(ctx, p)
 		if err != nil {
 			return NewErrorResponse(fmt.Errorf("file not found: %s", path)), nil

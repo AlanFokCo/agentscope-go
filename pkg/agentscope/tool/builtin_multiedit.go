@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"strings"
 
@@ -103,7 +104,7 @@ func (t *multiEditTool) Execute(ctx context.Context, args map[string]any) (*Tool
 
 	// Backend branch: edit inside the configured sandbox using the relative path.
 	if b, ok := getBackendIfSet(ctx); ok {
-		p := filepath.Clean(path)
+		p := pathpkg.Clean(path)
 		if rc := GetReadCache(ctx); rc != nil && !rc.HasBeenRead(p) {
 			return NewErrorResponse(fmt.Errorf("you must read the file first before editing it")), nil
 		}

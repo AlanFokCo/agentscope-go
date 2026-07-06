@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -143,7 +144,7 @@ func (t *applyPatchTool) Execute(ctx context.Context, args map[string]any) (*Too
 
 	// Backend branch: patch inside the configured sandbox using the relative path.
 	if b, ok := getBackendIfSet(ctx); ok {
-		p := filepath.Clean(path)
+		p := pathpkg.Clean(path)
 		data, readErr := b.ReadFile(ctx, p)
 		if readErr != nil {
 			return NewErrorResponse(fmt.Errorf("file not found: %s", path)), nil

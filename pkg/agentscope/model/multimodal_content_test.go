@@ -31,7 +31,7 @@ func TestConvertMessagesToOpenAI_MultimodalNotStringified(t *testing.T) {
 		t.Fatalf("multimodal content was stringified to %q; expected structured array", s)
 	}
 
-	// Marshalling the message must produce an image_url part.
+	// Marshaling the message must produce an image_url part.
 	b, err := json.Marshal(out[0])
 	if err != nil {
 		t.Fatalf("marshal: %v", err)

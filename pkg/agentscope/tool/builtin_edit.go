@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"strings"
 
@@ -73,7 +74,7 @@ func (t *editTool) Execute(ctx context.Context, args map[string]any) (*ToolRespo
 	// caller-provided (workspace-relative) path; the backend resolves it within
 	// its own root. Otherwise use the local host path with the workspace jail.
 	if b, ok := getBackendIfSet(ctx); ok {
-		p := filepath.Clean(path)
+		p := pathpkg.Clean(path)
 		if rc := GetReadCache(ctx); rc != nil && !rc.HasBeenRead(p) {
 			return NewErrorResponse(fmt.Errorf("you must read the file first before editing it")), nil
 		}

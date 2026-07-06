@@ -148,11 +148,11 @@ func ListModels(providers ...string) []ModelCard {
 	}
 
 	cards := make([]ModelCard, 0, len(all))
-	for _, c := range all {
-		if len(providerSet) > 0 && !providerSet[c.Provider] {
+	for i := range all {
+		if len(providerSet) > 0 && !providerSet[all[i].Provider] {
 			continue
 		}
-		cards = append(cards, c)
+		cards = append(cards, all[i])
 	}
 	return cards
 }
@@ -161,9 +161,10 @@ func ListModels(providers ...string) []ModelCard {
 // Returns an error if the model is not found. The returned pointer references a
 // copy, so mutating it does not corrupt the shared cache.
 func GetModelCard(name string) (*ModelCard, error) {
-	for _, c := range loadEmbeddedModelCards() {
-		if c.Name == name {
-			cp := c
+	all := loadEmbeddedModelCards()
+	for i := range all {
+		if all[i].Name == name {
+			cp := all[i]
 			return &cp, nil
 		}
 	}

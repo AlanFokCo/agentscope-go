@@ -220,7 +220,7 @@ func convertMessagesToOpenAI(msgs []*message.Msg) []openAIChatMessage {
 			msg.Content = content
 		} else if content, ok := m["content"].([]map[string]any); ok {
 			// Preserve the structured multimodal array (text + image_url/input_audio
-			// parts). Marshalling it to a string would send images/audio as an inert
+			// parts). Marshaling it to a string would send images/audio as an inert
 			// text blob, silently disabling vision/audio input.
 			msg.Content = content
 		}

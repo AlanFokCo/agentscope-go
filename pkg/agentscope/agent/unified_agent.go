@@ -934,7 +934,7 @@ type toolResult struct {
 // confirmation or external execution — in which case it must not run in a
 // concurrent batch (see batchToolCalls). It mirrors the permission decision made
 // in executeToolCallWithPermission.
-func (a *UnifiedAgent) wouldRequireHITL(tc message.ToolCallBlock) bool {
+func (a *UnifiedAgent) wouldRequireHITL(tc *message.ToolCallBlock) bool {
 	t := a.toolkit.Get(tc.Name)
 	if t == nil {
 		return false
@@ -963,7 +963,7 @@ func (a *UnifiedAgent) wouldRequireHITL(tc message.ToolCallBlock) bool {
 // also kept sequential: concurrent goroutines cannot each wait on the agent's
 // single confirm/external channel without losing or crossing confirmations, so
 // such tools must run one at a time on the (correct) sequential path.
-func batchToolCalls(calls []message.ToolCallBlock, tk *tool.Toolkit, blocksHITL func(message.ToolCallBlock) bool) []toolBatch {
+func batchToolCalls(calls []message.ToolCallBlock, tk *tool.Toolkit, blocksHITL func(*message.ToolCallBlock) bool) []toolBatch {
 	if len(calls) <= 1 {
 		return []toolBatch{{calls: calls, concurrent: false}}
 	}
@@ -977,7 +977,7 @@ func batchToolCalls(calls []message.ToolCallBlock, tk *tool.Toolkit, blocksHITL 
 		if t := tk.Get(tc.Name); t != nil {
 			safe = t.IsConcurrencySafe()
 		}
-		if safe && blocksHITL != nil && blocksHITL(tc) {
+		if safe && blocksHITL != nil && blocksHITL(&calls[i]) {
 			safe = false // needs HITL/external → force sequential
 		}
 

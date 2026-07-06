@@ -126,22 +126,22 @@ func (f *FallbackChatModel) CountTokens(msgs []*message.Msg, tools []ToolSchema)
 
 // ContextSize delegates to the first model if it implements ContextSizer.
 func (f *FallbackChatModel) ContextSize() int {
-	for _, m := range f.effectiveModels() {
-		if cs, ok := m.(ContextSizer); ok {
+	models := f.effectiveModels()
+	if len(models) > 0 {
+		if cs, ok := models[0].(ContextSizer); ok {
 			return cs.ContextSize()
 		}
-		break
 	}
 	return 0
 }
 
 // ModelName delegates to the first model if it implements ModelNamer.
 func (f *FallbackChatModel) ModelName() string {
-	for _, m := range f.effectiveModels() {
-		if mn, ok := m.(ModelNamer); ok {
+	models := f.effectiveModels()
+	if len(models) > 0 {
+		if mn, ok := models[0].(ModelNamer); ok {
 			return mn.ModelName()
 		}
-		break
 	}
 	return ""
 }

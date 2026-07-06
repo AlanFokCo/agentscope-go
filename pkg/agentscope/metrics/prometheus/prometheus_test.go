@@ -48,7 +48,7 @@ func TestProvider_ScrapeExposesLabeledMetrics(t *testing.T) {
 func TestProvider_LabelMismatchNoPanic(t *testing.T) {
 	p := New()
 	c := p.Counter("as_test_total", "t", "a", "b")
-	c.Inc("only-one")       // fewer values than names
-	c.Inc("x", "y", "z")    // more values than names
+	c.Inc("only-one")    // fewer values than names
+	c.Inc("x", "y", "z") // more values than names
 	_ = p.Counter("as_test_total", "t", "a", "b")
 }

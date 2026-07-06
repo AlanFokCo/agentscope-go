@@ -77,7 +77,7 @@ func (l *Loop) RunSync(ctx context.Context, input string) (*model.ChatResponse, 
 // run is the core goroutine that drives the state machine.
 // emit sends ev on ch but never blocks past context cancellation. If ctx is
 // done it drops the event and returns; the run loop re-checks ctx.Err() every
-// iteration and exits promptly, so an abandoned/cancelled consumer can no longer
+// iteration and exits promptly, so an abandoned/canceled consumer can no longer
 // wedge the reasoning goroutine (and its forwarders) on a full channel.
 func (l *Loop) emit(ctx context.Context, ch chan<- event.Event, ev event.Event) {
 	// Fast path: deliver immediately when the buffer has room (or a reader is

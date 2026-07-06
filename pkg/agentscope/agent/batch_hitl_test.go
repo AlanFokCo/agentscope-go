@@ -21,7 +21,7 @@ func TestBatchToolCalls_HITLForcedSequential(t *testing.T) {
 	}
 
 	// Mark Glob as HITL-blocking → it must not be in any concurrent batch.
-	blocks := func(tc message.ToolCallBlock) bool { return tc.Name == "Glob" }
+	blocks := func(tc *message.ToolCallBlock) bool { return tc.Name == "Glob" }
 	got := batchToolCalls(calls, tk, blocks)
 	for _, b := range got {
 		if !b.concurrent {

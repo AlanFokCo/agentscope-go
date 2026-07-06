@@ -11,7 +11,7 @@ import (
 // Fast path: deliver immediately when the buffer has room (guaranteeing terminal
 // events reach a consumer that is still draining). Slow path: if the send would
 // block, honor ctx.Done so an abandoned consumer (e.g. an HTTP client that
-// disconnected, cancelling the request context) can no longer wedge the
+// disconnected, canceling the request context) can no longer wedge the
 // forwarding goroutine and the upstream loop feeding it.
 func emitEvent(ctx context.Context, out chan<- event.Event, ev event.Event) {
 	select {

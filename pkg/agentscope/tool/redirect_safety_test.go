@@ -1,6 +1,7 @@
 package tool
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/permission"
@@ -11,6 +12,9 @@ import (
 // file must NOT be classified read-only (otherwise it is auto-allowed with no
 // prompt in every permission mode).
 func TestIsReadOnlyCommand_RejectsWriteRedirects(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	notReadOnly := []string{
 		"cat foo > /etc/passwd",
 		"echo pwned >> /home/user/.ssh/authorized_keys",
@@ -30,6 +34,9 @@ func TestIsReadOnlyCommand_RejectsWriteRedirects(t *testing.T) {
 // TestIsReadOnlyCommand_AllowsSafeRedirectsAndReads guards against over-blocking:
 // fd duplication (2>&1) and input redirects are still read-only.
 func TestIsReadOnlyCommand_AllowsSafeRedirectsAndReads(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	readOnly := []string{
 		"cat foo",
 		"ls 2>&1",               // fd duplication, not a file write
@@ -46,6 +53,9 @@ func TestIsReadOnlyCommand_AllowsSafeRedirectsAndReads(t *testing.T) {
 // TestIsReadOnlyCommand_CurlWgetNotReadOnly proves curl/wget are removed from the
 // read-only allowlist (they enable SSRF / data exfiltration).
 func TestIsReadOnlyCommand_CurlWgetNotReadOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	egress := []string{
 		"curl http://example.com",
 		"wget http://example.com/x.sh",
@@ -61,6 +71,9 @@ func TestIsReadOnlyCommand_CurlWgetNotReadOnly(t *testing.T) {
 // TestCheckDangerousRedirect verifies redirect targets are routed through a
 // bypass-immune dangerous-path check covering dotfiles AND system paths.
 func TestCheckDangerousRedirect(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	dangerous := []string{
 		"cat x > /etc/passwd",
 		"echo pwned >> /home/user/.ssh/authorized_keys",
@@ -90,6 +103,9 @@ func TestCheckDangerousRedirect(t *testing.T) {
 // to a system path via redirect must ASK (bypass-immune) even in AcceptEdits mode,
 // never auto-allow.
 func TestBashCheckPermissions_RedirectBypassImmune(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
 	bt := BashTool()
 	ctx := &permission.Context{Mode: permission.ModeAcceptEdits}
 	d := bt.CheckPermissions(map[string]any{"command": "cat x > /etc/passwd"}, ctx)

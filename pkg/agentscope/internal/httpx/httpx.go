@@ -49,7 +49,7 @@ func DoJSONRequest(
 	for attempt := 0; attempt < defaultMaxAttempts; attempt++ {
 		if attempt > 0 {
 			// Full-jitter exponential backoff, overridden by a larger server
-			// Retry-After. Cancellable so a cancelled context is not slept through.
+			// Retry-After. Cancellable so a canceled context is not slept through.
 			delay := backoffWithJitter(attempt)
 			if retryAfter > delay {
 				delay = retryAfter

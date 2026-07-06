@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"strings"
 
@@ -56,7 +57,7 @@ func (t *writeTool) Execute(ctx context.Context, args map[string]any) (*ToolResp
 	// If a custom backend (Docker/E2B) is configured, write inside it using the
 	// caller-provided (workspace-relative) path.
 	if b, ok := getBackendIfSet(ctx); ok {
-		p := filepath.Clean(path)
+		p := pathpkg.Clean(path)
 		var oldContent string
 		if existingData, readErr := b.ReadFile(ctx, p); readErr == nil {
 			if rc := GetReadCache(ctx); rc != nil && !rc.HasBeenRead(p) {

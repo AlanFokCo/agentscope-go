@@ -9,10 +9,10 @@ import (
 )
 
 // TestParseSSEStream_ExitsOnCancelWhenSendBlocked proves the SSE parser goroutine
-// exits when the context is cancelled even while parked on a channel send (which
+// exits when the context is canceled even while parked on a channel send (which
 // happens whenever the consumer has stopped draining). Before the fix the parser
 // blocked forever on `ch <- event`, leaking the goroutine and holding the
-// response body/socket open on every cancelled or abandoned stream.
+// response body/socket open on every canceled or abandoned stream.
 func TestParseSSEStream_ExitsOnCancelWhenSendBlocked(t *testing.T) {
 	pr, pw := io.Pipe()
 	ch := make(chan SSEEvent) // unbuffered + no consumer => the first send blocks
