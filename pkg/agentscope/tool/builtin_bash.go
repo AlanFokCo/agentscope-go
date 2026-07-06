@@ -245,6 +245,24 @@ func (t *bashTool) runCommand(ctx context.Context, cmdStr string, timeoutMs int)
 	runCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
 	defer cancel()
 
+	// If a custom backend (e.g. a Docker/E2B workspace) is configured, run the
+	// command inside it for real isolation. The default local path below keeps
+	// streaming, cwd, and background support.
+	if b, ok := getBackendIfSet(ctx); ok {
+		res, err := b.ExecShell(runCtx, cmdStr, time.Duration(timeoutMs)*time.Millisecond)
+		if err != nil {
+			return NewErrorResponse(fmt.Errorf("backend exec: %w", err)), nil
+		}
+		out := res.Stdout
+		if res.Stderr != "" {
+			out += res.Stderr
+		}
+		if max := t.maxOutputBytes; max > 0 && len(out) > max {
+			out = out[:max] + "\n... [output truncated]"
+		}
+		return NewTextResponse(out), nil
+	}
+
 	args := platform.Detect().DeriveExecArgs(cmdStr)
 	cmd := exec.CommandContext(runCtx, args[0], args[1:]...)
 	if t.cwd != "" {

@@ -147,5 +147,14 @@ func GetBackend(ctx context.Context) Backend {
 	return &LocalBackend{}
 }
 
+// getBackendIfSet returns the Backend explicitly attached to ctx, if any. Unlike
+// GetBackend it does not substitute a default, so callers can tell whether a
+// custom (e.g. Docker/E2B) backend was configured and only then divert execution
+// into it — preserving the rich local path when none is set.
+func getBackendIfSet(ctx context.Context) (Backend, bool) {
+	b, ok := ctx.Value(backendContextKey{}).(Backend)
+	return b, ok
+}
+
 // Compile-time interface check.
 var _ Backend = (*LocalBackend)(nil)
