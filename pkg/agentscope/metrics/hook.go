@@ -3,7 +3,7 @@ package metrics
 import (
 	"time"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/protocol"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/protocol"
 )
 
 // MetricsHook records metrics for model calls, tool executions, loop

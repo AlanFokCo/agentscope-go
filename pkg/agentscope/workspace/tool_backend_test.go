@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/tool"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tool"
 )
 
 // TestToolBackend_AdaptsWorkspace verifies the adapter routes tool.Backend

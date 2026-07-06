@@ -5,9 +5,9 @@ import (
 	"encoding/base64"
 	"strings"
 
-	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/tts"
+	agentscope "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/event"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tts"
 )
 
 // TTSMiddleware intercepts the agent's text output events and synthesizes

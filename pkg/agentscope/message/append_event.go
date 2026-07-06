@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 	"time"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/types"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/types"
 )
 
 // AppendEvent incrementally reconstructs this Msg from a streaming event.

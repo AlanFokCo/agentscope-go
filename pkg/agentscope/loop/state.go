@@ -2,8 +2,8 @@
 package loop
 
 import (
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/protocol"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/protocol"
 )
 
 // validTransitions defines which state transitions are allowed.

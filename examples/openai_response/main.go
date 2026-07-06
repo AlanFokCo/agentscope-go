@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"os"
 
-	as "github.com/alanfokco/agentscope-go/pkg/agentscope"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
+	as "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 )
 
 // This example mirrors Python scripts/model_examples/openai_response_call.py.

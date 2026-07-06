@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 )
 
 // recordingBackend is a tool.Backend that records the last ExecShell command and

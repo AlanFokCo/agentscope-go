@@ -3,9 +3,9 @@ package team
 import (
 	"strings"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/permission"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/agent"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/permission"
 )
 
 // SubAgentTemplate defines a reusable blueprint for creating worker agents.

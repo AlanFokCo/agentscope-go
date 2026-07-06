@@ -3,7 +3,7 @@ package realtime
 import (
 	"context"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 )
 
 // EchoClient/Stream is a reference implementation: it simply echoes the first message and is useful for testing pipelines.

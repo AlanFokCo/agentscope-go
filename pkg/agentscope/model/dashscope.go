@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/internal/httpx"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	agentscope "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/internal/httpx"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 )
 
 const defaultDashScopeBaseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"

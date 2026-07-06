@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/schedule"
+	agentscope "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/schedule"
 	"github.com/sirupsen/logrus"
 )
 

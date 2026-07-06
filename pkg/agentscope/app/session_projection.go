@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/messagebus"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/event"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/messagebus"
 )
 
 // SessionProjection mirrors UI cards from one session onto another session's

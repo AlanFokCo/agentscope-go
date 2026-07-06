@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"os"
 
-	as "github.com/alanfokco/agentscope-go/pkg/agentscope"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/permission"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/tool"
+	as "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/agent"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/permission"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tool"
 )
 
 // This example demonstrates the permission system with different modes.

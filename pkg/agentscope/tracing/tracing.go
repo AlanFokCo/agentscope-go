@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	as "github.com/alanfokco/agentscope-go/pkg/agentscope"
+	as "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
 )
 
 // Tracer is a minimal tracing interface that can be backed by OpenTelemetry or any other implementation.

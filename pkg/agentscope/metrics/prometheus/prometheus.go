@@ -11,7 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	asmetrics "github.com/alanfokco/agentscope-go/pkg/agentscope/metrics"
+	asmetrics "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/metrics"
 )
 
 // Provider implements metrics.MetricsProvider over a Prometheus registry.

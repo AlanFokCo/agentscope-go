@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/agent"
 )
 
 // RedisConfig configures a Redis-backed storage.

@@ -3,9 +3,9 @@ package middleware
 import (
 	"context"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
-	mw "github.com/alanfokco/agentscope-go/pkg/agentscope/middleware"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/event"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
+	mw "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/middleware"
 )
 
 // InboxProvider retrieves pending messages for an agent from external sources

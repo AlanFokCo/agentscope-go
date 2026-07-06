@@ -8,11 +8,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/exception"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/internal/jsonx"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/permission"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/exception"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/internal/jsonx"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/permission"
 )
 
 // Tool is the interface all tools must implement.

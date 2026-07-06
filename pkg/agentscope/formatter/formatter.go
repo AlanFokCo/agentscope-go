@@ -5,7 +5,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 )
 
 // Formatter transforms internal Msg objects into provider-specific API payloads.

@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/storage"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/tts"
+	agentscope "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/storage"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tts"
 )
 
 // registerExtendedRoutes adds CRUD routes for agents, credentials, schedules,

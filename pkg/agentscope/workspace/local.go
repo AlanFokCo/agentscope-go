@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/internal/fsutil"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/internal/fsutil"
 	"os"
 	"path/filepath"
 	"sort"

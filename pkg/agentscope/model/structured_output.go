@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/internal/jsonx"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/internal/jsonx"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 )
 
 const structuredOutputToolName = "generate_structured_output"

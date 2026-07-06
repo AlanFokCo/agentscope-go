@@ -10,17 +10,17 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/exception"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/loop"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/middleware"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/permission"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/protocol"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/skill"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/tool"
+	agentscope "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/event"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/exception"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/loop"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/middleware"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/permission"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/protocol"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/skill"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tool"
 )
 
 const (

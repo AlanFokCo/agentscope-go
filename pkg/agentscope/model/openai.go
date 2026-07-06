@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/formatter"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/internal/httpx"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/formatter"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/internal/httpx"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 )
 
 const defaultOpenAIBaseURL = "https://api.openai.com"

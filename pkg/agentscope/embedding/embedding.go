@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/rag"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/rag"
 )
 
 // EmbeddingModel generates vector embeddings from text inputs.

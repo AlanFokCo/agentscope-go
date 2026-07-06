@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/tool"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tool"
 )
 
 // HttpClient communicates with an MCP server via HTTP JSON-RPC.

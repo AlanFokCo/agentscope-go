@@ -3,7 +3,7 @@ package tool
 import (
 	"context"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 )
 
 // ToolChunk represents a piece of streaming output from a tool execution.

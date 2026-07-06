@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/logging"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/logging"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )

@@ -3,9 +3,9 @@ package middleware
 import (
 	"context"
 
-	mw "github.com/alanfokco/agentscope-go/pkg/agentscope/middleware"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/tool"
+	mw "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/middleware"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tool"
 )
 
 // StateChangeListener is called after each tool execution to report state changes.

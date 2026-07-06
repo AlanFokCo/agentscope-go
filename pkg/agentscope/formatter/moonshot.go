@@ -1,6 +1,6 @@
 package formatter
 
-import "github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+import "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 
 // MoonshotFormatter formats messages for Moonshot/Kimi's OpenAI-compatible API.
 type MoonshotFormatter struct {

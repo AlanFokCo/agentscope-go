@@ -5,7 +5,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 )
 
 // DefaultContextManager is a simple in-memory message buffer.

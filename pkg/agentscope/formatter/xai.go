@@ -1,6 +1,6 @@
 package formatter
 
-import "github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+import "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 
 // XAIFormatter formats messages for xAI/Grok's OpenAI-compatible API.
 type XAIFormatter struct {

@@ -10,8 +10,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/agent"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/event"
 )
 
 // InterruptAction determines how to handle user interrupts.

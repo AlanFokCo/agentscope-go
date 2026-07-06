@@ -1,7 +1,7 @@
 // pkg/agentscope/loop/hooks.go
 package loop
 
-import "github.com/alanfokco/agentscope-go/pkg/agentscope/protocol"
+import "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/protocol"
 
 // Hook receives notifications at key points in the loop lifecycle.
 type Hook interface {

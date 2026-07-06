@@ -3,7 +3,7 @@ package service
 import (
 	"net/http"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/event"
 )
 
 // AGUIMiddleware wraps an SSE handler to automatically convert agent events

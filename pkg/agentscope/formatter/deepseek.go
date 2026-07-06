@@ -1,6 +1,6 @@
 package formatter
 
-import "github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+import "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 
 // DeepSeekFormatter formats messages for DeepSeek APIs.
 // DeepSeek uses OpenAI-compatible format with reasoning_content support.

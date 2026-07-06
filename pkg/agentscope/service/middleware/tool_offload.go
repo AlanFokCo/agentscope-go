@@ -6,9 +6,9 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
-	mw "github.com/alanfokco/agentscope-go/pkg/agentscope/middleware"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/tool"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
+	mw "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/middleware"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tool"
 )
 
 // ToolOffloadMiddleware asynchronously executes long-running tools.

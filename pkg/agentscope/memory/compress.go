@@ -1,6 +1,6 @@
 package memory
 
-import "github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+import "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 
 // CompressionConfig controls a simple conversation compression strategy.
 // It currently uses message count instead of precise token counts; this can be

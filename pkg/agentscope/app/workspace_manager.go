@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/workspace"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/workspace"
 )
 
 // WorkspaceManager manages per-session workspace lifecycle.

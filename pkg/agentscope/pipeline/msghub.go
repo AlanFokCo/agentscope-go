@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/agent"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 )
 
 // MsgHub manages message routing between multiple agents, conceptually similar to Python's MsgHub.

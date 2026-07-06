@@ -7,7 +7,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/internal/httpx"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/internal/httpx"
 )
 
 const (

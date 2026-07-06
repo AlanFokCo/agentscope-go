@@ -3,8 +3,8 @@ package agent
 import (
 	"context"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/a2a"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/a2a"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 )
 
 // A2AAgent uses an a2a.Client to forward Reply calls to a remote agent service.

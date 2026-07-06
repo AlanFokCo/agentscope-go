@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/skill"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/skill"
 )
 
 // Section name and priority constants for built-in providers.

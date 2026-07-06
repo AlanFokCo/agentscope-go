@@ -3,8 +3,8 @@ package event
 import (
 	"time"
 
-	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	agentscope "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 )
 
 // EventType enumerates all event types in the agent lifecycle.

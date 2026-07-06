@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/tool"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/tracing"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/event"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tool"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tracing"
 )
 
 // TracingMiddleware creates nested spans for agent lifecycle events using a

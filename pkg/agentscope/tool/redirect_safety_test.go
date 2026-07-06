@@ -3,7 +3,7 @@ package tool
 import (
 	"testing"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/permission"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/permission"
 )
 
 // TestIsReadOnlyCommand_RejectsWriteRedirects proves the redirect-bypass fix:

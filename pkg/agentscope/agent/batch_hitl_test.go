@@ -3,8 +3,8 @@ package agent
 import (
 	"testing"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/tool"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tool"
 )
 
 // TestBatchToolCalls_HITLForcedSequential proves that a concurrency-safe tool

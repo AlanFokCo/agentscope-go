@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/protocol"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/protocol"
 )
 
 // TracingHook is a loop.Hook implementation that creates tracing spans

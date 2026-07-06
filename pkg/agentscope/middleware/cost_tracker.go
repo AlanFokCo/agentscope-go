@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 )
 
 // ModelPrice defines the per-million-token pricing for a model. All fields are

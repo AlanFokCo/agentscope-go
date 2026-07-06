@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	agentscope "github.com/alanfokco/agentscope-go/pkg/agentscope"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	agentscope "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 )
 
 // Agent is the public interface implemented by all agents.

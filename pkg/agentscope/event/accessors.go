@@ -1,6 +1,6 @@
 package event
 
-import "github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+import "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 
 // GetEventType returns the event type as a string, satisfying message.AppendableEvent.
 // Each concrete event already has GetEventType() EventType — these wrappers

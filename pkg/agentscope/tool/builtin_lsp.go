@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/tool/lsp"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tool/lsp"
 )
 
 var lspSchema = json.RawMessage(`{

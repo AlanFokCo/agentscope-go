@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/internal/httpx"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/internal/httpx"
 )
 
 // GeminiConfig holds configuration for the Gemini embedding model.

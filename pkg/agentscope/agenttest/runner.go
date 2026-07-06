@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/agent"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/event"
 )
 
 // ToolCallRecord captures a single tool invocation observed during a run.

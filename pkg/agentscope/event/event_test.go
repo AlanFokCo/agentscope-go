@@ -3,7 +3,7 @@ package event
 import (
 	"testing"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 )
 
 func TestEventInterface(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	agenterrors "github.com/alanfokco/agentscope-go/pkg/agentscope/errors"
+	agenterrors "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/errors"
 )
 
 // Budget defines resource limits for a runtime session.

@@ -19,7 +19,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License" />
   <img src="https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go" alt="Go 1.22+" />
-  <a href="https://pkg.go.dev/github.com/alanfokco/agentscope-go/pkg/agentscope"><img src="https://pkg.go.dev/badge/github.com/alanfokco/agentscope-go/pkg/agentscope.svg" alt="Go Reference" /></a>
+  <a href="https://pkg.go.dev/github.com/alanfokco/agentscope-go/v2/pkg/agentscope"><img src="https://pkg.go.dev/badge/github.com/alanfokco/agentscope-go/v2/pkg/agentscope.svg" alt="Go Reference" /></a>
 </p>
 
 ---
@@ -94,7 +94,7 @@ Additional model features: `FallbackChatModel` (automatic primary→fallback fai
 **Requirements:** Go 1.22+
 
 ```bash
-go get github.com/alanfokco/agentscope-go/pkg/agentscope
+go get github.com/alanfokco/agentscope-go/v2/pkg/agentscope
 ```
 
 ```bash
@@ -112,10 +112,10 @@ import (
     "encoding/json"
     "fmt"
 
-    as "github.com/alanfokco/agentscope-go/pkg/agentscope"
-    "github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
-    "github.com/alanfokco/agentscope-go/pkg/agentscope/model"
-    "github.com/alanfokco/agentscope-go/pkg/agentscope/tool"
+    as "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
+    "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/agent"
+    "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
+    "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tool"
 )
 
 func main() {

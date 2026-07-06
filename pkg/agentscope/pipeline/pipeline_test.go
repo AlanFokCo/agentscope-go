@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	asagent "github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	asagent "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/agent"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 )
 
 func TestPipelineThenAndIf(t *testing.T) {

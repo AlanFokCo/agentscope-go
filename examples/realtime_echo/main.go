@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	as "github.com/alanfokco/agentscope-go/pkg/agentscope"
-	asagent "github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/realtime"
+	as "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
+	asagent "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/agent"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/realtime"
 )
 
 // This example demonstrates the minimal use of the Realtime interface with EchoClient as an echo server.

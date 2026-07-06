@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	aserr "github.com/alanfokco/agentscope-go/pkg/agentscope/errors"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	aserr "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/errors"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 )
 
 // ChatModel is the unified interface for all chat models.

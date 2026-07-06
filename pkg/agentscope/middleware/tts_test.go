@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/tts"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/event"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tts"
 )
 
 // mockTTSModel returns fixed audio data for any text input.

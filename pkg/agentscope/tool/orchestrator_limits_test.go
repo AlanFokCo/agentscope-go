@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 )
 
 func emptySchema() json.RawMessage { return json.RawMessage(`{"type":"object"}`) }

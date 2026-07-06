@@ -3,8 +3,8 @@ package middleware
 import (
 	"context"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/event"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/event"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 )
 
 const DefaultBudgetHintMessage = "<system-reminder>You have reached the maximum token budget set by the " +

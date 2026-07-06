@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/exception"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/permission"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/sandbox"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/exception"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/permission"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/sandbox"
 )
 
 // Orchestrator composes permission checking and tool execution into a pipeline.

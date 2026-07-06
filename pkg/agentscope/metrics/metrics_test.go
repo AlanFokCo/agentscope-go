@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/protocol"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/protocol"
 )
 
 func TestMetricsHookRecordsModelCall(t *testing.T) {

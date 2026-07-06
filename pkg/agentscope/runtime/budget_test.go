@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	agenterrors "github.com/alanfokco/agentscope-go/pkg/agentscope/errors"
+	agenterrors "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/errors"
 )
 
 func TestBudgetTrackerTurnLimit(t *testing.T) {

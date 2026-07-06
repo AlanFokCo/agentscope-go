@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 )
 
 // Store abstracts message memory storage.

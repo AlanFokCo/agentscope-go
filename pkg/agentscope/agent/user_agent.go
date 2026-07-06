@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/types"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/types"
 )
 
 // InputProvider abstracts user input sources (terminal, web, GUI, etc.).

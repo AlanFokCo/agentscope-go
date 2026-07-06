@@ -2,7 +2,7 @@
 package loop
 
 import (
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 )
 
 // Config holds the loop's configuration.

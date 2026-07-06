@@ -8,11 +8,11 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/memory"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/message"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/model"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/rag"
-	"github.com/alanfokco/agentscope-go/pkg/agentscope/tool"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/memory"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/rag"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tool"
 )
 
 const (
