@@ -36,6 +36,10 @@ type AppConfig struct {
 	OnShutdown        []func() // hooks run before server stops
 	ReadTimeout       time.Duration
 	WriteTimeout      time.Duration
+
+	// MetricsHandler, if set, is mounted at GET /metrics. Pass, e.g., a
+	// prometheus provider's Handler(); the app itself stays dependency-free.
+	MetricsHandler http.Handler
 }
 
 // App is the top-level application that assembles all components.
@@ -95,6 +99,11 @@ func (a *App) registerRoutes() {
 	// Liveness/readiness for load balancers and orchestrators.
 	a.mux.HandleFunc("GET /healthz", healthzHandler)
 	a.mux.HandleFunc("GET /readyz", healthzHandler)
+
+	// Optional metrics scrape endpoint (e.g. Prometheus).
+	if a.cfg.MetricsHandler != nil {
+		a.mux.Handle("GET /metrics", a.cfg.MetricsHandler)
+	}
 
 	// Session management
 	a.mux.HandleFunc("POST /api/session", a.handleCreateSession)
