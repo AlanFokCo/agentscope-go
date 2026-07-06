@@ -182,6 +182,7 @@ func NewEnhancedToolkit() *Toolkit {
 		ReadTool(),
 		WriteTool(),
 		EditTool(),
+		MultiEditTool(),
 		GlobTool(),
 		GrepTool(),
 	)

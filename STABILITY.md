@@ -81,6 +81,6 @@ Planned (tracked):
   and resume, schema versioning, reference Redis adapter.
 - USD spend cap (model-card pricing), JSON-Schema input validation, output
   guardrails.
-- Anthropic prompt-caching write path; record/replay + eval harness; additional
-  built-in tools.
+- Anthropic prompt-caching write path; record/replay + eval harness. (MultiEdit
+  tool landed; more built-in tools TBD.)
 - Full `SecretStr` adoption; `exception`→`errors` migration; module `/v2` decision.

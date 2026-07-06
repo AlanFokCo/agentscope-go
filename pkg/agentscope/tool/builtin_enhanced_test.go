@@ -416,15 +416,15 @@ func TestGrepTool_WithInclude(t *testing.T) {
 
 func TestNewEnhancedToolkit(t *testing.T) {
 	tk := NewEnhancedToolkit()
-	expected := []string{"Bash", "Read", "Write", "Edit", "Glob", "Grep"}
+	expected := []string{"Bash", "Read", "Write", "Edit", "MultiEdit", "Glob", "Grep"}
 	for _, name := range expected {
 		if tk.Get(name) == nil {
 			t.Errorf("tool %q not found in enhanced toolkit", name)
 		}
 	}
 	schemas := tk.GetToolSchemas()
-	if len(schemas) != 6 {
-		t.Fatalf("expected 6 schemas, got %d", len(schemas))
+	if len(schemas) != len(expected) {
+		t.Fatalf("expected %d schemas, got %d", len(expected), len(schemas))
 	}
 }
 
