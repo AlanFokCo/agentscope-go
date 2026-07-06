@@ -80,7 +80,10 @@ func (t *Turn) run(ctx context.Context, input string, out chan<- event.Event) {
 			continue
 		}
 		if mce, ok := ev.(event.ModelCallEndEvent); ok {
-			_ = t.cfg.Budget.AddTokens(mce.InputTokens + mce.OutputTokens)
+			// Count every token dimension the model reported, including prompt-cache
+			// creation/read tokens (surfaced on the event), so the budget reflects
+			// true consumption.
+			_ = t.cfg.Budget.AddTokens(mce.InputTokens + mce.OutputTokens + mce.CacheCreationTokens + mce.CacheReadTokens)
 		}
 		if t.cfg.Budget.Exceeded() {
 			emitEvent(ctx, out, event.NewCustomEvent("", "turn.budget_exceeded",

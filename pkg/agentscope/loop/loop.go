@@ -194,13 +194,16 @@ func (l *Loop) run(ctx context.Context, input string, ch chan<- event.Event) {
 			}
 
 			inputTokens, outputTokens := 0, 0
+			cacheCreate, cacheRead := 0, 0
 			if resp.Usage != nil {
 				inputTokens = resp.Usage.InputTokens
 				outputTokens = resp.Usage.OutputTokens
+				cacheCreate = resp.Usage.CacheCreationInputTokens
+				cacheRead = resp.Usage.CacheInputTokens
 			}
 
 			l.cfg.Hooks.AfterModelCall(state, iter, nil)
-			l.emit(ctx, ch, event.NewModelCallEndEvent(replyID, inputTokens, outputTokens))
+			l.emit(ctx, ch, event.NewModelCallEndEventWithCache(replyID, inputTokens, outputTokens, cacheCreate, cacheRead))
 
 			// Emit content block events.
 			l.emitContentEvents(ctx, ch, replyID, resp.Content)
