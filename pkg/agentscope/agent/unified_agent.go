@@ -726,7 +726,11 @@ func (a *UnifiedAgent) executeTool(
 	}
 
 	outputText = a.truncateToolResult(ctx, outputText, tc.ID)
-	return a.emitToolResult(ctx, ch, replyID, tc, resultState, outputText)
+	var toolMeta map[string]any
+	if toolResp != nil {
+		toolMeta = toolResp.Metadata
+	}
+	return a.emitToolResult(ctx, ch, replyID, tc, resultState, outputText, toolMeta)
 }
 
 // executeStreamingTool runs a StreamingTool and emits incremental events.
@@ -805,12 +809,17 @@ func (a *UnifiedAgent) emitToolResult(
 	tc *message.ToolCallBlock,
 	state message.ToolResultState,
 	text string,
+	metadata ...map[string]any,
 ) (message.ToolResultState, string) {
 	emit(ctx, ch, event.NewToolResultStartEvent(replyID, tc.ID, tc.Name))
 	if text != "" {
 		emit(ctx, ch, event.NewToolResultTextDeltaEvent(replyID, tc.ID, text))
 	}
-	emit(ctx, ch, event.NewToolResultEndEvent(replyID, tc.ID, state))
+	end := event.NewToolResultEndEvent(replyID, tc.ID, state)
+	if len(metadata) > 0 && len(metadata[0]) > 0 {
+		end.Metadata = metadata[0] // e.g. Edit/Write "diff" (M6b)
+	}
+	emit(ctx, ch, end)
 	return state, text
 }
 
@@ -966,7 +975,9 @@ func (a *UnifiedAgent) executeAndRecord(
 	tc *message.ToolCallBlock,
 	actingHandler middleware.ActingHandler,
 ) {
-	emit(ctx, ch, event.NewToolCallStartEvent(replyID, tc.ID, tc.Name))
+	start := event.NewToolCallStartEvent(replyID, tc.ID, tc.Name)
+	start.ToolCallInput = tc.Input
+	emit(ctx, ch, start)
 	emit(ctx, ch, event.NewToolCallEndEvent(replyID, tc.ID))
 
 	resultState, outputText := a.executeToolCallWithPermission(ctx, ch, replyID, tc, actingHandler)
@@ -1006,7 +1017,9 @@ func (a *UnifiedAgent) executeConcurrentBatch(
 
 	// Emit events and merge results into context in original order
 	for i, tc := range calls {
-		emit(ctx, ch, event.NewToolCallStartEvent(replyID, tc.ID, tc.Name))
+		start := event.NewToolCallStartEvent(replyID, tc.ID, tc.Name)
+		start.ToolCallInput = tc.Input
+		emit(ctx, ch, start)
 		emit(ctx, ch, event.NewToolCallEndEvent(replyID, tc.ID))
 
 		r := results[i]

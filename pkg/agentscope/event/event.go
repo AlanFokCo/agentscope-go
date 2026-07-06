@@ -303,9 +303,10 @@ func NewDataBlockEndEvent(replyID, blockID string) DataBlockEndEvent {
 
 type ToolCallStartEvent struct {
 	Base
-	ReplyID      string `json:"reply_id"`
-	ToolCallID   string `json:"tool_call_id"`
-	ToolCallName string `json:"tool_call_name"`
+	ReplyID       string `json:"reply_id"`
+	ToolCallID    string `json:"tool_call_id"`
+	ToolCallName  string `json:"tool_call_name"`
+	ToolCallInput string `json:"tool_call_input,omitempty"`
 }
 
 func (e ToolCallStartEvent) GetEventType() EventType { return EventToolCallStart }
