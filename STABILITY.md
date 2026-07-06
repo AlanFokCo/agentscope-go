@@ -82,5 +82,5 @@ Planned (tracked):
 - USD spend cap (model-card pricing), JSON-Schema input validation, output
   guardrails.
 - Anthropic prompt-caching write path; record/replay + eval harness. (MultiEdit
-  tool landed; more built-in tools TBD.)
+  and ApplyPatch tools landed; more built-in tools TBD.)
 - Full `SecretStr` adoption; `exception`→`errors` migration; module `/v2` decision.

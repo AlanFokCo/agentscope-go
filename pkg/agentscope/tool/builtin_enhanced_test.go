@@ -416,7 +416,7 @@ func TestGrepTool_WithInclude(t *testing.T) {
 
 func TestNewEnhancedToolkit(t *testing.T) {
 	tk := NewEnhancedToolkit()
-	expected := []string{"Bash", "Read", "Write", "Edit", "MultiEdit", "Glob", "Grep"}
+	expected := []string{"Bash", "Read", "Write", "Edit", "MultiEdit", "ApplyPatch", "Glob", "Grep"}
 	for _, name := range expected {
 		if tk.Get(name) == nil {
 			t.Errorf("tool %q not found in enhanced toolkit", name)
