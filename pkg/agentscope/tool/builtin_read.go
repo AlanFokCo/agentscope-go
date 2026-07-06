@@ -55,6 +55,41 @@ func (t *readTool) Execute(ctx context.Context, args map[string]any) (*ToolRespo
 		return NewErrorResponse(fmt.Errorf("file_path cannot be empty")), nil
 	}
 
+	offset := 0
+	if v, ok := args["offset"]; ok {
+		// User provides 1-based offset; convert to 0-based internally.
+		offset = toInt(v) - 1
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	limit := defaultReadLimit
+	if v, ok := args["limit"]; ok {
+		n := toInt(v)
+		if n > 0 {
+			limit = n
+		}
+	}
+
+	// If a custom backend (Docker/E2B) is configured, read from it using the
+	// caller-provided (workspace-relative) path.
+	if b, ok := getBackendIfSet(ctx); ok {
+		p := filepath.Clean(path)
+		data, err := b.ReadFile(ctx, p)
+		if err != nil {
+			return NewErrorResponse(fmt.Errorf("file not found: %s", path)), nil
+		}
+		if int64(len(data)) > MaxFileSize {
+			return NewErrorResponse(fmt.Errorf("file too large (%d bytes, max %d): %s", len(data), MaxFileSize, path)), nil
+		}
+		rawLines := splitReadLines(data)
+		if rc := GetReadCache(ctx); rc != nil {
+			rc.CacheFile(p, rawLines)
+		}
+		return NewTextResponse(formatReadLines(rawLines, offset, limit)), nil
+	}
+
 	abs, err := resolvePath(ctx, path)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("invalid path: %w", err)), nil
@@ -72,23 +107,6 @@ func (t *readTool) Execute(ctx context.Context, args map[string]any) (*ToolRespo
 	}
 	if info.Size() > MaxFileSize {
 		return NewErrorResponse(fmt.Errorf("file too large (%d bytes, max %d): %s", info.Size(), MaxFileSize, path)), nil
-	}
-
-	offset := 0
-	if v, ok := args["offset"]; ok {
-		// User provides 1-based offset; convert to 0-based internally.
-		offset = toInt(v) - 1
-	}
-	if offset < 0 {
-		offset = 0
-	}
-
-	limit := defaultReadLimit
-	if v, ok := args["limit"]; ok {
-		n := toInt(v)
-		if n > 0 {
-			limit = n
-		}
 	}
 
 	var rawLines []string
@@ -120,23 +138,37 @@ func (t *readTool) Execute(ctx context.Context, args map[string]any) (*ToolRespo
 		}
 	}
 
+	return NewTextResponse(formatReadLines(rawLines, offset, limit)), nil
+}
+
+// splitReadLines splits file bytes into lines the way the read tool expects,
+// matching bufio.Scanner: a final trailing newline does not yield an extra empty
+// line, and \r\n is normalized to \n.
+func splitReadLines(data []byte) []string {
+	if len(data) == 0 {
+		return nil
+	}
+	s := strings.ReplaceAll(string(data), "\r\n", "\n")
+	s = strings.TrimSuffix(s, "\n")
+	return strings.Split(s, "\n")
+}
+
+// formatReadLines renders numbered lines for [offset, offset+limit), truncating
+// over-long lines to prevent output explosion.
+func formatReadLines(rawLines []string, offset, limit int) string {
 	end := offset + limit
 	if end > len(rawLines) {
 		end = len(rawLines)
 	}
-
 	var lines []string
 	for i := offset; i < end; i++ {
 		line := rawLines[i]
-		// Truncate very long lines to prevent output explosion
 		if len(line) > maxLineLengthChars {
 			line = line[:maxLineLengthChars] + lineTruncatedSuffix
 		}
 		lines = append(lines, fmt.Sprintf("%d\t%s", i+1, line))
 	}
-
-	content := strings.Join(lines, "\n")
-	return NewTextResponse(content), nil
+	return strings.Join(lines, "\n")
 }
 
 // CheckPermissions returns passthrough for read operations (reads are generally safe).

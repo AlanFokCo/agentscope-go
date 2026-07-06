@@ -69,6 +69,33 @@ func (t *editTool) Execute(ctx context.Context, args map[string]any) (*ToolRespo
 		}
 	}
 
+	// If a custom backend (Docker/E2B) is configured, edit inside it using the
+	// caller-provided (workspace-relative) path; the backend resolves it within
+	// its own root. Otherwise use the local host path with the workspace jail.
+	if b, ok := getBackendIfSet(ctx); ok {
+		p := filepath.Clean(path)
+		if rc := GetReadCache(ctx); rc != nil && !rc.HasBeenRead(p) {
+			return NewErrorResponse(fmt.Errorf("you must read the file first before editing it")), nil
+		}
+		data, err := b.ReadFile(ctx, p)
+		if err != nil {
+			return NewErrorResponse(fmt.Errorf("file not found: %s", path)), nil
+		}
+		oldContent := string(data)
+		newContent, count, editErr := applyStringEdit(oldContent, oldStr, newStr, replaceAll)
+		if editErr != nil {
+			return NewErrorResponse(editErr), nil
+		}
+		if err := b.WriteFile(ctx, p, []byte(newContent)); err != nil {
+			return NewErrorResponse(fmt.Errorf("write file: %w", err)), nil
+		}
+		resp := NewTextResponse(fmt.Sprintf("Replaced %d occurrence(s) in %s", count, p))
+		if diff := generateUnifiedDiff(p, oldContent, newContent); diff != "" {
+			resp.Metadata = map[string]any{"diff": diff}
+		}
+		return resp, nil
+	}
+
 	abs, err := resolvePath(ctx, path)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("invalid path: %w", err)), nil
@@ -90,22 +117,9 @@ func (t *editTool) Execute(ctx context.Context, args map[string]any) (*ToolRespo
 
 	oldContent := string(data)
 
-	if !strings.Contains(oldContent, oldStr) {
-		return NewErrorResponse(fmt.Errorf("old_string not found in file")), nil
-	}
-
-	var count int
-	var newContent string
-	if replaceAll {
-		count = strings.Count(oldContent, oldStr)
-		newContent = strings.ReplaceAll(oldContent, oldStr, newStr)
-	} else {
-		count = strings.Count(oldContent, oldStr)
-		if count > 1 {
-			return NewErrorResponse(fmt.Errorf("old_string is not unique in file (%d occurrences); use replace_all=true or provide more context", count)), nil
-		}
-		newContent = strings.Replace(oldContent, oldStr, newStr, 1)
-		count = 1
+	newContent, count, editErr := applyStringEdit(oldContent, oldStr, newStr, replaceAll)
+	if editErr != nil {
+		return NewErrorResponse(editErr), nil
 	}
 
 	if err := os.WriteFile(abs, []byte(newContent), 0o644); err != nil {
@@ -127,6 +141,22 @@ func (t *editTool) Execute(ctx context.Context, args map[string]any) (*ToolRespo
 }
 
 // CheckPermissions checks for dangerous paths and defers to AcceptEdits mode.
+// applyStringEdit performs the find/replace used by the edit tool, returning the
+// new content and the number of replacements. It errors if old_string is absent
+// or (without replaceAll) not unique.
+func applyStringEdit(content, oldStr, newStr string, replaceAll bool) (string, int, error) {
+	if !strings.Contains(content, oldStr) {
+		return "", 0, fmt.Errorf("old_string not found in file")
+	}
+	if replaceAll {
+		return strings.ReplaceAll(content, oldStr, newStr), strings.Count(content, oldStr), nil
+	}
+	if count := strings.Count(content, oldStr); count > 1 {
+		return "", 0, fmt.Errorf("old_string is not unique in file (%d occurrences); use replace_all=true or provide more context", count)
+	}
+	return strings.Replace(content, oldStr, newStr, 1), 1, nil
+}
+
 func (t *editTool) CheckPermissions(input map[string]any, ctx *permission.Context) permission.Decision {
 	path, _ := input["file_path"].(string)
 	if path == "" {

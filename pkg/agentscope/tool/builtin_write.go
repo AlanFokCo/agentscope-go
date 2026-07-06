@@ -53,6 +53,29 @@ func (t *writeTool) Execute(ctx context.Context, args map[string]any) (*ToolResp
 		return NewErrorResponse(fmt.Errorf("content must be a string")), nil
 	}
 
+	// If a custom backend (Docker/E2B) is configured, write inside it using the
+	// caller-provided (workspace-relative) path.
+	if b, ok := getBackendIfSet(ctx); ok {
+		p := filepath.Clean(path)
+		var oldContent string
+		if existingData, readErr := b.ReadFile(ctx, p); readErr == nil {
+			if rc := GetReadCache(ctx); rc != nil && !rc.HasBeenRead(p) {
+				return NewErrorResponse(fmt.Errorf("file exists but has not been read yet; you must read the file first before writing to it")), nil
+			}
+			oldContent = string(existingData)
+		}
+		if err := b.WriteFile(ctx, p, []byte(content)); err != nil {
+			return NewErrorResponse(fmt.Errorf("write file: %w", err)), nil
+		}
+		resp := NewTextResponse(fmt.Sprintf("Written %d bytes to %s", len(content), p))
+		if oldContent != "" || content != "" {
+			if diff := generateUnifiedDiff(p, oldContent, content); diff != "" {
+				resp.Metadata = map[string]any{"diff": diff}
+			}
+		}
+		return resp, nil
+	}
+
 	abs, err := resolvePath(ctx, path)
 	if err != nil {
 		return NewErrorResponse(fmt.Errorf("invalid path: %w", err)), nil
