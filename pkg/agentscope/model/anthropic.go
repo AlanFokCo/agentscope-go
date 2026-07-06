@@ -26,6 +26,7 @@ type AnthropicChatModel struct {
 	version        string
 	maxOutputTok   int
 	defaultHeaders map[string]string
+	promptCaching  bool // if true, mark system + last tool with cache_control:{type:ephemeral}
 
 	httpClient *http.Client
 }
@@ -39,6 +40,11 @@ type AnthropicConfig struct {
 	MaxOutputTokens int
 	HTTPClient      *http.Client
 	ClientOptions   *ClientOptions
+	// PromptCaching enables Anthropic prompt caching: the system prompt and the
+	// last tool definition are marked with cache_control:{type:"ephemeral"} so
+	// Anthropic reuses the input-token prefix across turns. Default false to
+	// avoid changing the wire format for existing callers.
+	PromptCaching bool
 }
 
 // NewAnthropicChatModel creates a ChatModel backed by Anthropic.
@@ -72,8 +78,53 @@ func NewAnthropicChatModel(cfg *AnthropicConfig) (*AnthropicChatModel, error) {
 		version:        ver,
 		maxOutputTok:   maxTok,
 		defaultHeaders: defHeaders,
+		promptCaching:  cfg.PromptCaching,
 		httpClient:     defaultHTTPClient(cfg.HTTPClient, cfg.ClientOptions),
 	}, nil
+}
+
+// anthropicCache is the Anthropic cache_control marker attached to a system
+// text block or a tool definition. Currently only "ephemeral" is supported
+// (5-minute TTL, no beta header needed).
+type anthropicCache struct {
+	Type string `json:"type"`
+}
+
+// anthropicSystemBlock is one element in a structured system prompt (used when
+// prompt caching is enabled; without caching the system is sent as a flat
+// string per the wire format's shorthand).
+type anthropicSystemBlock struct {
+	Type         string          `json:"type"`
+	Text         string          `json:"text"`
+	CacheControl *anthropicCache `json:"cache_control,omitempty"`
+}
+
+// applyPromptCaching returns the value to set on anthropicRequest.System +
+// the (possibly mutated) tools slice. When caching is disabled the caller
+// gets back its inputs unchanged, so wire format matches pre-M8a exactly.
+// When enabled: system becomes a single-element []anthropicSystemBlock with
+// cache_control on the block, and the LAST tool gets cache_control (Anthropic
+// treats a cache breakpoint on a tool as "cache the entire tool list up to
+// and including this one"). Empty system returns nil so we do not send a
+// stray empty block.
+func (m *AnthropicChatModel) applyPromptCaching(systemText string, tools []anthropicTool) (interface{}, []anthropicTool) {
+	if !m.promptCaching {
+		return systemText, tools
+	}
+	var sys interface{}
+	if systemText != "" {
+		sys = []anthropicSystemBlock{{
+			Type: "text", Text: systemText,
+			CacheControl: &anthropicCache{Type: "ephemeral"},
+		}}
+	}
+	if len(tools) > 0 {
+		out := make([]anthropicTool, len(tools))
+		copy(out, tools)
+		out[len(out)-1].CacheControl = &anthropicCache{Type: "ephemeral"}
+		tools = out
+	}
+	return sys, tools
 }
 
 type anthropicMessage struct {
@@ -85,7 +136,7 @@ type anthropicRequest struct {
 	Model      string               `json:"model"`
 	Messages   []anthropicMessage   `json:"messages"`
 	MaxTokens  int                  `json:"max_tokens"`
-	System     string               `json:"system,omitempty"`
+	System     interface{}          `json:"system,omitempty"` // string OR []anthropicSystemBlock (M8a)
 	Tools      []anthropicTool      `json:"tools,omitempty"`
 	ToolChoice *anthropicToolChoice `json:"tool_choice,omitempty"`
 	Thinking   *anthropicThinking   `json:"thinking,omitempty"`
@@ -102,9 +153,10 @@ type anthropicThinking struct {
 }
 
 type anthropicTool struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"input_schema"`
+	Name         string          `json:"name"`
+	Description  string          `json:"description"`
+	InputSchema  json.RawMessage `json:"input_schema"`
+	CacheControl *anthropicCache `json:"cache_control,omitempty"` // M8a
 }
 
 type anthropicResponse struct {
@@ -173,6 +225,9 @@ func (m *AnthropicChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts
 	if callOpts.ToolChoice != nil && len(reqBody.Tools) > 0 {
 		reqBody.ToolChoice = formatToolChoiceAnthropic(callOpts.ToolChoice)
 	}
+
+	// M8a: apply prompt caching last so it sees the finalized system + tools.
+	reqBody.System, reqBody.Tools = m.applyPromptCaching(system, reqBody.Tools)
 
 	// Retry loop
 	maxRetries := callOpts.MaxRetries
@@ -312,6 +367,9 @@ func (m *AnthropicChatModel) ChatStream(ctx context.Context, msgs []*message.Msg
 		reqBody.ToolChoice = formatToolChoiceAnthropic(callOpts.ToolChoice)
 	}
 
+	// M8a: apply prompt caching last so it sees the finalized system + tools.
+	reqBody.System, reqBody.Tools = m.applyPromptCaching(system, reqBody.Tools)
+
 	sseCh, err := httpx.DoSSERequest(
 		ctx,
 		m.httpClient,
@@ -337,7 +395,7 @@ type anthropicStreamRequest struct {
 	Model      string               `json:"model"`
 	Messages   []anthropicMessage   `json:"messages"`
 	MaxTokens  int                  `json:"max_tokens"`
-	System     string               `json:"system,omitempty"`
+	System     interface{}          `json:"system,omitempty"` // string OR []anthropicSystemBlock (M8a)
 	Tools      []anthropicTool      `json:"tools,omitempty"`
 	ToolChoice *anthropicToolChoice `json:"tool_choice,omitempty"`
 	Thinking   *anthropicThinking   `json:"thinking,omitempty"`
