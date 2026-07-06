@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -471,43 +472,140 @@ func ValidateInput(schema json.RawMessage, input map[string]any) error {
 	if len(schema) == 0 || input == nil {
 		return nil
 	}
+	return validateAgainstSchema("input", input, schema)
+}
 
-	var s struct {
-		Type       string                     `json:"type"`
-		Properties map[string]json.RawMessage `json:"properties"`
-		Required   []string                   `json:"required"`
+// jsonSchemaNode is the subset of JSON Schema the validator enforces.
+type jsonSchemaNode struct {
+	Type       string                     `json:"type"`
+	Properties map[string]json.RawMessage `json:"properties"`
+	Required   []string                   `json:"required"`
+	Items      json.RawMessage            `json:"items"`
+	Enum       []any                      `json:"enum"`
+	Minimum    *float64                   `json:"minimum"`
+	Maximum    *float64                   `json:"maximum"`
+	MinLength  *int                       `json:"minLength"`
+	MaxLength  *int                       `json:"maxLength"`
+	Pattern    string                     `json:"pattern"`
+}
+
+// validateAgainstSchema recursively validates val against a JSON Schema node.
+// It enforces type, required, enum, string length/pattern, number bounds, nested
+// object properties, and array item schemas. An unparseable schema node is
+// skipped (permissive), but any explicit constraint that is violated errors.
+func validateAgainstSchema(name string, val any, raw json.RawMessage) error {
+	if len(raw) == 0 {
+		return nil
 	}
-	if err := json.Unmarshal(schema, &s); err != nil {
-		return nil // can't parse schema, skip validation
+	var s jsonSchemaNode
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return nil // unparseable schema node: skip
+	}
+	if val == nil {
+		return nil
 	}
 
-	// Check required fields
-	for _, req := range s.Required {
-		if _, ok := input[req]; !ok {
-			return fmt.Errorf("missing required field %q", req)
+	if err := checkType(name, val, s.Type); err != nil {
+		return err
+	}
+
+	if len(s.Enum) > 0 && !enumContains(s.Enum, val) {
+		return fmt.Errorf("field %q: value %v is not one of the allowed values", name, val)
+	}
+
+	if str, ok := val.(string); ok {
+		n := len([]rune(str))
+		if s.MinLength != nil && n < *s.MinLength {
+			return fmt.Errorf("field %q: length %d is below minLength %d", name, n, *s.MinLength)
+		}
+		if s.MaxLength != nil && n > *s.MaxLength {
+			return fmt.Errorf("field %q: length %d exceeds maxLength %d", name, n, *s.MaxLength)
+		}
+		if s.Pattern != "" {
+			if re, err := regexp.Compile(s.Pattern); err == nil && !re.MatchString(str) {
+				return fmt.Errorf("field %q: value does not match pattern %q", name, s.Pattern)
+			}
 		}
 	}
 
-	// Check types for fields present in both input and schema
-	for name, propSchema := range s.Properties {
-		val, ok := input[name]
-		if !ok {
-			continue // not required, skip
+	if f, ok := toFloat(val); ok {
+		if s.Minimum != nil && f < *s.Minimum {
+			return fmt.Errorf("field %q: value %v is below minimum %v", name, f, *s.Minimum)
 		}
+		if s.Maximum != nil && f > *s.Maximum {
+			return fmt.Errorf("field %q: value %v exceeds maximum %v", name, f, *s.Maximum)
+		}
+	}
 
-		var prop struct {
-			Type string `json:"type"`
+	if obj, ok := val.(map[string]any); ok {
+		for _, req := range s.Required {
+			if _, present := obj[req]; !present {
+				return fmt.Errorf("field %q: missing required field %q", name, req)
+			}
 		}
-		if err := json.Unmarshal(propSchema, &prop); err != nil {
-			continue
+		for propName, propSchema := range s.Properties {
+			if pv, present := obj[propName]; present {
+				if err := validateAgainstSchema(propName, pv, propSchema); err != nil {
+					return err
+				}
+			}
 		}
+	}
 
-		if err := checkType(name, val, prop.Type); err != nil {
-			return err
+	if len(s.Items) > 0 {
+		if arr, ok := val.([]any); ok {
+			for i, elem := range arr {
+				if err := validateAgainstSchema(fmt.Sprintf("%s[%d]", name, i), elem, s.Items); err != nil {
+					return err
+				}
+			}
 		}
 	}
 
 	return nil
+}
+
+// enumContains reports whether val equals one of the enum members (string, bool,
+// or numeric equality).
+func enumContains(enum []any, val any) bool {
+	for _, e := range enum {
+		switch ev := e.(type) {
+		case string:
+			if vs, ok := val.(string); ok && vs == ev {
+				return true
+			}
+		case bool:
+			if vb, ok := val.(bool); ok && vb == ev {
+				return true
+			}
+		default:
+			if ef, ok := toFloat(e); ok {
+				if vf, ok2 := toFloat(val); ok2 && ef == vf {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// toFloat converts a numeric value (from JSON or Go) to float64.
+func toFloat(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case json.Number:
+		f, err := n.Float64()
+		return f, err == nil
+	default:
+		return 0, false
+	}
 }
 
 // checkType validates that val matches the expected JSON Schema type.
