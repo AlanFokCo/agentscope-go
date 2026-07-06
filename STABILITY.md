@@ -70,7 +70,10 @@ Landed:
 
 Planned (tracked):
 
-- Docker/E2B `tool.Backend` adapter so file/bash tools execute inside the sandbox.
+- Full tool-in-sandbox execution. Done: `workspace.ToolBackend` adapter
+  (Workspace → `tool.Backend`) and Bash routing through a configured backend.
+  Remaining: file tools (read/write/edit) resolve host-absolute paths, so routing
+  them through a non-local backend needs per-backend path handling.
 - Shipped Prometheus/OTLP exporter + `/metrics` + trace-context propagation;
   `ctx` threaded through `loop.Hook` so spans nest under the caller.
 - Durable `FullStorage` (credentials/agents/schedules), session-history persistence
