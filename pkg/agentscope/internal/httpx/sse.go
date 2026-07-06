@@ -18,6 +18,7 @@ type SSEEvent struct {
 	Event string // event type (empty means "message")
 	Data  string // event data payload
 	ID    string // optional event ID
+	Err   error  // non-nil on a terminal stream failure (scanner/transport error)
 }
 
 // DoSSERequest sends an HTTP request and returns a channel that yields parsed SSE events.
@@ -146,6 +147,12 @@ func parseSSEStream(ctx context.Context, body io.ReadCloser, ch chan<- SSEEvent)
 
 	if err := scanner.Err(); err != nil && ctx.Err() == nil {
 		logrus.WithError(err).Warn("httpx: SSE stream scanner error")
+		// Surface the failure as a terminal event so consumers can mark the
+		// stream errored instead of treating the truncated output as complete.
+		select {
+		case ch <- SSEEvent{Err: err}:
+		case <-ctx.Done():
+		}
 	}
 }
 

@@ -1,0 +1,56 @@
+package model
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/alanfokco/agentscope-go/pkg/agentscope/internal/httpx"
+)
+
+func drainStream(sseCh chan httpx.SSEEvent) []ChatResponse {
+	outCh := make(chan ChatResponse, 32)
+	processOpenAIStream(context.Background(), sseCh, outCh)
+	var out []ChatResponse
+	for r := range outCh {
+		out = append(out, r)
+	}
+	return out
+}
+
+// TestProcessOpenAIStream_PropagatesTerminalError proves a mid-stream transport
+// failure (surfaced as SSEEvent.Err) becomes a ChatResponse with Error set,
+// instead of silently ending as a normal, truncated IsLast response.
+func TestProcessOpenAIStream_PropagatesTerminalError(t *testing.T) {
+	sseCh := make(chan httpx.SSEEvent, 4)
+	sseCh <- httpx.SSEEvent{Data: `{"id":"x","choices":[{"delta":{"content":"partial"}}]}`}
+	sseCh <- httpx.SSEEvent{Err: errors.New("connection reset by peer")}
+	close(sseCh)
+
+	got := drainStream(sseCh)
+	if len(got) == 0 {
+		t.Fatal("expected at least one response")
+	}
+	last := got[len(got)-1]
+	if last.Error == nil {
+		t.Fatal("terminal stream error was swallowed; expected ChatResponse.Error to be set")
+	}
+	if !last.IsLast {
+		t.Error("error response should be marked IsLast")
+	}
+}
+
+// TestProcessOpenAIStream_SurfacesStopReason proves finish_reason is normalized
+// onto StopReason (so callers can detect length/content_filter truncation).
+func TestProcessOpenAIStream_SurfacesStopReason(t *testing.T) {
+	sseCh := make(chan httpx.SSEEvent, 4)
+	sseCh <- httpx.SSEEvent{Data: `{"id":"x","choices":[{"delta":{"content":"hi"},"finish_reason":"length"}]}`}
+	sseCh <- httpx.SSEEvent{Data: "[DONE]"}
+	close(sseCh)
+
+	got := drainStream(sseCh)
+	last := got[len(got)-1]
+	if last.StopReason != StopReasonLength {
+		t.Fatalf("StopReason = %q, want %q", last.StopReason, StopReasonLength)
+	}
+}

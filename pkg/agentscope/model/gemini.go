@@ -376,6 +376,19 @@ func processGeminiStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, outCh
 		default:
 		}
 
+		// Terminal transport/scanner error: surface it instead of ending silently.
+		if evt.Err != nil {
+			var content []message.ContentBlock
+			if accText != "" {
+				content = append(content, message.TextBlock{Type: "text", Text: accText})
+			}
+			select {
+			case outCh <- ChatResponse{Content: content, IsLast: true, ModelName: modelName, Usage: usage, Error: evt.Err}:
+			case <-ctx.Done():
+			}
+			return
+		}
+
 		var chunk geminiResponse
 		if err := json.Unmarshal([]byte(evt.Data), &chunk); err != nil {
 			continue

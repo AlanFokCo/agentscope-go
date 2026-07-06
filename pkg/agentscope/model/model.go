@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	aserr "github.com/alanfokco/agentscope-go/pkg/agentscope/errors"
@@ -53,6 +54,25 @@ const (
 	StopReasonToolCalls     = "tool_calls"
 	StopReasonContentFilter = "content_filter"
 )
+
+// normalizeStopReason maps a provider-specific finish/stop reason to the
+// normalized StopReason vocabulary. Unknown non-empty values are returned as-is.
+func normalizeStopReason(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "":
+		return ""
+	case "stop", "end_turn", "eos", "complete", "finished":
+		return StopReasonStop
+	case "length", "max_tokens", "model_length", "max_output_tokens":
+		return StopReasonLength
+	case "tool_calls", "tool_use", "function_call":
+		return StopReasonToolCalls
+	case "content_filter", "safety", "recitation", "blocklist":
+		return StopReasonContentFilter
+	default:
+		return raw
+	}
+}
 
 // GetTextContent concatenates all TextBlock content from the response.
 func (r *ChatResponse) GetTextContent() string {

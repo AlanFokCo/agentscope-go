@@ -412,6 +412,26 @@ func processAnthropicStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, ou
 		default:
 		}
 
+		// Terminal transport/scanner error: surface it instead of ending silently.
+		if evt.Err != nil {
+			select {
+			case outCh <- ChatResponse{
+				IsLast:    true,
+				ID:        responseID,
+				ModelName: modelName,
+				Usage: &ChatUsage{
+					InputTokens:              inputTokens,
+					OutputTokens:             outputTokens,
+					CacheCreationInputTokens: cacheCreationInputTokens,
+					CacheInputTokens:         cacheInputTokens,
+				},
+				Error: evt.Err,
+			}:
+			case <-ctx.Done():
+			}
+			return
+		}
+
 		switch evt.Event {
 		case "message_start":
 			var ms anthropicMessageStart

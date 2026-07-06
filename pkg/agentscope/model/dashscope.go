@@ -177,6 +177,53 @@ func (m *DashScopeChatModel) ChatStream(ctx context.Context, msgs []*message.Msg
 
 // processOpenAIStream consumes OpenAI-compatible SSE chunks and emits ChatResponse values.
 // Shared by DashScope and OpenAI adapters.
+// assembleStreamContent builds the accumulated content blocks (thinking, text,
+// tool calls, audio) from a streamed OpenAI-style response. Shared by the normal
+// completion path and the terminal-error path.
+func assembleStreamContent(thinking, text string, accToolCalls map[int]*openAIToolCall, accAudioData []byte, audioBlockID, responseID string) []message.ContentBlock {
+	var content []message.ContentBlock
+	if thinking != "" {
+		content = append(content, message.ThinkingBlock{
+			Type:     "thinking",
+			ID:       fmt.Sprintf("thinking_%s", responseID),
+			Thinking: thinking,
+		})
+	}
+	if text != "" {
+		content = append(content, message.TextBlock{
+			Type: "text",
+			ID:   fmt.Sprintf("text_%s", responseID),
+			Text: text,
+		})
+	}
+	for i := 0; i < len(accToolCalls); i++ {
+		tc := accToolCalls[i]
+		if tc == nil {
+			continue
+		}
+		content = append(content, message.ToolCallBlock{
+			Type:  "tool_call",
+			ID:    tc.ID,
+			Name:  tc.Function.Name,
+			Input: tc.Function.Arguments,
+			State: message.ToolCallPending,
+		})
+	}
+	if len(accAudioData) > 0 {
+		wavData := buildWAV(accAudioData, 24000, 1, 16)
+		content = append(content, message.DataBlock{
+			Type: "data",
+			ID:   audioBlockID,
+			Source: message.Base64Source{
+				Type:      "base64",
+				MediaType: "audio/wav",
+				Data:      base64.StdEncoding.EncodeToString(wavData),
+			},
+		})
+	}
+	return content
+}
+
 func processOpenAIStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, outCh chan<- ChatResponse) {
 	defer close(outCh)
 
@@ -191,6 +238,7 @@ func processOpenAIStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, outCh
 		accAudioData    []byte
 		audioBlockID    string
 		audioHeaderSent bool
+		finishReason    string
 	)
 
 	for evt := range sseCh {
@@ -198,6 +246,24 @@ func processOpenAIStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, outCh
 		case <-ctx.Done():
 			return
 		default:
+		}
+
+		// A terminal transport/scanner error: surface it as a final response with
+		// Error set (plus whatever was accumulated) instead of ending silently.
+		if evt.Err != nil {
+			select {
+			case outCh <- ChatResponse{
+				Content:    assembleStreamContent(accThinking.String(), accText.String(), accToolCalls, accAudioData, audioBlockID, responseID),
+				IsLast:     true,
+				ID:         responseID,
+				Usage:      usage,
+				ModelName:  modelName,
+				StopReason: normalizeStopReason(finishReason),
+				Error:      evt.Err,
+			}:
+			case <-ctx.Done():
+			}
+			return
 		}
 
 		if evt.Data == "[DONE]" {
@@ -225,6 +291,10 @@ func processOpenAIStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, outCh
 
 		if len(chunk.Choices) == 0 {
 			continue
+		}
+
+		if fr := chunk.Choices[0].FinishReason; fr != nil && *fr != "" {
+			finishReason = *fr
 		}
 
 		delta := chunk.Choices[0].Delta
@@ -334,55 +404,14 @@ func processOpenAIStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, outCh
 		}
 	}
 
-	// Build final accumulated response
-	var finalContent []message.ContentBlock
-	if accThinking.Len() > 0 {
-		finalContent = append(finalContent, message.ThinkingBlock{
-			Type:     "thinking",
-			ID:       fmt.Sprintf("thinking_%s", responseID),
-			Thinking: accThinking.String(),
-		})
-	}
-	if accText.Len() > 0 {
-		finalContent = append(finalContent, message.TextBlock{
-			Type: "text",
-			ID:   fmt.Sprintf("text_%s", responseID),
-			Text: accText.String(),
-		})
-	}
-	for i := 0; i < len(accToolCalls); i++ {
-		tc := accToolCalls[i]
-		if tc == nil {
-			continue
-		}
-		finalContent = append(finalContent, message.ToolCallBlock{
-			Type:  "tool_call",
-			ID:    tc.ID,
-			Name:  tc.Function.Name,
-			Input: tc.Function.Arguments,
-			State: message.ToolCallPending,
-		})
-	}
-	if len(accAudioData) > 0 {
-		wavData := buildWAV(accAudioData, 24000, 1, 16)
-		finalContent = append(finalContent, message.DataBlock{
-			Type: "data",
-			ID:   audioBlockID,
-			Source: message.Base64Source{
-				Type:      "base64",
-				MediaType: "audio/wav",
-				Data:      base64.StdEncoding.EncodeToString(wavData),
-			},
-		})
-	}
-
 	finalResp := ChatResponse{
-		Content:   finalContent,
-		IsLast:    true,
-		ID:        responseID,
-		CreatedAt: time.Now().Format(message.TimestampFormat),
-		Usage:     usage,
-		ModelName: modelName,
+		Content:    assembleStreamContent(accThinking.String(), accText.String(), accToolCalls, accAudioData, audioBlockID, responseID),
+		IsLast:     true,
+		ID:         responseID,
+		CreatedAt:  time.Now().Format(message.TimestampFormat),
+		Usage:      usage,
+		ModelName:  modelName,
+		StopReason: normalizeStopReason(finishReason),
 	}
 	select {
 	case outCh <- finalResp:
