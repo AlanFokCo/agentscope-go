@@ -211,15 +211,15 @@ func (m *OpenAITTSModel) SynthesizeStream(ctx context.Context, text string) (<-c
 				}
 			}
 			if err != nil {
-				if err == io.EOF {
-					select {
-					case out <- Response{
-						Content:  nil,
-						MediaType: mediaTypeForFormat(m.responseFormat),
-						IsLast:   true,
-					}:
-					case <-ctx.Done():
-					}
+				// Send terminal marker on both EOF and non-EOF errors so the
+				// consumer knows the stream has ended.
+				select {
+				case out <- Response{
+					Content:  nil,
+					MediaType: mediaTypeForFormat(m.responseFormat),
+					IsLast:   true,
+				}:
+				case <-ctx.Done():
 				}
 				return
 			}

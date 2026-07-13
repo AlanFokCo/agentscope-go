@@ -78,7 +78,7 @@ func (m *OpenAIChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts ..
 		reqBody.Temperature = &t
 	}
 	if callOpts.MaxTokens != nil {
-		reqBody.MaxTokens = callOpts.MaxTokens
+		reqBody.MaxCompletionTokens = callOpts.MaxTokens
 	}
 	if callOpts.TopP != nil {
 		p := float32(*callOpts.TopP)
@@ -156,7 +156,7 @@ func (m *OpenAIChatModel) ChatStream(ctx context.Context, msgs []*message.Msg, o
 		reqBody.Temperature = &t
 	}
 	if callOpts.MaxTokens != nil {
-		reqBody.MaxTokens = callOpts.MaxTokens
+		reqBody.MaxCompletionTokens = callOpts.MaxTokens
 	}
 	if callOpts.TopP != nil {
 		p := float32(*callOpts.TopP)

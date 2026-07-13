@@ -366,6 +366,7 @@ func processGeminiStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, outCh
 	var (
 		accText     string
 		accThinking string
+		toolCallIdx int
 		modelName   string
 		usage       *ChatUsage
 	)
@@ -418,6 +419,17 @@ func processGeminiStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, outCh
 					Type:     "thinking",
 					Thinking: part.Text,
 				})
+			} else if part.FunctionCall != nil {
+				argsJSON, _ := json.Marshal(part.FunctionCall.Args)
+				tc := message.ToolCallBlock{
+					Type:  "tool_call",
+					ID:    fmt.Sprintf("gemini-call-%s-%d", part.FunctionCall.Name, toolCallIdx),
+					Name:  part.FunctionCall.Name,
+					Input: string(argsJSON),
+					State: message.ToolCallPending,
+				}
+				toolCallIdx++
+				deltaContent = append(deltaContent, tc)
 			} else if part.Text != "" {
 				accText += part.Text
 				deltaContent = append(deltaContent, message.TextBlock{

@@ -235,10 +235,14 @@ func (f *AnthropicFormatter) formatMsg(msg *message.Msg) map[string]any {
 				"input": inputObj,
 			})
 		case message.ToolResultBlock:
+			resultText := ConvertToolResultToString(blk.Output)
+			if resultText == "" {
+				resultText = "(empty tool output)"
+			}
 			trBlock := map[string]any{
 				"type":        "tool_result",
 				"tool_use_id": blk.ID,
-				"content":     ConvertToolResultToString(blk.Output),
+				"content":     resultText,
 			}
 			content = append(content, trBlock)
 		case message.HintBlock:
