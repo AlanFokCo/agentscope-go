@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased] - 2026-07-13
+
+### Added
+- OpenAI TTS model () calling  endpoint with streaming support
+- Gemini schema sanitizer: converts  to , removes //, rewrites  to 
+- JSON repair utility for truncated tool-call inputs (closes malformed JSON instead of crashing)
+- Ollama formatter:  field in tool result messages
+- Gemini  generation (synthetic call IDs for tool result matching)
+
+### Fixed
+- OpenAI Chat Completions:  →  wire field (deprecated by OpenAI for newer models)
+- Anthropic formatter: drop empty text blocks and empty thinking blocks (Anthropic rejects with 400)
+- Gemini formatter: drop empty text blocks and empty thinking blocks (Gemini rejects with 400)
+
 ## [v2.0.3] - 2025-06-25
 
 ### Added

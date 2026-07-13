@@ -239,7 +239,7 @@ func (m *GeminiChatModel) buildRequest(msgs []*message.Msg, callOpts *CallOption
 			funcs = append(funcs, geminiFunctionDeclaration{
 				Name:        t.Function.Name,
 				Description: t.Function.Description,
-				Parameters:  t.Function.Parameters,
+				Parameters:  SanitizeSchemaForGemini(t.Function.Parameters),
 			})
 		}
 		req.Tools = []geminiTool{{FunctionDeclarations: funcs}}
@@ -320,7 +320,7 @@ func parseGeminiResponse(parsed geminiResponse) (*ChatResponse, error) {
 	candidate := parsed.Candidates[0]
 	var content []message.ContentBlock
 
-	for _, part := range candidate.Content.Parts {
+	for idx, part := range candidate.Content.Parts {
 		if part.Thought {
 			content = append(content, message.ThinkingBlock{
 				Type:     "thinking",
@@ -330,6 +330,7 @@ func parseGeminiResponse(parsed geminiResponse) (*ChatResponse, error) {
 			argsJSON, _ := json.Marshal(part.FunctionCall.Args)
 			content = append(content, message.ToolCallBlock{
 				Type:  "tool_call",
+				ID:    fmt.Sprintf("gemini-call-%s-%d", part.FunctionCall.Name, idx),
 				Name:  part.FunctionCall.Name,
 				Input: string(argsJSON),
 				State: message.ToolCallPending,

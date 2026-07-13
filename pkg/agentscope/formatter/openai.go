@@ -1,8 +1,6 @@
 package formatter
 
 import (
-	"encoding/json"
-
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 )
 
@@ -12,6 +10,8 @@ type OpenAIFormatter struct {
 	SupportsThinking bool
 	// SupportedInputMediaTypes lists glob patterns of accepted media types (e.g. "image/*").
 	SupportedInputMediaTypes []string
+	// ToolNameInResult includes the tool name in tool result messages (Ollama requires this).
+	ToolNameInResult bool
 }
 
 func (f *OpenAIFormatter) Format(msgs []*message.Msg) ([]map[string]any, error) {
@@ -40,7 +40,7 @@ func (f *OpenAIFormatter) formatMsg(msg *message.Msg) map[string]any {
 	var textParts []string
 	var thinkingParts []string
 	var toolCalls []map[string]any
-	var toolResultID, toolResultContent string
+	var toolResultID, toolResultContent, toolResultName string
 	var multimodalParts []map[string]any
 	isToolResult := false
 	hasMultimodal := false
@@ -65,6 +65,7 @@ func (f *OpenAIFormatter) formatMsg(msg *message.Msg) map[string]any {
 			isToolResult = true
 			toolResultID = blk.ID
 			toolResultContent = blk.GetOutputText()
+			toolResultName = blk.Name
 		case message.HintBlock:
 			textParts = append(textParts, blk.GetHintText())
 		case message.DataBlock:
@@ -76,11 +77,15 @@ func (f *OpenAIFormatter) formatMsg(msg *message.Msg) map[string]any {
 	}
 
 	if isToolResult {
-		return map[string]any{
+		result := map[string]any{
 			"role":         "tool",
 			"tool_call_id": toolResultID,
 			"content":      toolResultContent,
 		}
+		if f.ToolNameInResult {
+			result["tool_name"] = toolResultName
+		}
+		return result
 	}
 
 	if len(toolCalls) > 0 {
@@ -204,24 +209,25 @@ func (f *AnthropicFormatter) formatMsg(msg *message.Msg) map[string]any {
 	for _, b := range blocks {
 		switch blk := b.(type) {
 		case message.TextBlock:
-			content = append(content, map[string]any{
-				"type": "text",
-				"text": blk.Text,
-			})
+			if blk.Text != "" {
+				content = append(content, map[string]any{
+					"type": "text",
+					"text": blk.Text,
+				})
+			}
 		case message.ThinkingBlock:
-			tb := map[string]any{
-				"type":     "thinking",
-				"thinking": blk.Thinking,
+			if blk.Thinking != "" {
+				tb := map[string]any{
+					"type":     "thinking",
+					"thinking": blk.Thinking,
+				}
+				if sig, ok := blk.Extra["signature"]; ok && sig != "" {
+					tb["signature"] = sig
+				}
+				content = append(content, tb)
 			}
-			if sig, ok := blk.Extra["signature"]; ok && sig != "" {
-				tb["signature"] = sig
-			}
-			content = append(content, tb)
 		case message.ToolCallBlock:
-			var inputObj any
-			if err := json.Unmarshal([]byte(blk.Input), &inputObj); err != nil {
-				inputObj = map[string]any{}
-			}
+			inputObj := jsonLoadsWithRepair(blk.Input)
 			content = append(content, map[string]any{
 				"type":  "tool_use",
 				"id":    blk.ID,

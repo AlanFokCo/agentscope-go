@@ -1,8 +1,6 @@
 package formatter
 
 import (
-	"encoding/json"
-
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 )
 
@@ -62,17 +60,18 @@ func (f *GeminiFormatter) formatMsg(msg *message.Msg) map[string]any {
 	for _, b := range blocks {
 		switch blk := b.(type) {
 		case message.TextBlock:
-			parts = append(parts, map[string]any{"text": blk.Text})
-		case message.ThinkingBlock:
-			parts = append(parts, map[string]any{
-				"thought": true,
-				"text":    blk.Thinking,
-			})
-		case message.ToolCallBlock:
-			var args any
-			if err := json.Unmarshal([]byte(blk.Input), &args); err != nil {
-				args = map[string]any{}
+			if blk.Text != "" {
+				parts = append(parts, map[string]any{"text": blk.Text})
 			}
+		case message.ThinkingBlock:
+			if blk.Thinking != "" {
+				parts = append(parts, map[string]any{
+					"thought": true,
+					"text":    blk.Thinking,
+				})
+			}
+		case message.ToolCallBlock:
+			args := jsonLoadsWithRepair(blk.Input)
 			parts = append(parts, map[string]any{
 				"functionCall": map[string]any{
 					"name": blk.Name,

@@ -9,7 +9,7 @@ type OllamaFormatter struct {
 
 func NewOllamaFormatter() *OllamaFormatter {
 	return &OllamaFormatter{
-		OpenAIFormatter: OpenAIFormatter{SupportsThinking: false},
+		OpenAIFormatter: OpenAIFormatter{SupportsThinking: false, ToolNameInResult: true},
 	}
 }
 
