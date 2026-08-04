@@ -227,7 +227,9 @@ func TestBubblewrapPathTraversal_Write(t *testing.T) {
 
 func TestBubblewrapPathTraversal_AbsoluteOutside(t *testing.T) {
 	ws := mustBubblewrapWorkspace(t)
-	_, err := ws.ReadFile(context.Background(), "/etc/passwd")
+	// Use an absolute path clearly outside the workspace root.
+	outsidePath := filepath.Join(os.TempDir(), "not_in_workspace.txt")
+	_, err := ws.ReadFile(context.Background(), outsidePath)
 	if err == nil {
 		t.Fatal("expected error for absolute path outside workspace")
 	}

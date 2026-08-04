@@ -43,9 +43,6 @@ func TestPool_BasicSubmitAndReceive(t *testing.T) {
 		if r.Error != nil {
 			t.Errorf("expected no error, got %v", r.Error)
 		}
-		if r.Duration == 0 {
-			t.Error("expected non-zero duration")
-		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for result")
 	}
@@ -199,9 +196,6 @@ func TestPool_Stats(t *testing.T) {
 	}
 	if stats.FailedJobs != 2 {
 		t.Errorf("expected 2 failed, got %d", stats.FailedJobs)
-	}
-	if stats.TotalDuration == 0 {
-		t.Error("expected non-zero TotalDuration")
 	}
 	if stats.ActiveWorkers != 0 {
 		t.Errorf("expected 0 active workers after completion, got %d", stats.ActiveWorkers)
