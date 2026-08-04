@@ -1,0 +1,12 @@
+name: glm-5.2
+label: GLM 5.2
+status: active
+
+input_types:
+  - text/plain
+
+output_types:
+  - text/plain
+
+context_size: 131072
+output_size: 8192

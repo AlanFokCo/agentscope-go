@@ -5,6 +5,7 @@ import (
 
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/event"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/permission"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tool"
 )
 
@@ -69,6 +70,19 @@ func BuildCompressChain(middlewares []Middleware, core CompressHandler) Compress
 		next := handler
 		handler = func(ctx context.Context, input CompressInput) error {
 			return mw.OnCompressContext(ctx, input, next)
+		}
+	}
+	return handler
+}
+
+// BuildCheckPermissionChain wraps a core CheckPermissionHandler with middlewares in onion order.
+func BuildCheckPermissionChain(middlewares []Middleware, core CheckPermissionHandler) CheckPermissionHandler {
+	handler := core
+	for i := len(middlewares) - 1; i >= 0; i-- {
+		mw := middlewares[i]
+		next := handler
+		handler = func(ctx context.Context, input CheckPermissionInput) (*permission.Decision, error) {
+			return mw.OnCheckPermission(ctx, input, next)
 		}
 	}
 	return handler

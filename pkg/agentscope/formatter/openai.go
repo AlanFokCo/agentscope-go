@@ -226,6 +226,14 @@ func (f *AnthropicFormatter) formatMsg(msg *message.Msg) map[string]any {
 				}
 				content = append(content, tb)
 			}
+		case message.RedactedThinkingBlock:
+			rtb := map[string]any{
+				"type": "redacted_thinking",
+			}
+			if blk.Data != "" {
+				rtb["data"] = blk.Data
+			}
+			content = append(content, rtb)
 		case message.ToolCallBlock:
 			inputObj := jsonLoadsWithRepair(blk.Input)
 			content = append(content, map[string]any{

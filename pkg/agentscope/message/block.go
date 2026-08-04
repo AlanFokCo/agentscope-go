@@ -9,12 +9,13 @@ import (
 type ContentBlockType string
 
 const (
-	ContentBlockText       ContentBlockType = "text"
-	ContentBlockThinking   ContentBlockType = "thinking"
-	ContentBlockToolCall   ContentBlockType = "tool_call"
-	ContentBlockToolResult ContentBlockType = "tool_result"
-	ContentBlockData       ContentBlockType = "data"
-	ContentBlockHint       ContentBlockType = "hint"
+	ContentBlockText             ContentBlockType = "text"
+	ContentBlockThinking         ContentBlockType = "thinking"
+	ContentBlockRedactedThinking ContentBlockType = "redacted_thinking"
+	ContentBlockToolCall         ContentBlockType = "tool_call"
+	ContentBlockToolResult       ContentBlockType = "tool_result"
+	ContentBlockData             ContentBlockType = "data"
+	ContentBlockHint             ContentBlockType = "hint"
 )
 
 // ToolCallState tracks the lifecycle of a tool call.
@@ -65,6 +66,18 @@ type ThinkingBlock struct {
 
 func (b ThinkingBlock) GetType() ContentBlockType { return ContentBlockThinking }
 func (b ThinkingBlock) GetID() string             { return b.ID }
+
+// RedactedThinkingBlock represents redacted reasoning content from Anthropic.
+// The actual thinking content is not available, but the block must be preserved
+// in the message round-trip to maintain conversation integrity.
+type RedactedThinkingBlock struct {
+	Type string `json:"type"`
+	ID   string `json:"id"`
+	Data string `json:"data,omitempty"` // opaque data returned by the API
+}
+
+func (b RedactedThinkingBlock) GetType() ContentBlockType { return ContentBlockRedactedThinking }
+func (b RedactedThinkingBlock) GetID() string             { return b.ID }
 
 // Base64Source represents base64-encoded binary data.
 type Base64Source struct {

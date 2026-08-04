@@ -6,6 +6,7 @@ import (
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/event"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/permission"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tool"
 )
 
@@ -20,6 +21,9 @@ type ActingHandler func(ctx context.Context, input *ActingInput) (*tool.ToolResp
 
 // CompressHandler performs context compression.
 type CompressHandler func(ctx context.Context, input CompressInput) error
+
+// CheckPermissionHandler checks whether a tool call is permitted.
+type CheckPermissionHandler func(ctx context.Context, input CheckPermissionInput) (*permission.Decision, error)
 
 // ReplyInput is passed to OnReply hooks.
 type ReplyInput struct {
@@ -55,6 +59,13 @@ type CompressInput struct {
 	ReserveRatio float64
 }
 
+// CheckPermissionInput is passed to OnCheckPermission hooks.
+type CheckPermissionInput struct {
+	AgentName string
+	ToolCall  message.ToolCallBlock
+	ToolInput map[string]any
+}
+
 // ReasoningHandler processes a reasoning step and returns an event stream.
 type ReasoningHandler func(ctx context.Context, input ReasoningInput) <-chan event.Event
 
@@ -86,6 +97,9 @@ type Middleware interface {
 
 	// OnCompressContext wraps context compression.
 	OnCompressContext(ctx context.Context, input CompressInput, next CompressHandler) error
+
+	// OnCheckPermission wraps the permission check for a tool call.
+	OnCheckPermission(ctx context.Context, input CheckPermissionInput, next CheckPermissionHandler) (*permission.Decision, error)
 
 	// ListTools returns additional tools provided by this middleware.
 	// Returns nil if the middleware does not provide tools.
@@ -129,5 +143,9 @@ func (b *BaseMiddleware) OnSystemPrompt(_ context.Context, _ string, currentProm
 }
 
 func (b *BaseMiddleware) OnCompressContext(ctx context.Context, input CompressInput, next CompressHandler) error {
+	return next(ctx, input)
+}
+
+func (b *BaseMiddleware) OnCheckPermission(ctx context.Context, input CheckPermissionInput, next CheckPermissionHandler) (*permission.Decision, error) {
 	return next(ctx, input)
 }

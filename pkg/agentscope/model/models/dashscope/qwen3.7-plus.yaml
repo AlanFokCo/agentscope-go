@@ -1,0 +1,13 @@
+name: qwen3.7-plus
+label: Qwen Plus 3.7
+status: active
+
+input_types:
+  - text/plain
+
+output_types:
+  - text/plain
+  - application/x-thinking
+
+context_size: 131072
+output_size: 16384

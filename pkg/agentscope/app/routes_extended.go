@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	agentscope "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
@@ -360,7 +361,7 @@ func (a *App) handleUpdateSession(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleListMessages(w http.ResponseWriter, r *http.Request) {
 	fs := a.getFullStorage()
 	if fs == nil {
-		writeJSON(w, http.StatusOK, []any{})
+		writeJSON(w, http.StatusOK, CursorPage[*storage.MessageRecord]{Items: []*storage.MessageRecord{}})
 		return
 	}
 	sessionID := r.PathValue("id")
@@ -369,7 +370,45 @@ func (a *App) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, msgs)
+
+	// Parse cursor pagination params from query string.
+	cursor := r.URL.Query().Get("cursor")
+	limit := 0
+	if v := r.URL.Query().Get("limit"); v != "" {
+		fmt.Sscanf(v, "%d", &limit)
+	}
+	page := ParseCursorRequest(cursor, limit)
+
+	// Apply cursor: skip messages up to and including the cursor ID.
+	start := 0
+	if page.Cursor != "" {
+		for i, m := range msgs {
+			if m.ID == page.Cursor {
+				start = i + 1
+				break
+			}
+		}
+	}
+
+	end := start + page.Limit
+	hasMore := false
+	if end < len(msgs) {
+		hasMore = true
+	} else {
+		end = len(msgs)
+	}
+
+	subset := msgs[start:end]
+	nextCursor := ""
+	if hasMore && len(subset) > 0 {
+		nextCursor = subset[len(subset)-1].ID
+	}
+
+	writeJSON(w, http.StatusOK, CursorPage[*storage.MessageRecord]{
+		Items:      subset,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+	})
 }
 
 // --- Workspace MCP/Skill ---

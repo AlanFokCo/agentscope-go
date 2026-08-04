@@ -238,7 +238,14 @@ func (l *Loop) run(ctx context.Context, input string, ch chan<- event.Event) {
 			case InspectNeedsHITL:
 				state = l.transition(state, protocol.StateWait, iter)
 			default: // InspectNoTools
-				state = l.transition(state, protocol.StateExit, iter)
+				// If the response contains only thinking blocks (no text, no
+				// tool calls), continue to the next reasoning iteration rather
+				// than terminating. This allows the model to keep reasoning.
+				if isThinkingOnlyResponse(lastResp.Content) {
+					state = l.transition(state, protocol.StateReason, iter)
+				} else {
+					state = l.transition(state, protocol.StateExit, iter)
+				}
 			}
 
 		case protocol.StateAct:
@@ -433,6 +440,27 @@ func (l *Loop) transition(from, to protocol.LoopState, iter int) protocol.LoopSt
 }
 
 // emitError sends a custom error event.
+// isThinkingOnlyResponse returns true if content contains only thinking blocks
+// (no text blocks and no tool call blocks). This indicates the model produced
+// reasoning output but no actionable response, so the loop should continue.
+func isThinkingOnlyResponse(content []message.ContentBlock) bool {
+	hasThinking := false
+	for _, b := range content {
+		switch b.GetType() {
+		case message.ContentBlockText:
+			// If there is any text block with actual content, it is not thinking-only.
+			if tb, ok := b.(message.TextBlock); ok && tb.Text != "" {
+				return false
+			}
+		case message.ContentBlockToolCall:
+			return false
+		case message.ContentBlockThinking:
+			hasThinking = true
+		}
+	}
+	return hasThinking
+}
+
 func (l *Loop) emitError(ctx context.Context, ch chan<- event.Event, replyID string, err error) {
 	l.emit(ctx, ch, event.NewCustomEvent(replyID, "loop.error", map[string]any{
 		"error": err,

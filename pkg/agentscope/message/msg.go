@@ -110,6 +110,12 @@ func UnmarshalContentBlocks(data json.RawMessage) ([]ContentBlock, error) {
 				return nil, err
 			}
 			block = b
+		case ContentBlockRedactedThinking:
+			var b RedactedThinkingBlock
+			if err := json.Unmarshal(raw, &b); err != nil {
+				return nil, err
+			}
+			block = b
 		case ContentBlockToolCall:
 			var b ToolCallBlock
 			if err := json.Unmarshal(raw, &b); err != nil {

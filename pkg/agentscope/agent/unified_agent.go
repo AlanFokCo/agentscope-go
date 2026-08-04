@@ -48,7 +48,9 @@ type UnifiedAgent struct {
 	externalCh chan event.ExternalExecutionResultEvent
 	mu         sync.Mutex
 	offloader  Offloader
-	hookRunner *loop.HookRunner
+	hookRunner      *loop.HookRunner
+	stateAwareness  bool
+	responseFormat  *model.ResponseFormat
 }
 
 // ReactConfig controls the ReAct reasoning-acting loop.
@@ -185,6 +187,20 @@ func WithOffloader(o Offloader) AgentOption {
 // integration without changing the agent's internal control flow.
 func WithLoopHooks(hooks ...loop.Hook) AgentOption {
 	return func(a *UnifiedAgent) { a.hookRunner = loop.NewHookRunner(hooks...) }
+}
+
+// WithStateAwareness enables runtime state awareness injection into the system
+// prompt. When enabled, the agent's current state (tasks, tool groups,
+// permission mode) is appended to the system prompt before each model call.
+func WithStateAwareness(enabled bool) AgentOption {
+	return func(a *UnifiedAgent) { a.stateAwareness = enabled }
+}
+
+// WithResponseFormat sets a structured output response format for the agent.
+// When configured, the agent will request the model to return output conforming
+// to the specified format (e.g. json_schema) on every model call.
+func WithResponseFormat(rf *model.ResponseFormat) AgentOption {
+	return func(a *UnifiedAgent) { a.responseFormat = rf }
 }
 
 // NewUnifiedAgent creates the v2 unified agent.
@@ -544,6 +560,7 @@ func (a *UnifiedAgent) buildModelCallHandler() middleware.ModelCallHandler {
 		if input.ToolChoice != nil {
 			opts = append(opts, model.WithToolChoice(input.ToolChoice))
 		}
+		opts = ApplyResponseFormat(opts, a.responseFormat)
 		return a.callModel(ctx, input.Messages, opts)
 	}
 	if len(a.middlewares) == 0 {
@@ -842,6 +859,11 @@ func (a *UnifiedAgent) prepareModelInput(ctx context.Context) []*message.Msg {
 	prompt := a.systemPrompt
 	if len(a.middlewares) > 0 {
 		prompt = middleware.ApplySystemPromptPipeline(ctx, a.middlewares, a.name, prompt)
+	}
+
+	// Inject runtime state awareness if enabled
+	if a.stateAwareness {
+		prompt = InjectStateAwareness(prompt, a.state)
 	}
 
 	// Append skill instructions if skills are configured

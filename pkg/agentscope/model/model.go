@@ -172,6 +172,7 @@ type CallOptions struct {
 	ThinkingBudget  *int
 	ReasoningEffort *string // "low", "medium", "high"
 	Voice           *string // audio output voice (e.g. "alloy"); enables audio modality
+	ResponseFormat  *ResponseFormat
 	MaxRetries      int
 	RetryDelay      time.Duration
 }
@@ -241,6 +242,26 @@ func WithRetries(maxRetries int, delay time.Duration) CallOption {
 	return func(o *CallOptions) {
 		o.MaxRetries = maxRetries
 		o.RetryDelay = delay
+	}
+}
+
+// ResponseFormat configures the model to return structured output.
+type ResponseFormat struct {
+	// Type is the response format type: "text", "json_object", or "json_schema".
+	Type string `json:"type"`
+	// JSONSchema is the JSON Schema the model output must conform to.
+	// Only used when Type is "json_schema".
+	JSONSchema json.RawMessage `json:"json_schema,omitempty"`
+	// Name is an optional identifier for the schema (used by some providers).
+	Name string `json:"name,omitempty"`
+	// Strict indicates whether the model must strictly follow the schema.
+	Strict bool `json:"strict,omitempty"`
+}
+
+// WithResponseFormat sets the response format for structured output.
+func WithResponseFormat(rf *ResponseFormat) CallOption {
+	return func(o *CallOptions) {
+		o.ResponseFormat = rf
 	}
 }
 
