@@ -18,6 +18,7 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -43,6 +44,10 @@ type Mountable interface {
 // Handler returns an http.Handler that serves the embedded web UI.
 // It serves static files from the embedded filesystem and falls back
 // to index.html for SPA routing.
+//
+// The handler strips the "/static/" URL prefix when looking up files
+// in the embedded FS so that HTML can reference assets as
+// "/static/style.css" while the embed directive uses "static/".
 func Handler(opts Options) http.Handler {
 	if opts.PathPrefix == "" {
 		opts.PathPrefix = "/"
@@ -57,6 +62,8 @@ func Handler(opts Options) http.Handler {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
+
+		// Strip optional path prefix
 		if opts.PathPrefix != "/" {
 			path = strings.TrimPrefix(path, strings.TrimSuffix(opts.PathPrefix, "/"))
 			if path == "" {
@@ -64,19 +71,43 @@ func Handler(opts Options) http.Handler {
 			}
 		}
 
-		// Try to serve the file directly
+		// Strip "/static/" prefix so the file server can resolve
+		// e.g. "/static/style.css" -> "style.css" in the embedded FS.
+		if cleaned := strings.TrimPrefix(path, "/static/"); cleaned != path {
+			if f, openErr := sub.Open(cleaned); openErr == nil {
+				f.Close()
+				r2 := new(http.Request)
+				*r2 = *r
+				r2.URL = new(url.URL)
+				*r2.URL = *r.URL
+				r2.URL.Path = "/" + cleaned
+				fileServer.ServeHTTP(w, r2)
+				return
+			}
+		}
+
+		// Try to serve the file directly (non-prefixed path)
 		if path != "/" {
 			clean := strings.TrimPrefix(path, "/")
-			if f, err := sub.Open(clean); err == nil {
+			if f, openErr := sub.Open(clean); openErr == nil {
 				f.Close()
-				fileServer.ServeHTTP(w, r)
+				r2 := new(http.Request)
+				*r2 = *r
+				r2.URL = new(url.URL)
+				*r2.URL = *r.URL
+				r2.URL.Path = "/" + clean
+				fileServer.ServeHTTP(w, r2)
 				return
 			}
 		}
 
 		// SPA fallback: serve index.html
-		r.URL.Path = "/"
-		fileServer.ServeHTTP(w, r)
+		r2 := new(http.Request)
+		*r2 = *r
+		r2.URL = new(url.URL)
+		*r2.URL = *r.URL
+		r2.URL.Path = "/"
+		fileServer.ServeHTTP(w, r2)
 	})
 }
 

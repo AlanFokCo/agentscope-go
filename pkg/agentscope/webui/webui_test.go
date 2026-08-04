@@ -105,3 +105,33 @@ func TestHandler_Options(t *testing.T) {
 		t.Fatal("Handler should not be nil")
 	}
 }
+
+func TestHandler_StaticPrefixCSS(t *testing.T) {
+	h := Handler(Options{})
+	req := httptest.NewRequest("GET", "/static/style.css", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	body, _ := io.ReadAll(rec.Body)
+	if !strings.Contains(string(body), "--bg-primary") {
+		t.Errorf("/static/style.css should contain CSS variables, got:\n%s", string(body)[:200])
+	}
+}
+
+func TestHandler_StaticPrefixJS(t *testing.T) {
+	h := Handler(Options{})
+	req := httptest.NewRequest("GET", "/static/app.js", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	body, _ := io.ReadAll(rec.Body)
+	if !strings.Contains(string(body), "AgentScope Studio") {
+		t.Errorf("/static/app.js should contain app code, got:\n%s", string(body)[:200])
+	}
+}
