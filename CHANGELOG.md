@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added — Go-Exclusive Features
+- **Web UI Studio** (`webui/`): Embedded single-page web interface for agent interaction; zero-dependency SPA served via `go:embed` with streaming chat, thinking block display, tool call visualization, human-in-the-loop confirmation, session management, and model browser; mount with `service.HandlerWithWebUI` or use `webui.Handler` directly
 - **Deterministic Replay** (`replay/`): Record/replay middleware that captures model call request/response pairs into JSON tapes; replay mode returns pre-recorded responses without calling the LLM, enabling fully offline deterministic CI/CD testing
 - **Fan-out Agent Pool** (`runtime.AgentPool`): Worker pool pattern for high-throughput batch processing; each worker owns a fresh agent instance created from a factory function with configurable worker count and queue size
 - **Hot-Reload Config** (`hotreload/`): Polling-based file watcher with `Watcher` and generic `Reloader[T]` for typed config with atomic pointer swap; supports custom parsers (JSON/YAML/TOML) and multi-file watching

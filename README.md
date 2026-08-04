@@ -43,6 +43,17 @@ AgentScope Go is the Go implementation of the [AgentScope](https://github.com/ag
 
 These capabilities exist only in the Go implementation. They leverage Go's concurrency primitives, type system, and compilation model.
 
+### Web UI Studio (`webui/`)
+
+Embedded web interface for agent interaction. Zero external dependencies — the SPA is compiled into the binary via `go:embed`. Supports streaming chat with thinking blocks, tool call visualization, human-in-the-loop confirmation, session management, and model browsing.
+
+```go
+svc := service.New(cfg, cm, factory)
+handler := svc.HandlerWithWebUI(service.WebUIConfig{Enable: true})
+http.ListenAndServe(":8080", handler)
+// Open http://localhost:8080 in your browser
+```
+
 ### Deterministic Replay (`replay/`)
 
 Record every LLM call during a session. Replay the exact sequence in CI without API costs or network dependency.
@@ -436,6 +447,7 @@ pkg/agentscope/
 ├── mcp/                    # MCP client (Stdio + HTTP) + MCP server
 ├── team/                   # Agent teams with leader/worker coordination
 ├── service/                # HTTP agent service + SSE + AG-UI protocol
+├── webui/                  # Embedded web UI (go:embed SPA)
 ├── tracing/                # Tracer interface + OTel + LoggerTracer
 ├── metrics/                # Counter/Histogram + InMemoryProvider + MetricsHook
 ├── resilience/             # Circuit breaker + rate limiter for ChatModel
@@ -508,6 +520,7 @@ pkg/agentscope/
 | `document_parser` | Parse PDF/Word/Excel/PPT into RAG chunks |
 | **Deployment** | |
 | `agent_service` | HTTP Agent Service (REST + SSE streaming) |
+| `webui` | Web UI Studio with streaming chat, tool visualization, HITL |
 | `scheduled_task` | One-shot and recurring task scheduling |
 | `realtime_echo` | Realtime streaming interface demo |
 
@@ -528,6 +541,7 @@ Factual comparison of features available in each implementation:
 | **WASM tool sandbox** | Yes (`wasm/`) | No |
 | **TCP agent mesh** | Yes (`a2a/grpc/`) | No |
 | **Built-in load testing** | Yes (`bench/`) | No |
+| **Embedded Web UI** | Yes (`webui/`) | No |
 | **Hub system (MCP + Skill)** | Yes (`hub/`) | Partial (registry only) |
 | **Access control** | Yes (`access/`) | No |
 | **Document parsers** | 5 formats (Text/PDF/Word/Excel/PPT) | External (LangChain loaders) |
