@@ -49,7 +49,7 @@ type Hub interface {
 	// DisplayName returns the user-facing name.
 	DisplayName() string
 	// List returns cards matching the given options.
-	List(ctx context.Context, opts ListOptions) (*ListResult, error)
+	List(ctx context.Context, opts *ListOptions) (*ListResult, error)
 	// Get retrieves a specific card by ID.
 	Get(ctx context.Context, cardID string) (*Card, error)
 	// Install downloads and installs a card's resources.

@@ -66,7 +66,7 @@ func (r *Registry) List() []Hub {
 }
 
 // SearchAll queries all registered hubs and returns results keyed by hub ID.
-func (r *Registry) SearchAll(ctx context.Context, opts ListOptions) (map[string]*ListResult, error) {
+func (r *Registry) SearchAll(ctx context.Context, opts *ListOptions) (map[string]*ListResult, error) {
 	r.mu.RLock()
 	hubs := make([]Hub, 0, len(r.hubs))
 	for _, h := range r.hubs {

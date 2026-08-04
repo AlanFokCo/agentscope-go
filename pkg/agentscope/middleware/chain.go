@@ -81,7 +81,7 @@ func BuildCheckPermissionChain(middlewares []Middleware, core CheckPermissionHan
 	for i := len(middlewares) - 1; i >= 0; i-- {
 		mw := middlewares[i]
 		next := handler
-		handler = func(ctx context.Context, input CheckPermissionInput) (*permission.Decision, error) {
+		handler = func(ctx context.Context, input *CheckPermissionInput) (*permission.Decision, error) {
 			return mw.OnCheckPermission(ctx, input, next)
 		}
 	}

@@ -79,8 +79,8 @@ type xlsxSST struct {
 }
 
 type xlsxSI struct {
-	T string   `xml:"t"`
-	R []xlsxR  `xml:"r"`
+	T string  `xml:"t"`
+	R []xlsxR `xml:"r"`
 }
 
 type xlsxR struct {

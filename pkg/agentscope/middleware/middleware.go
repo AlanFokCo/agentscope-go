@@ -23,7 +23,7 @@ type ActingHandler func(ctx context.Context, input *ActingInput) (*tool.ToolResp
 type CompressHandler func(ctx context.Context, input CompressInput) error
 
 // CheckPermissionHandler checks whether a tool call is permitted.
-type CheckPermissionHandler func(ctx context.Context, input CheckPermissionInput) (*permission.Decision, error)
+type CheckPermissionHandler func(ctx context.Context, input *CheckPermissionInput) (*permission.Decision, error)
 
 // ReplyInput is passed to OnReply hooks.
 type ReplyInput struct {
@@ -99,7 +99,7 @@ type Middleware interface {
 	OnCompressContext(ctx context.Context, input CompressInput, next CompressHandler) error
 
 	// OnCheckPermission wraps the permission check for a tool call.
-	OnCheckPermission(ctx context.Context, input CheckPermissionInput, next CheckPermissionHandler) (*permission.Decision, error)
+	OnCheckPermission(ctx context.Context, input *CheckPermissionInput, next CheckPermissionHandler) (*permission.Decision, error)
 
 	// ListTools returns additional tools provided by this middleware.
 	// Returns nil if the middleware does not provide tools.
@@ -146,6 +146,6 @@ func (b *BaseMiddleware) OnCompressContext(ctx context.Context, input CompressIn
 	return next(ctx, input)
 }
 
-func (b *BaseMiddleware) OnCheckPermission(ctx context.Context, input CheckPermissionInput, next CheckPermissionHandler) (*permission.Decision, error) {
+func (b *BaseMiddleware) OnCheckPermission(ctx context.Context, input *CheckPermissionInput, next CheckPermissionHandler) (*permission.Decision, error) {
 	return next(ctx, input)
 }

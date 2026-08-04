@@ -38,9 +38,9 @@ func NewSkillHub(cfg SkillHubConfig) *SkillHub {
 }
 
 func (h *SkillHub) ID() string          { return h.cfg.HubID }
-func (h *SkillHub) DisplayName() string  { return h.cfg.DisplayName }
+func (h *SkillHub) DisplayName() string { return h.cfg.DisplayName }
 
-func (h *SkillHub) List(ctx context.Context, opts ListOptions) (*ListResult, error) {
+func (h *SkillHub) List(ctx context.Context, opts *ListOptions) (*ListResult, error) {
 	u, err := url.Parse(h.cfg.BaseURL + "/api/v1/skills")
 	if err != nil {
 		return nil, fmt.Errorf("hub: parse base url: %w", err)
@@ -168,7 +168,7 @@ func extractTarGz(r io.Reader, destDir string) error {
 	if err != nil {
 		return fmt.Errorf("open gzip: %w", err)
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 
 	tr := tar.NewReader(gz)
 	for {
@@ -200,10 +200,10 @@ func extractTarGz(r io.Reader, destDir string) error {
 				return fmt.Errorf("create file: %w", err)
 			}
 			if _, err := io.Copy(f, tr); err != nil {
-				f.Close()
+				_ = f.Close()
 				return fmt.Errorf("write file: %w", err)
 			}
-			f.Close()
+			_ = f.Close()
 		}
 	}
 	return nil

@@ -219,12 +219,7 @@ func (w *DaytonaWorkspace) ListFiles(ctx context.Context, dir string) ([]FileInf
 
 	files := make([]FileInfo, 0, len(daytonaFiles))
 	for _, f := range daytonaFiles {
-		files = append(files, FileInfo{
-			Name:  f.Name,
-			Path:  f.Path,
-			IsDir: f.IsDir,
-			Size:  f.Size,
-		})
+		files = append(files, FileInfo(f))
 	}
 
 	return files, nil

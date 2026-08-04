@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"time"
-
 )
 
 // OpenAITTSModel calls OpenAI Audio Speech API (/v1/audio/speech).
@@ -36,7 +35,7 @@ type OpenAITTSConfig struct {
 }
 
 // NewOpenAITTSModel creates a TTS model backed by OpenAI Audio Speech API.
-func NewOpenAITTSModel(cfg OpenAITTSConfig) (*OpenAITTSModel, error) {
+func NewOpenAITTSModel(cfg *OpenAITTSConfig) (*OpenAITTSModel, error) {
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("openai-tts: APIKey is required")
 	}
@@ -202,9 +201,9 @@ func (m *OpenAITTSModel) SynthesizeStream(ctx context.Context, text string) (<-c
 				copy(chunk, buf[:n])
 				select {
 				case out <- Response{
-					Content:  chunk,
+					Content:   chunk,
 					MediaType: mediaTypeForFormat(m.responseFormat),
-					IsLast:   false,
+					IsLast:    false,
 				}:
 				case <-ctx.Done():
 					return
@@ -215,9 +214,9 @@ func (m *OpenAITTSModel) SynthesizeStream(ctx context.Context, text string) (<-c
 				// consumer knows the stream has ended.
 				select {
 				case out <- Response{
-					Content:  nil,
+					Content:   nil,
 					MediaType: mediaTypeForFormat(m.responseFormat),
-					IsLast:   true,
+					IsLast:    true,
 				}:
 				case <-ctx.Done():
 				}

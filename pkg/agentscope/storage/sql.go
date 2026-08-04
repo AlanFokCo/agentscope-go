@@ -48,7 +48,7 @@ func NewSQLStorage(cfg SQLConfig) (*SQLStorage, error) {
 		return nil, fmt.Errorf("storage/sql: open: %w", err)
 	}
 	if err := db.Ping(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("storage/sql: ping: %w", err)
 	}
 
@@ -59,7 +59,7 @@ func NewSQLStorage(cfg SQLConfig) (*SQLStorage, error) {
 	}
 
 	if err := s.createTable(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 
@@ -125,7 +125,7 @@ func (s *SQLStorage) ListSessions(ctx context.Context) ([]agent.SessionInfo, err
 	if err != nil {
 		return nil, fmt.Errorf("storage/sql: list sessions: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var infos []agent.SessionInfo
 	for rows.Next() {

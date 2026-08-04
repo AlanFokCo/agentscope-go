@@ -32,7 +32,7 @@ type ElasticsearchIndex struct {
 }
 
 // NewElasticsearchIndex constructs an Elasticsearch-backed Index.
-func NewElasticsearchIndex(cfg ElasticsearchConfig, embedder Embedder) (*ElasticsearchIndex, error) {
+func NewElasticsearchIndex(cfg *ElasticsearchConfig, embedder Embedder) (*ElasticsearchIndex, error) {
 	if len(cfg.Addresses) == 0 {
 		return nil, fmt.Errorf("elasticsearch: at least one address is required")
 	}
@@ -46,7 +46,7 @@ func NewElasticsearchIndex(cfg ElasticsearchConfig, embedder Embedder) (*Elastic
 		return nil, fmt.Errorf("elasticsearch: dims must be > 0")
 	}
 	return &ElasticsearchIndex{
-		cfg:      cfg,
+		cfg:      *cfg,
 		embedder: embedder,
 		client:   &http.Client{},
 	}, nil
@@ -92,7 +92,7 @@ func (e *ElasticsearchIndex) ensureIndex(ctx context.Context) error {
 					"type": "dense_vector",
 					"dims": e.cfg.Dims,
 				},
-				"meta": map[string]any{"type": "object", "enabled": true},
+				"meta":   map[string]any{"type": "object", "enabled": true},
 				"doc_id": map[string]any{"type": "keyword"},
 			},
 		},

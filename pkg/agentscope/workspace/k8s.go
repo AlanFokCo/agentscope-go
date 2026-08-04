@@ -12,10 +12,10 @@ import (
 
 // K8sConfig configures a Kubernetes Pod-based workspace.
 type K8sConfig struct {
-	APIServer      string        // e.g. "https://kubernetes.default.svc"
-	Token          string        // bearer token or service account token
-	CACert         string        // path to CA cert file (optional)
-	Namespace      string        // default "default"
+	APIServer      string // e.g. "https://kubernetes.default.svc"
+	Token          string // bearer token or service account token
+	CACert         string // path to CA cert file (optional)
+	Namespace      string // default "default"
 	PodName        string
 	Image          string        // default "ubuntu:22.04"
 	PVCName        string        // optional, for persistent storage
@@ -37,7 +37,7 @@ type K8sWorkspace struct {
 var _ Workspace = (*K8sWorkspace)(nil)
 
 // NewK8sWorkspace creates a Pod (and optionally a PVC) for workspace operations.
-func NewK8sWorkspace(cfg K8sConfig) (*K8sWorkspace, error) {
+func NewK8sWorkspace(cfg *K8sConfig) (*K8sWorkspace, error) {
 	if cfg.PodName == "" {
 		return nil, fmt.Errorf("k8s workspace: pod name is required")
 	}

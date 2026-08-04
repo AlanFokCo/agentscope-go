@@ -465,15 +465,15 @@ type openAIChatRequest struct {
 	Messages []openAIChatMessage `json:"messages"`
 	Stream   bool                `json:"stream,omitempty"`
 
-	Temperature   *float32           `json:"temperature,omitempty"`
-	MaxTokens           *int 
-	MaxCompletionTokens *int `json:"max_completion_tokens,omitempty"`
-	TopP          *float32           `json:"top_p,omitempty"`
-	Tools         []ToolSchema       `json:"tools,omitempty"`
-	ToolChoice    any                `json:"tool_choice,omitempty"`
-	Audio         *openAIAudioConfig `json:"audio,omitempty"`
-	Modalities    []string           `json:"modalities,omitempty"`
-	StreamOptions *openAIStreamOpts  `json:"stream_options,omitempty"`
+	Temperature         *float32 `json:"temperature,omitempty"`
+	MaxTokens           *int
+	MaxCompletionTokens *int               `json:"max_completion_tokens,omitempty"`
+	TopP                *float32           `json:"top_p,omitempty"`
+	Tools               []ToolSchema       `json:"tools,omitempty"`
+	ToolChoice          any                `json:"tool_choice,omitempty"`
+	Audio               *openAIAudioConfig `json:"audio,omitempty"`
+	Modalities          []string           `json:"modalities,omitempty"`
+	StreamOptions       *openAIStreamOpts  `json:"stream_options,omitempty"`
 }
 
 type openAIStreamOpts struct {

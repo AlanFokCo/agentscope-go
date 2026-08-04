@@ -80,8 +80,8 @@ type geminiPart struct {
 }
 
 type geminiGenerationConfig struct {
-	ResponseModalities []string          `json:"response_modalities"`
-	SpeechConfig       *geminiSpeechCfg  `json:"speech_config,omitempty"`
+	ResponseModalities []string         `json:"response_modalities"`
+	SpeechConfig       *geminiSpeechCfg `json:"speech_config,omitempty"`
 }
 
 type geminiSpeechCfg struct {
@@ -98,8 +98,8 @@ type geminiPrebuiltVoice struct {
 }
 
 type geminiResponse struct {
-	Candidates []geminiCandidate  `json:"candidates"`
-	UsageMetadata *geminiUsage    `json:"usageMetadata,omitempty"`
+	Candidates    []geminiCandidate `json:"candidates"`
+	UsageMetadata *geminiUsage      `json:"usageMetadata,omitempty"`
 }
 
 type geminiCandidate struct {

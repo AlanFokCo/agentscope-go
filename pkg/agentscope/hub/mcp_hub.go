@@ -35,9 +35,9 @@ func NewMCPHub(cfg MCPHubConfig) *MCPHub {
 }
 
 func (h *MCPHub) ID() string          { return h.cfg.HubID }
-func (h *MCPHub) DisplayName() string  { return h.cfg.DisplayName }
+func (h *MCPHub) DisplayName() string { return h.cfg.DisplayName }
 
-func (h *MCPHub) List(ctx context.Context, opts ListOptions) (*ListResult, error) {
+func (h *MCPHub) List(ctx context.Context, opts *ListOptions) (*ListResult, error) {
 	u, err := url.Parse(h.cfg.BaseURL + "/api/v1/mcp")
 	if err != nil {
 		return nil, fmt.Errorf("hub: parse base url: %w", err)
@@ -146,7 +146,7 @@ func (h *MCPHub) Install(ctx context.Context, cardID string, targetDir string) e
 	if err != nil {
 		return fmt.Errorf("hub: create file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if _, err := io.Copy(f, resp.Body); err != nil {
 		return fmt.Errorf("hub: write file: %w", err)

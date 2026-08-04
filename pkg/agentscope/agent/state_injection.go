@@ -33,7 +33,8 @@ func BuildStateContext(state *AgentState) string {
 	// Tasks context
 	if state.TasksCtx != nil && len(state.TasksCtx.Tasks) > 0 {
 		sb.WriteString("Active Tasks:\n")
-		for _, t := range state.TasksCtx.Tasks {
+		for i := range state.TasksCtx.Tasks {
+			t := &state.TasksCtx.Tasks[i]
 			line := fmt.Sprintf("  - [%s] %s", t.State, t.Subject)
 			if t.Owner != "" {
 				line += fmt.Sprintf(" (owner: %s)", t.Owner)

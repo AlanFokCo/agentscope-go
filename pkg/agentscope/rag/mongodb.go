@@ -33,7 +33,7 @@ type MongoDBIndex struct {
 }
 
 // NewMongoDBIndex constructs a MongoDB Atlas-backed Index.
-func NewMongoDBIndex(cfg MongoDBConfig, embedder Embedder) (*MongoDBIndex, error) {
+func NewMongoDBIndex(cfg *MongoDBConfig, embedder Embedder) (*MongoDBIndex, error) {
 	if cfg.BaseURL == "" {
 		return nil, fmt.Errorf("mongodb: BaseURL is required")
 	}
@@ -56,7 +56,7 @@ func NewMongoDBIndex(cfg MongoDBConfig, embedder Embedder) (*MongoDBIndex, error
 		return nil, fmt.Errorf("mongodb: dims must be > 0")
 	}
 	return &MongoDBIndex{
-		cfg:      cfg,
+		cfg:      *cfg,
 		embedder: embedder,
 		client:   &http.Client{},
 	}, nil

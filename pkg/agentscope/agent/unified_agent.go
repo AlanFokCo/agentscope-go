@@ -44,13 +44,13 @@ type UnifiedAgent struct {
 	engine       *permission.Engine
 	skills       []skill.Skill
 
-	confirmCh  chan event.UserConfirmResultEvent
-	externalCh chan event.ExternalExecutionResultEvent
-	mu         sync.Mutex
-	offloader  Offloader
-	hookRunner      *loop.HookRunner
-	stateAwareness  bool
-	responseFormat  *model.ResponseFormat
+	confirmCh      chan event.UserConfirmResultEvent
+	externalCh     chan event.ExternalExecutionResultEvent
+	mu             sync.Mutex
+	offloader      Offloader
+	hookRunner     *loop.HookRunner
+	stateAwareness bool
+	responseFormat *model.ResponseFormat
 }
 
 // ReactConfig controls the ReAct reasoning-acting loop.

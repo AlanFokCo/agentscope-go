@@ -375,7 +375,7 @@ func (a *App) handleListMessages(w http.ResponseWriter, r *http.Request) {
 	cursor := r.URL.Query().Get("cursor")
 	limit := 0
 	if v := r.URL.Query().Get("limit"); v != "" {
-		fmt.Sscanf(v, "%d", &limit)
+		_, _ = fmt.Sscanf(v, "%d", &limit)
 	}
 	page := ParseCursorRequest(cursor, limit)
 
