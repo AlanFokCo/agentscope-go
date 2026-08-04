@@ -75,7 +75,7 @@ func Handler(opts Options) http.Handler {
 		// e.g. "/static/style.css" -> "style.css" in the embedded FS.
 		if cleaned := strings.TrimPrefix(path, "/static/"); cleaned != path {
 			if f, openErr := sub.Open(cleaned); openErr == nil {
-				f.Close()
+				_ = f.Close()
 				r2 := new(http.Request)
 				*r2 = *r
 				r2.URL = new(url.URL)
@@ -90,7 +90,7 @@ func Handler(opts Options) http.Handler {
 		if path != "/" {
 			clean := strings.TrimPrefix(path, "/")
 			if f, openErr := sub.Open(clean); openErr == nil {
-				f.Close()
+				_ = f.Close()
 				r2 := new(http.Request)
 				*r2 = *r
 				r2.URL = new(url.URL)

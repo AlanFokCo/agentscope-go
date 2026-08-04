@@ -17,13 +17,20 @@ func startTestServer(t *testing.T, handler func(msg *Message) *Message) *Server 
 		t.Fatalf("NewServer: %v", err)
 	}
 	srv.OnMessage(handler)
+
+	listenDone := make(chan struct{})
 	go func() {
-		if err := srv.Listen(context.Background()); err != nil {
-			t.Logf("server listen exited: %v", err)
-		}
+		defer close(listenDone)
+		_ = srv.Listen(context.Background())
 	}()
-	// Give the server a moment to start accepting
+	// Give the server a moment to start accepting.
 	time.Sleep(20 * time.Millisecond)
+
+	t.Cleanup(func() {
+		_ = srv.Close()
+		<-listenDone // wait for Listen goroutine to exit
+	})
+
 	return srv
 }
 
@@ -31,7 +38,6 @@ func TestServerStartsAndAccepts(t *testing.T) {
 	srv := startTestServer(t, func(msg *Message) *Message {
 		return &Message{ID: msg.ID, From: "server", Method: "ack"}
 	})
-	defer srv.Close()
 
 	if srv.Addr() == "" {
 		t.Fatal("expected non-empty address")
@@ -54,13 +60,12 @@ func TestRequestResponse(t *testing.T) {
 			Payload: json.RawMessage(`{"echo":"hello"}`),
 		}
 	})
-	defer srv.Close()
 
 	client, err := NewClient(srv.Addr())
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -90,13 +95,12 @@ func TestClientSendServerReceives(t *testing.T) {
 		received <- msg
 		return &Message{ID: msg.ID, From: "server", Method: "ack"}
 	})
-	defer srv.Close()
 
 	client, err := NewClient(srv.Addr())
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -134,7 +138,6 @@ func TestMultipleConcurrentClients(t *testing.T) {
 			Payload: msg.Payload,
 		}
 	})
-	defer srv.Close()
 
 	const numClients = 10
 	var wg sync.WaitGroup
@@ -149,7 +152,7 @@ func TestMultipleConcurrentClients(t *testing.T) {
 				errs <- fmt.Errorf("client %d dial: %w", idx, err)
 				return
 			}
-			defer client.Close()
+			defer func() { _ = client.Close() }()
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -182,7 +185,6 @@ func TestCleanClose(t *testing.T) {
 	srv := startTestServer(t, func(msg *Message) *Message {
 		return &Message{ID: msg.ID, Method: "ack"}
 	})
-	defer srv.Close()
 
 	client, err := NewClient(srv.Addr())
 	if err != nil {
@@ -204,9 +206,20 @@ func TestCleanClose(t *testing.T) {
 }
 
 func TestServerShutdownStopsAccepting(t *testing.T) {
-	srv := startTestServer(t, func(msg *Message) *Message {
+	srv, err := NewServer("127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	srv.OnMessage(func(msg *Message) *Message {
 		return &Message{ID: msg.ID, Method: "ack"}
 	})
+
+	listenDone := make(chan struct{})
+	go func() {
+		defer close(listenDone)
+		_ = srv.Listen(context.Background())
+	}()
+	time.Sleep(20 * time.Millisecond)
 
 	addr := srv.Addr()
 
@@ -214,12 +227,13 @@ func TestServerShutdownStopsAccepting(t *testing.T) {
 	if err := srv.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
+	<-listenDone // wait for Listen to return
 
-	// Give it a moment
+	// Give OS a moment to release the port
 	time.Sleep(50 * time.Millisecond)
 
 	// New connections should fail
-	_, err := NewClient(addr)
+	_, err = NewClient(addr)
 	if err == nil {
 		t.Fatal("expected error connecting to closed server")
 	}
@@ -231,13 +245,13 @@ func TestStreaming(t *testing.T) {
 	if err != nil {
 		t.Fatalf("streaming server: %v", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	client, err := NewClient(ln.Addr().String())
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -279,7 +293,7 @@ func listenAndServeStreaming(t *testing.T) (net.Listener, error) {
 				return
 			}
 			go func(c net.Conn) {
-				defer c.Close()
+				defer func() { _ = c.Close() }()
 				transport := newConnTransport(c)
 				for {
 					msg, err := transport.Receive(context.Background())

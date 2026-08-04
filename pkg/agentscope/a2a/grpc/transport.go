@@ -74,13 +74,15 @@ func (t *connTransport) Close() error {
 
 // Server accepts incoming agent connections.
 type Server struct {
-	addr     string
-	listener net.Listener
-	handler  func(msg *Message) *Message
-	mu       sync.Mutex
-	conns    []net.Conn
-	done     chan struct{}
-	wg       sync.WaitGroup
+	addr      string
+	listener  net.Listener
+	handler   func(msg *Message) *Message
+	mu        sync.Mutex
+	conns     []net.Conn
+	done      chan struct{}
+	closeOnce sync.Once
+	closeErr  error
+	wg        sync.WaitGroup
 }
 
 // NewServer creates a new server bound to the given address.
@@ -165,34 +167,33 @@ func (s *Server) handleConn(conn net.Conn) {
 }
 
 // Close shuts down the server and all active connections.
+// It is safe to call Close concurrently or multiple times.
 func (s *Server) Close() error {
-	select {
-	case <-s.done:
-		return nil // already closed
-	default:
+	s.closeOnce.Do(func() {
 		close(s.done)
-	}
-	err := s.listener.Close()
-	s.mu.Lock()
-	for _, c := range s.conns {
-		_ = c.Close()
-	}
-	s.conns = nil
-	s.mu.Unlock()
+		s.closeErr = s.listener.Close()
+		s.mu.Lock()
+		for _, c := range s.conns {
+			_ = c.Close()
+		}
+		s.conns = nil
+		s.mu.Unlock()
+	})
 	s.wg.Wait()
-	return err
+	return s.closeErr
 }
 
 // Client connects to a remote agent server.
 type Client struct {
-	addr    string
-	conn    net.Conn
-	t       *connTransport
-	mu      sync.Mutex
-	pending map[string]chan *Message
-	streams map[string]chan *Message
-	closed  chan struct{}
-	readWg  sync.WaitGroup
+	addr      string
+	conn      net.Conn
+	t         *connTransport
+	mu        sync.Mutex
+	pending   map[string]chan *Message
+	streams   map[string]chan *Message
+	closed    chan struct{}
+	closeOnce sync.Once
+	readWg    sync.WaitGroup
 }
 
 // NewClient connects to the remote server at addr.
@@ -307,13 +308,11 @@ func (c *Client) Stream(ctx context.Context, msg *Message) (<-chan *Message, err
 }
 
 // Close terminates the client connection.
+// It is safe to call Close concurrently or multiple times.
 func (c *Client) Close() error {
-	select {
-	case <-c.closed:
-		return nil
-	default:
+	c.closeOnce.Do(func() {
 		close(c.closed)
-	}
+	})
 	err := c.conn.Close()
 	c.readWg.Wait()
 	return err
