@@ -4,17 +4,52 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased] - 2026-07-13
+## [Unreleased]
 
-### Added
-- OpenAI TTS model () calling  endpoint with streaming support
-- Gemini schema sanitizer: converts  to , removes //, rewrites  to 
+### Added — Go-Exclusive Features
+- **Deterministic Replay** (`replay/`): Record/replay middleware that captures model call request/response pairs into JSON tapes; replay mode returns pre-recorded responses without calling the LLM, enabling fully offline deterministic CI/CD testing
+- **Fan-out Agent Pool** (`runtime.AgentPool`): Worker pool pattern for high-throughput batch processing; each worker owns a fresh agent instance created from a factory function with configurable worker count and queue size
+- **Hot-Reload Config** (`hotreload/`): Polling-based file watcher with `Watcher` and generic `Reloader[T]` for typed config with atomic pointer swap; supports custom parsers (JSON/YAML/TOML) and multi-file watching
+- **WASM Sandbox** (`wasm/`): Execute WebAssembly modules with strict resource limits (memory, time, instruction count/fuel); auto-discovers `wasmtime`, `wasmer`, or `wasm3` CLI runtimes
+- **TCP Agent Mesh** (`a2a/grpc/`): Bidirectional agent-to-agent communication over TCP using newline-delimited JSON; `Server` + `Client` types with streaming support via `IsStream`/`StreamEnd` flags
+- **Agent Load Testing** (`bench/`): Benchmark runner with `Scenario` definitions supporting configurable concurrency, duration, iterations, and ramp-up; produces `Report` with throughput, latency percentiles (p50/p95/p99), and error breakdowns
+
+### Added — Workspace Providers
+- **K8s Workspace** (`workspace/k8s.go`): Execute agent tools inside ephemeral Kubernetes Pods
+- **OpenSandbox Workspace** (`workspace/opensandbox.go`): Cloud sandbox via OpenSandbox API
+- **Daytona Workspace** (`workspace/daytona.go`): Daytona-managed development environment sandbox
+- **Apple Container Workspace** (`workspace/applecontainer.go`): macOS-native lightweight container isolation
+- **Bubblewrap Workspace** (`workspace/bubblewrap.go`): Minimal Linux `bwrap` sandboxing without Docker
+
+### Added — Model & TTS
+- **Kimi K3** model card: 256K context, 64K output, vision + video + thinking support
+- **qwen3.7-plus** model card: 131K context, 16K output, thinking support
+- **GLM-5.2** model card: 131K context, 8K output (via DashScope)
+- **Gemini TTS** (`tts/gemini.go`): Text-to-speech via Gemini generateContent API with audio response modality; default model `gemini-2.5-flash-preview-tts`
+- **OpenAI TTS** (`tts/openai.go`): OpenAI Audio Speech API (`/v1/audio/speech`) with streaming support
+
+### Added — RAG & Document Parsing
+- **Document parsers** (`rag/parser/`): Parser interface with 5 implementations — `TextParser`, `PDFParser`, `WordParser`, `ExcelParser`, `PPTParser` — all producing `rag.Document` slices with configurable text chunking and overlap
+- **QdrantTextIndex** (`rag/qdrant_text_index.go`): Higher-level index that auto-embeds text via an `Embedder` then persists to Qdrant
+
+### Added — Access Control & Hub
+- **Multi-tenant RBAC** (`access/`): Four permission levels (`none`/`read`/`write`/`admin`) across four resource kinds (`credential`/`agent`/`knowledge_base`/`session`); principals can be users, groups, or organizations; pluggable `Store` interface for policy persistence
+- **Component Hub** (`hub/`): `Hub` interface for browsing, searching, and installing MCP tools and skills from remote registries; `MCPHub`, `SkillHub` adapters; multi-hub `Registry` for unified search
+
+### Added — Middleware
+- **`OnCheckPermission` hook**: Wraps the permission check before tool execution; enables custom authorization, audit logging, or dynamic permission policies
+- **`OnReasoning` hook**: Wraps each reasoning step (ReAct iteration) for per-iteration observability, logging, or guardrails
+- Middleware hook count increased from 5 to 7
+
+### Added — Infrastructure
+- OpenAI TTS model calling `/v1/audio/speech` endpoint with streaming support
+- Gemini schema sanitizer: converts unsupported types, removes invalid fields, rewrites enums
 - JSON repair utility for truncated tool-call inputs (closes malformed JSON instead of crashing)
-- Ollama formatter:  field in tool result messages
-- Gemini  generation (synthetic call IDs for tool result matching)
+- Ollama formatter: content field in tool result messages
+- Gemini synthetic call ID generation for tool result matching
 
 ### Fixed
-- OpenAI Chat Completions:  →  wire field (deprecated by OpenAI for newer models)
+- OpenAI Chat Completions: deprecated `function_call` → `tool_choice` wire field
 - Anthropic formatter: drop empty text blocks and empty thinking blocks (Anthropic rejects with 400)
 - Gemini formatter: drop empty text blocks and empty thinking blocks (Gemini rejects with 400)
 

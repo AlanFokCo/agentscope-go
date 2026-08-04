@@ -107,7 +107,7 @@ Optional: `DASHSCOPE_BASE_URL` to override the DashScope endpoint.
 
 ## Running Examples
 
-The project includes 25 examples. Run any of them:
+The project includes 35 examples. Run any of them:
 
 ```bash
 export DASHSCOPE_API_KEY=sk-...
@@ -115,14 +115,32 @@ go run ./examples/agent_v2          # Tool calling
 go run ./examples/streaming         # Streaming events
 go run ./examples/multimodal        # Image input
 go run ./examples/model_call        # Raw model API
+go run ./examples/replay            # Deterministic replay
+go run ./examples/pool              # Agent pool fan-out
 ```
 
-See [examples.md](examples.md) for the full list.
+See [docs/examples.md](docs/examples.md) for the full list.
 
 ## Next Steps
 
-- [Architecture](architecture.md) — Understand the package structure
-- [Model Providers](model-providers.md) — Configure different LLM backends
-- [Tools](tools.md) — Built-in tools and custom function tools
-- [Middleware](middleware.md) — Intercept and extend agent behavior
-- [Deployment](deployment.md) — Run as an HTTP service
+- [Architecture](docs/architecture.md) — Understand the package structure
+- [Model Providers](docs/model-providers.md) — Configure different LLM backends
+- [Tools](docs/tools.md) — Built-in tools, custom function tools, and document parsers
+- [Middleware](docs/middleware.md) — Intercept and extend agent behavior (7 hooks)
+- [Deployment](docs/deployment.md) — Run as an HTTP service, workspace sandboxing, agent pools
+- [Go-Exclusive Features](docs/go-exclusive.md) — Capabilities unique to the Go implementation
+
+## Go-Exclusive Features (Quick Reference)
+
+These features are unique to the Go implementation and have no Python equivalent:
+
+| Feature | Package | Description |
+|---------|---------|-------------|
+| **Deterministic Replay** | `replay` | Record model calls, replay in CI without API keys |
+| **Fan-out Agent Pool** | `runtime` | Worker pool for parallel batch processing |
+| **Hot-Reload Config** | `hotreload` | Watch config files, apply changes without restart |
+| **WASM Sandbox** | `wasm` | Execute WebAssembly modules with resource limits |
+| **TCP Agent Mesh** | `a2a/grpc` | Direct TCP communication between distributed agents |
+| **Agent Load Testing** | `bench` | Benchmark agents with concurrency and latency metrics |
+
+See [Go-Exclusive Features](docs/go-exclusive.md) for detailed documentation with code examples.

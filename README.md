@@ -24,34 +24,144 @@
 
 ---
 
-AgentScope Go is the Go implementation of the [AgentScope](https://github.com/agentscope-ai/agentscope) multi-agent LLM framework. It provides Go-idiomatic APIs — interfaces, `context.Context`, explicit `error` returns, functional options — while maintaining full feature parity with the Python project.
+AgentScope Go is the Go implementation of the [AgentScope](https://github.com/agentscope-ai/agentscope) multi-agent LLM framework. It provides Go-idiomatic APIs — interfaces, `context.Context`, explicit `error` returns, functional options — while delivering capabilities that go beyond the Python project.
 
-## Highlights
+---
 
-### Smart Agents, Full Control
+## Why agentscope-go?
 
-AgentScope adopts the ReAct (Reasoning-Acting) paradigm, enabling agents to autonomously plan and execute complex tasks. Agents dynamically decide which tools to use and when, adapting to changing requirements in real-time.
+| Property | What it means for you |
+|----------|----------------------|
+| **Single binary deployment** | `go build` produces one static binary. No pip, no venv, no Docker layer for Python dependencies. Deploy to a VM, a container, or an edge device with `scp`. |
+| **True concurrency** | Goroutines and channels — not `async/await`. Process thousands of concurrent agent sessions on a single node with bounded memory. The `AgentPool` applies backpressure automatically. |
+| **Embeddable library** | `go get` and import into any existing Go service. No separate process, no sidecar, no IPC overhead. Your HTTP server, gRPC service, or CLI tool gains agent capabilities in-process. |
+| **Production-hardened** | Compile-time type safety. No `None` at runtime, no `AttributeError` in production. Interfaces enforce contracts. Generics eliminate casting. The type system catches integration bugs before deployment. |
 
-Autonomy without control is a liability in production. AgentScope provides:
+---
 
-- **Safe Interruption** — Pause agent execution at any point while preserving full context and tool state
-- **Human-in-the-Loop** — Inject corrections or guidance at any reasoning step via the event system (`RequireUserConfirm` / `RequireExternalExecution`)
-- **Permission Engine** — 5 permission modes (Default, AcceptEdits, Explore, Bypass, DontAsk) with per-tool rule matching and bypass-immune safety checks
-- **Context Compression** — Automatic structured summarization when context exceeds configurable thresholds, with tool result truncation and offloading
+## Go-Exclusive Features
 
-### Built-in Tools
+These capabilities exist only in the Go implementation. They leverage Go's concurrency primitives, type system, and compilation model.
 
-Production-ready tools out of the box:
+### Deterministic Replay (`replay/`)
 
-- **Bash / Read / Write / Edit / Glob / Grep** — Full coding agent toolkit with safety analysis (AST-level injection detection, dangerous path protection, read-only command recognition)
-- **Task Management** — `task_create`, `task_get`, `task_list`, `task_update` with bidirectional dependency tracking
-- **Structured Output** — `GenerateStructuredOutput` forces JSON Schema-compliant responses via synthetic tool calls with automatic retry
-- **Long-term Memory** — Cross-session memory middleware with 3 modes (static, agent-controlled, both), backed by vector similarity search or mem0 REST API
-- **RAG** — `Index` / `KnowledgeBase` interfaces with in-memory and Qdrant vector store backends
+Record every LLM call during a session. Replay the exact sequence in CI without API costs or network dependency.
+
+```go
+// Record
+recorder := replay.NewRecorder()
+a := agent.NewUnifiedAgent("bot", "...", cm, agent.WithMiddlewares(recorder))
+a.Reply(ctx, "plan a trip to Tokyo")
+tape := recorder.Tape()
+replay.SaveTape(tape, "testdata/trip.json")
+
+// Replay in CI (zero API calls)
+tape, _ := replay.LoadTape("testdata/trip.json")
+replayer := replay.NewReplayer(tape)
+a := agent.NewUnifiedAgent("bot", "...", cm, agent.WithMiddlewares(replayer))
+a.Reply(ctx, "plan a trip to Tokyo") // returns recorded response instantly
+```
+
+### Fan-out Agent Pool (`runtime/`)
+
+Process N concurrent sessions with bounded worker goroutines and backpressure. Each worker owns its own agent instance — no shared mutable state.
+
+```go
+pool := runtime.NewAgentPool(
+    func() agent.Agent {
+        return agent.NewUnifiedAgent("worker", "...", cm, agent.WithToolkit(tk))
+    },
+    runtime.Workers(16),
+    runtime.QueueSize(256),
+)
+defer pool.Close()
+
+result := pool.Submit(ctx, "Summarize this document...")
+fmt.Println(result.Output.GetTextContent("\n"))
+```
+
+### Hot-Reload Config (`hotreload/`)
+
+Zero-downtime configuration updates with typed generics. File changes are detected by polling; the new config is atomically swapped in.
+
+```go
+type AgentCfg struct {
+    Model       string  `json:"model"`
+    Temperature float64 `json:"temperature"`
+    MaxTokens   int     `json:"max_tokens"`
+}
+
+watcher := hotreload.NewWatcher(hotreload.WatcherConfig{PollInterval: 2 * time.Second})
+reloader, _ := hotreload.NewReloader[AgentCfg](watcher, "config/agent.json",
+    hotreload.WithOnChange(func(old, new_ *AgentCfg) {
+        log.Printf("model changed: %s -> %s", old.Model, new_.Model)
+    }),
+)
+watcher.Start(ctx)
+
+// Always reads the latest config — no restart needed
+cfg := reloader.Get()
+```
+
+### WASM Sandbox (`wasm/`)
+
+Execute untrusted tool code in a WASM sandbox. Sub-second cold start (vs Docker's multi-second overhead). Memory-limited, time-bounded, filesystem-isolated.
+
+```go
+rt, _ := wasm.AutoDiscover() // finds wasmtime/wasmer/wasm3 in PATH
+sandbox := wasm.NewSandbox(wasm.SandboxConfig{
+    Runtime:     rt,
+    MaxMemory:   64 * 1024 * 1024, // 64MB
+    MaxDuration: 5 * time.Second,
+})
+
+result, _ := sandbox.Run(ctx, "tools/transform.wasm", inputJSON)
+fmt.Println(string(result.Stdout))
+```
+
+### TCP Agent Mesh (`a2a/grpc/`)
+
+Low-latency bidirectional agent communication over TCP with newline-delimited JSON. Agents connect to a mesh server and exchange typed messages with streaming support.
+
+```go
+server := grpc.NewServer(":9090", func(msg *grpc.Message) *grpc.Message {
+    // Route or process inter-agent messages
+    return &grpc.Message{From: "router", To: msg.From, Payload: responseJSON}
+})
+server.Start(ctx)
+
+// Client side
+client := grpc.NewClient("localhost:9090", "agent-alpha")
+client.Send(ctx, &grpc.Message{To: "agent-beta", Method: "analyze", Payload: data})
+resp, _ := client.Receive(ctx)
+```
+
+### Agent Load Testing (`bench/`)
+
+Built-in load testing framework with P50/P95/P99 latency reporting. Define scenarios with configurable concurrency, ramp-up, and duration.
+
+```go
+runner := bench.NewRunner()
+report, _ := runner.Run(ctx, &bench.Scenario{
+    Name:        "rag-query-load",
+    Concurrency: 20,
+    Duration:    30 * time.Second,
+    Run: func(ctx context.Context, iter int) error {
+        _, err := agent.Reply(ctx, queries[iter%len(queries)])
+        return err
+    },
+})
+fmt.Printf("P50=%v P95=%v P99=%v throughput=%.1f/s\n",
+    report.Latencies.P50, report.Latencies.P95, report.Latencies.P99, report.Throughput)
+```
+
+---
+
+## Full Feature Set
 
 ### 9 Model Providers
 
-All with `Chat`, `ChatStream` (SSE), `CountTokens`, and native tool calling:
+All providers support `Chat`, `ChatStream` (SSE), `CountTokens`, and native tool calling:
 
 | Provider | Constructor | Example Models |
 |----------|-------------|----------------|
@@ -67,27 +177,134 @@ All with `Chat`, `ChatStream` (SSE), `CountTokens`, and native tool calling:
 
 51 model cards with context sizes, capabilities, and status are bundled via `//go:embed`.
 
-Additional model features: `FallbackChatModel` (automatic primary→fallback failover), `ClientOptions` (custom HTTP timeout/headers/transport for proxy and enterprise), extended thinking with budget tokens, audio caption streaming (PCM→WAV).
+Additional model features: `FallbackChatModel` (automatic primary→fallback failover), `ClientOptions` (custom HTTP timeout/headers/transport), extended thinking with budget tokens, audio caption streaming (PCM→WAV).
 
-### Seamless Integration
+### 8 Workspace Backends
 
-- **MCP Protocol** — Full MCP client (Stdio + HTTP/SSE transport) with automatic tool discovery and `MCPTool` adapter
-- **A2A Protocol** — Agent-to-Agent HTTP communication via `A2AAgent` + `HTTPClient`
-- **Agent Teams** — Leader/Worker coordination with `TeamCreate`, `AgentCreate`, `TeamSay`, `TeamDelete` tools and cross-session HITL event projection
-- **Pipeline & MsgHub** — Sequential pipeline with `Then`/`If` combinators and multi-agent message routing
+Isolated execution environments for tool sandboxing:
 
-### Production Grade
+| Backend | Package | Notes |
+|---------|---------|-------|
+| **Local** | `workspace/local.go` | Direct filesystem execution |
+| **Docker** | `workspace/docker.go` | Container-based isolation |
+| **E2B** | `workspace/e2b.go` | Cloud sandbox (e2b.dev) |
+| **Apple Container** | `workspace/applecontainer.go` | macOS native lightweight VM |
+| **Bubblewrap** | `workspace/bubblewrap.go` | Linux user-namespace sandbox (bwrap) |
+| **Daytona** | `workspace/daytona.go` | Daytona workspace API |
+| **OpenSandbox** | `workspace/opensandbox.go` | OpenSandbox cloud environment |
+| **Kubernetes** | `workspace/k8s.go` | Pod-based execution in K8s clusters |
 
-- **Middleware System** — 5-hook onion chain (`OnReply`, `OnModelCall`, `OnActing`, `OnSystemPrompt`, `OnCompressContext`) + per-tool middleware. Built-in: tracing, TTS, budget control, long-term memory
-- **Observability** — `TracingMiddleware` with OpenTelemetry semantic conventions, nested spans (invoke_agent → chat → execute_tool)
-- **Workspace Sandboxing** — `LocalWorkspace`, `DockerWorkspace`, `E2BWorkspace` with `Backend` abstraction for isolated tool execution
-- **Agent Service** — HTTP service with REST + SSE streaming, session management, credential CRUD, scheduled tasks, AG-UI protocol support
-- **Agent Loop** — Configurable reasoning loop (`loop.Loop`) with pluggable `ModelCaller`, `ToolExecutor`, `SchemaProvider`, and `Hook` system for metrics/tracing/custom logic
-- **Runtime Engine** — `SessionEngine` + `Harness` for managing agent lifecycle, sessions, and turn orchestration
-- **Metrics** — `Counter`/`Histogram` interfaces with `InMemoryProvider` and `MetricsHook` for model call / tool execution / loop iteration tracking
-- **Cross-Platform** — Shell detection (`platform.Detect`) with PowerShell/Cmd safety analysis, cross-platform `DeriveExecArgs` for bash tool execution on Windows
-- **Embedding** — 4 providers (OpenAI, DashScope, Gemini, Ollama) with batch processing, caching, and multimodal support
-- **TTS** — DashScope TTS (standard + CosyVoice realtime) with streaming WAV output via `TTSMiddleware`
+### 5 RAG Vector Stores
+
+| Store | File | Notes |
+|-------|------|-------|
+| **InMemory** | `rag/rag.go` | Zero-dependency, suitable for small corpora |
+| **Qdrant** | `rag/qdrant_index.go` | Production vector DB with filtering |
+| **Elasticsearch** | `rag/elasticsearch.go` | Full-text + vector hybrid search |
+| **MongoDB** | `rag/mongodb.go` | Atlas Vector Search |
+| **Milvus** | `rag/milvus.go` | High-performance vector DB |
+
+### 5 Document Parsers
+
+| Format | File | Notes |
+|--------|------|-------|
+| **Plain Text** | `rag/parser/text.go` | UTF-8 text with configurable chunking |
+| **PDF** | `rag/parser/pdf.go` | Text extraction from PDF documents |
+| **Word** | `rag/parser/word.go` | .docx parsing |
+| **Excel** | `rag/parser/excel.go` | .xlsx sheet extraction |
+| **PowerPoint** | `rag/parser/ppt.go` | .pptx slide text extraction |
+
+### 4 Storage Backends
+
+| Backend | File | Notes |
+|---------|------|-------|
+| **InMemory** | `storage/storage.go` | Fast, ephemeral |
+| **File** | `storage/full_storage.go` | JSON file persistence |
+| **Redis** | `storage/redis.go` | Distributed, TTL support |
+| **SQL** | `storage/sql.go` | PostgreSQL/MySQL/SQLite via `database/sql` |
+
+### Hub System
+
+Unified registry for installable components:
+
+| Component | Description |
+|-----------|-------------|
+| **MCP Hub** | Browse, search, and install MCP servers from a remote registry |
+| **Skill Hub** | Discover and install reusable agent skills |
+| **Registry** | Multi-hub aggregation with unified search across sources |
+
+### Access Control (`access/`)
+
+Resource sharing across users, groups, and organizations:
+
+- 4 permission levels: None, Read, Write, Admin
+- 3 principal types: User, Group, Org
+- 4 resource kinds: Credential, Agent, KnowledgeBase, Session
+- Policy-based checker with ownership shortcut
+- `ListAccessible` for permission-filtered resource discovery
+
+### 7 Middleware Hooks
+
+Onion-chain architecture — each hook wraps the next in the chain:
+
+| Hook | Purpose |
+|------|---------|
+| `OnReply` | Wraps the entire reply lifecycle (outermost) |
+| `OnReasoning` | Wraps each reasoning step in the ReAct loop |
+| `OnModelCall` | Wraps each model API call |
+| `OnActing` | Wraps each tool execution |
+| `OnSystemPrompt` | Transforms the system prompt (pipeline mode) |
+| `OnCompressContext` | Wraps context compression |
+| `OnCheckPermission` | Wraps permission checks for tool calls |
+
+Built-in middleware: TracingMiddleware, TTSMiddleware, ReplyBudgetControlMiddleware, LongTermMemoryMiddleware, CostTrackerMiddleware, MetricsMiddleware.
+
+### 3 TTS Providers
+
+| Provider | Features |
+|----------|----------|
+| **DashScope** | Standard + CosyVoice realtime streaming |
+| **OpenAI** | OpenAI TTS API with streaming WAV output |
+| **Gemini** | Google Gemini TTS |
+
+### Built-in Tools
+
+Production-ready coding agent toolkit:
+
+- **Bash / Read / Write / Edit / Glob / Grep** — Full filesystem + shell with AST-level injection detection, dangerous path protection, read-only command recognition
+- **Task Management** — `task_create`, `task_get`, `task_list`, `task_update` with bidirectional dependency tracking
+- **Structured Output** — `GenerateStructuredOutput` forces JSON Schema-compliant responses via synthetic tool calls with automatic retry
+- **Long-term Memory** — Cross-session memory middleware with 3 modes (static, agent-controlled, both), backed by vector similarity search or mem0 REST API
+
+### Agent Architecture
+
+- **ReAct Loop** — Autonomous reasoning-acting with configurable max iterations
+- **Safe Interruption** — Pause execution at any point, preserving full context
+- **Human-in-the-Loop** — Inject corrections via event system (`RequireUserConfirm` / `RequireExternalExecution`)
+- **Permission Engine** — 5 permission modes with per-tool rule matching and bypass-immune safety checks
+- **Context Compression** — Automatic structured summarization when context exceeds thresholds
+
+### Integration Protocols
+
+| Protocol | Description |
+|----------|-------------|
+| **MCP** | Full MCP client (Stdio + HTTP/SSE) with automatic tool discovery |
+| **A2A HTTP** | Agent-to-Agent over HTTP via `A2AAgent` + `HTTPClient` |
+| **A2A gRPC/TCP** | Low-latency bidirectional mesh (TCP + newline-delimited JSON) |
+| **AG-UI** | Agent service protocol for frontend integration |
+| **Agent Teams** | Leader/Worker coordination with cross-session HITL event projection |
+| **Pipeline & MsgHub** | Sequential `Then`/`If` combinators + multi-agent message routing |
+
+### Observability & Operations
+
+- **Tracing** — `TracingMiddleware` with OpenTelemetry semantic conventions, nested spans
+- **Metrics** — `Counter`/`Histogram` interfaces with `InMemoryProvider` and `MetricsHook`
+- **Budget Tracking** — Turn/token/duration/concurrency limits with `BudgetTracker`
+- **Resilience** — Circuit breaker + rate limiter wrappers for `ChatModel`
+- **Embedding** — 4 providers (OpenAI, DashScope, Gemini, Ollama) with batch processing, caching, multimodal support
+- **Cross-Platform** — Shell detection with PowerShell/Cmd safety analysis, Windows support
+
+---
 
 ## Quick Start
 
@@ -102,7 +319,7 @@ export DASHSCOPE_API_KEY=sk-...   # or ANTHROPIC_API_KEY / OPENAI_API_KEY
 go run ./examples/agent_v2
 ```
 
-### Agent with Tool Calling
+### Minimal Agent with Tool Calling
 
 ```go
 package main
@@ -163,29 +380,15 @@ for evt := range ch {
 }
 ```
 
-### Multimodal (Image Input)
-
-```go
-msgs := []*message.Msg{
-    message.NewMsg("user", message.RoleUser, []message.ContentBlock{
-        message.TextBlock{Type: "text", Text: "What's in this image?"},
-        message.DataBlock{Type: "data", ID: "img-1", Source: message.URLSource{
-            Type: "url", URL: "https://example.com/photo.jpg", MediaType: "image/jpeg",
-        }},
-    }),
-}
-resp, _ := cm.Chat(ctx, msgs)
-```
-
-### Middleware
+### Custom Middleware
 
 ```go
 type TimingMiddleware struct { middleware.BaseMiddleware }
 
-func (m *TimingMiddleware) OnModelCall(ctx context.Context, input middleware.ModelCallInput, next middleware.ModelCallHandler) (*model.ChatResponse, error) {
+func (m *TimingMiddleware) OnModelCall(ctx context.Context, input *middleware.ModelCallInput, next middleware.ModelCallHandler) (*model.ChatResponse, error) {
     start := time.Now()
     resp, err := next(ctx, input)
-    log.Printf("model call took %v", time.Since(start))
+    log.Printf("[%s] model call: %v", input.ModelName, time.Since(start))
     return resp, err
 }
 
@@ -196,9 +399,73 @@ a := agent.NewUnifiedAgent("bot", "...", cm,
 )
 ```
 
+---
+
+## Architecture
+
+```
+pkg/agentscope/
+├── agent/                  # Agent interface + UnifiedAgent, UserAgent, A2AAgent
+├── model/                  # ChatModel interface + 9 providers + 51 model cards
+├── tool/                   # Tool interface + FunctionTool + 10 built-in tools + safety analysis
+├── message/                # Msg + ContentBlock (text, thinking, tool_call, tool_result, data, hint)
+├── event/                  # 28 event types for streaming lifecycle
+├── middleware/             # 7-hook onion chain + tracing, TTS, budget, memory, metrics, cost
+├── formatter/              # Per-provider message formatting (9 formatters)
+├── permission/             # 5 modes + Engine + Checker + Rule matching
+├── pipeline/               # Pipeline (Then/If) + MsgHub (multi-agent routing)
+├── credential/             # 9 provider credential types + auto-detect from env
+│
+├── replay/                 # Deterministic record/replay of LLM calls
+├── runtime/                # AgentPool, SessionEngine, AgentManager, BudgetTracker, Harness
+├── hotreload/              # Typed generic config reloader with file watching
+├── wasm/                   # WASM sandbox (wasmtime/wasmer/wasm3 backends)
+├── bench/                  # Load testing framework with P50/P95/P99 reporting
+├── a2a/                    # A2A protocol types + HTTP client
+├── a2a/grpc/               # TCP transport: bidirectional agent mesh
+│
+├── hub/                    # MCP Hub + Skill Hub + Registry (multi-hub aggregation)
+├── access/                 # Resource sharing: users/groups/orgs with 4 permission levels
+├── workspace/              # 8 backends: Local, Docker, E2B, Apple, Bubblewrap, Daytona, OpenSandbox, K8s
+├── rag/                    # Index + KnowledgeBase + 5 vector stores
+├── rag/parser/             # 5 document parsers: Text, PDF, Word, Excel, PPT
+├── storage/                # 4 backends: InMemory, File, Redis, SQL
+├── tts/                    # 3 providers: DashScope, OpenAI, Gemini
+├── embedding/              # 4 providers + batch + cache + multimodal
+│
+├── mcp/                    # MCP client (Stdio + HTTP) + MCP server
+├── team/                   # Agent teams with leader/worker coordination
+├── service/                # HTTP agent service + SSE + AG-UI protocol
+├── tracing/                # Tracer interface + OTel + LoggerTracer
+├── metrics/                # Counter/Histogram + InMemoryProvider + MetricsHook
+├── resilience/             # Circuit breaker + rate limiter for ChatModel
+├── loop/                   # Configurable agent loop (model → tool → iterate)
+├── memory/                 # Conversation memory + compression
+├── messagebus/             # InMemory + Redis pub/sub + registry
+├── session/                # Session KV store (memory + JSON file)
+├── skill/                  # Reusable skill system + SkillManager registry
+├── prompt/                 # Composable system prompt assembly
+├── schedule/               # InMemoryScheduler for periodic tasks
+├── realtime/               # Realtime streaming interface
+├── sandbox/                # Execution policies (Allow/Deny/AskUser)
+├── platform/               # Cross-platform shell detection + safety
+├── logging/                # Structured logging handlers
+├── protocol/               # LoopState, LoopEvent — shared types
+├── errors/                 # Typed error hierarchy (Retriable, Throttled, PermissionDenied)
+├── config/                 # Configuration loading
+├── app/                    # Application bootstrap
+├── tune/                   # Model tuning utilities
+├── types/                  # Shared type definitions
+├── agenttest/              # Test helpers and mocks
+├── exception/              # Exception handling
+└── internal/               # httpx (HTTP+SSE helper), jsonx (repair)
+```
+
+---
+
 ## Examples
 
-26 examples in `examples/`. Run any with `go run ./examples/<name>`.
+32+ examples in `examples/`. Run any with `go run ./examples/<name>`.
 
 | Example | Description |
 |---------|-------------|
@@ -229,54 +496,57 @@ a := agent.NewUnifiedAgent("bot", "...", cm,
 | `agent_team` | Leader/Worker team with message routing |
 | `mcp` | MCP client: tool discovery + remote execution |
 | `a2a_http` | Agent-to-Agent over HTTP |
+| **Go-Exclusive** | |
+| `replay` | Record LLM calls, replay in CI without API costs |
+| `pool` | Fan-out agent pool with backpressure |
+| `hotreload` | Zero-downtime config updates with typed `Reloader[T]` |
+| `wasm_sandbox` | WASM tool sandbox with memory/time limits |
+| `grpc_a2a` | TCP agent mesh with bidirectional streaming |
+| `bench` | Agent load testing with P50/P95/P99 latency |
+| `hub_install` | Browse and install MCP servers/skills from hub |
+| `access_control` | Resource sharing across users/groups/orgs |
+| `document_parser` | Parse PDF/Word/Excel/PPT into RAG chunks |
 | **Deployment** | |
 | `agent_service` | HTTP Agent Service (REST + SSE streaming) |
 | `scheduled_task` | One-shot and recurring task scheduling |
 | `realtime_echo` | Realtime streaming interface demo |
 
-## Architecture
+---
 
-```
-pkg/agentscope/
-├── config.go              # Init, logging, ID factory
-├── agent/                 # Agent interface + UnifiedAgent, UserAgent, A2AAgent
-├── model/                 # ChatModel interface + 9 provider adapters + 51 model cards
-├── tool/                  # Tool interface + FunctionTool + 10 built-in tools + safety analysis
-├── message/               # Msg + ContentBlock (text, thinking, tool_call, tool_result, data, hint)
-├── event/                 # 28 event types for streaming lifecycle
-├── middleware/             # 5-hook onion chain + tracing, TTS, budget, memory middleware
-├── formatter/             # Per-provider message formatting (9 formatters × chat + multiagent)
-├── permission/            # 5 modes + Engine + Checker + Rule matching
-├── pipeline/              # Pipeline (Then/If) + MsgHub (multi-agent routing)
-├── credential/            # 9 provider credential types + auto-detect from env
-├── mcp/                   # MCP client (Stdio + HTTP) + MCP server
-├── embedding/             # 4 providers + batch + cache + multimodal
-├── rag/                   # Index + KnowledgeBase + Qdrant integration
-├── team/                  # Agent teams with leader/worker coordination tools
-├── workspace/             # Local + Docker + E2B sandboxed execution
-├── storage/               # InMemory + File + Redis storage backends
-├── service/               # HTTP agent service + SSE + AG-UI protocol
-├── tts/                   # DashScope TTS + CosyVoice realtime
-├── tracing/               # Tracer interface + OTel + LoggerTracer
-├── schedule/              # InMemoryScheduler for periodic tasks
-├── session/               # Session KV store (memory + JSON file)
-├── skill/                 # Reusable skill system + SkillManager registry
-├── memory/                # Conversation memory + compression
-├── messagebus/            # InMemory + Redis pub/sub + registry
-├── a2a/                   # Agent-to-Agent protocol types + HTTP client
-├── prompt/                # Composable system prompt assembly from named sections
-├── resilience/            # Circuit breaker + rate limiter wrappers for ChatModel
-├── realtime/              # Realtime streaming interface + echo client
-├── logging/               # Structured logging handlers and initialization
-├── protocol/              # LoopState, LoopEvent — shared agent-loop types
-├── loop/                  # Configurable agent loop (model call → tool exec → iterate)
-├── runtime/               # SessionEngine, AgentManager, BudgetTracker, AgentPool
-├── metrics/               # Counter/Histogram interfaces + InMemoryProvider + MetricsHook
-├── platform/              # Cross-platform shell detection + PowerShell safety checks
-├── sandbox/               # Sandbox execution policies (Allow/Deny/AskUser)
-├── errors/                # Typed error hierarchy (Retriable, Throttled, PermissionDenied)
-└── internal/              # httpx (HTTP+SSE helper), jsonx (repair)
-```
+## Comparison with Python
+
+Factual comparison of features available in each implementation:
+
+| Capability | Go | Python |
+|------------|:--:|:------:|
+| **Deployment** | Single static binary | pip + venv + dependencies |
+| **Concurrency model** | Goroutines (OS-thread-multiplexed) | asyncio (single-thread event loop) |
+| **Type safety** | Compile-time (interfaces + generics) | Runtime (type hints optional) |
+| **Deterministic replay** | Yes (`replay/`) | No |
+| **Agent pool with backpressure** | Yes (`runtime/AgentPool`) | No |
+| **Hot-reload config** | Yes (`hotreload/Reloader[T]`) | No |
+| **WASM tool sandbox** | Yes (`wasm/`) | No |
+| **TCP agent mesh** | Yes (`a2a/grpc/`) | No |
+| **Built-in load testing** | Yes (`bench/`) | No |
+| **Hub system (MCP + Skill)** | Yes (`hub/`) | Partial (registry only) |
+| **Access control** | Yes (`access/`) | No |
+| **Document parsers** | 5 formats (Text/PDF/Word/Excel/PPT) | External (LangChain loaders) |
+| **Workspace backends** | 8 | 3 (Local/Docker/E2B) |
+| **Vector stores** | 5 (InMemory/Qdrant/ES/MongoDB/Milvus) | 3 (InMemory/Qdrant/ChromaDB) |
+| **Storage backends** | 4 (InMemory/File/Redis/SQL) | 2 (InMemory/File) |
+| **TTS providers** | 3 (DashScope/OpenAI/Gemini) | 1 (DashScope) |
+| **Model providers** | 9 | 9 |
+| **MCP support** | Client + Server | Client + Server |
+| **A2A protocol** | HTTP + TCP mesh | HTTP only |
+| **Middleware hooks** | 7 | 5 |
+| **OpenTelemetry tracing** | Yes | Yes |
+| **Circuit breaker / rate limiter** | Yes (`resilience/`) | No |
+| **Cross-platform (Windows)** | Yes (`platform/`) | Partial |
+| **Embedding support** | 4 providers | 4 providers |
+| **Agent teams** | Yes | Yes |
+| **Pipeline / MsgHub** | Yes | Yes |
+
+---
 
 ## Documentation
 
@@ -286,8 +556,8 @@ Detailed documentation is available in the [`docs/`](docs/) directory:
 - [Architecture](docs/architecture.md) — Package structure, core concepts, data flow
 - [Model Providers](docs/model-providers.md) — Configure 9 LLM providers with examples
 - [Tools](docs/tools.md) — Built-in tools, custom functions, permissions
-- [Middleware](docs/middleware.md) — 5-hook system, tracing, budget, memory
-- [Examples](docs/examples.md) — Full catalog of 26 runnable examples
+- [Middleware](docs/middleware.md) — 7-hook system, tracing, budget, memory
+- [Examples](docs/examples.md) — Full catalog of 32+ runnable examples
 - [Deployment](docs/deployment.md) — HTTP service, sandboxing, production checklist
 
 ## Contributing

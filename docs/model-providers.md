@@ -68,7 +68,9 @@ cm, _ := model.NewDashScopeChatModel(&model.DashScopeConfig{
 })
 ```
 
-Models: `qwen-long`, `qwen-plus`, `qwen3.5-omni-plus`, `qwen3.5-plus`, `qwen3.6-max-preview`, `qwen3.6-plus`, `qwen3.7-max`
+Models: `qwen-long`, `qwen-plus`, `qwen3.5-omni-plus`, `qwen3.5-plus`, `qwen3.6-max-preview`, `qwen3.6-plus`, `qwen3.7-max`, `qwen3.7-plus`
+
+GLM models via DashScope: `glm-5.2` (131K context, 8K output)
 
 ### DeepSeek
 
@@ -112,7 +114,9 @@ cm, _ := model.NewMoonshotChatModel(&model.MoonshotConfig{
 })
 ```
 
-Models: `kimi-k2.5`, `kimi-k2.6`, `moonshot-v1-8k`, `moonshot-v1-32k`, `moonshot-v1-128k`
+Models: `kimi-k2.5`, `kimi-k2.6`, `kimi-k3`, `moonshot-v1-8k`, `moonshot-v1-32k`, `moonshot-v1-128k`
+
+**Kimi K3** — Latest Kimi model with 256K context, 64K output. Supports text, vision (JPEG/PNG/GIF/WebP), video (MP4), and extended thinking.
 
 ### xAI (Grok)
 
@@ -124,6 +128,53 @@ cm, _ := model.NewXAIChatModel(&model.XAIConfig{
 ```
 
 Models: `grok-3`, `grok-3-fast`, `grok-3-mini`, `grok-4.3`
+
+## Text-to-Speech (TTS)
+
+agentscope-go includes TTS models for audio synthesis, usable standalone or via `TTSMiddleware`.
+
+### DashScope TTS
+
+Standard and realtime (CosyVoice) TTS:
+
+```go
+ttsModel, _ := tts.NewDashScopeTTSModel(&tts.DashScopeConfig{
+    APIKey: os.Getenv("DASHSCOPE_API_KEY"),
+    Model:  "cosyvoice-v3-flash",
+    Voice:  "longxiaochun",
+})
+audio, _ := ttsModel.Synthesize(ctx, "Hello world")
+```
+
+Models: `cosyvoice-v1`, `cosyvoice-v2`, `cosyvoice-v3-flash`, `cosyvoice-v3-plus`, `qwen3-tts-flash`, `qwen3-tts-flash-realtime`
+
+### OpenAI TTS
+
+```go
+ttsModel, _ := tts.NewOpenAITTSModel(&tts.OpenAITTSConfig{
+    APIKey: os.Getenv("OPENAI_API_KEY"),
+    Model:  "tts-1-hd",
+    Voice:  "alloy",
+})
+```
+
+Models: `tts-1`, `tts-1-hd`
+
+### Gemini TTS
+
+Uses the Gemini generateContent API with audio response modality:
+
+```go
+ttsModel, _ := tts.NewGeminiTTSModel(tts.GeminiTTSConfig{
+    APIKey:       os.Getenv("GEMINI_API_KEY"),
+    Model:        "gemini-2.5-flash-preview-tts",
+    Voice:        "Kore",
+    SpeakingRate: 1.0,
+})
+audio, _ := ttsModel.Synthesize(ctx, "Hello from Gemini TTS")
+```
+
+Models: `gemini-2.5-flash-preview-tts`
 
 ## Common Call Options
 
@@ -167,6 +218,22 @@ Query bundled model metadata:
 card, _ := model.GetModelCard("claude-sonnet-4-6")
 // card.Name, card.Provider, card.ContextSize, card.OutputSize
 
-models := model.ListModels()                          // all 51
+models := model.ListModels()                          // all 54 chat model cards
 models = model.ListModels(model.WithProvider("openai")) // filter by provider
 ```
+
+54 chat/embedding model cards + 9 TTS model cards are bundled and accessible at runtime via `//go:embed`.
+
+## Model Card Summary
+
+| Provider | Chat Models | Embedding Models | TTS Models |
+|----------|------------|------------------|------------|
+| OpenAI | 10 | 2 | 2 |
+| Anthropic | 7 | — | — |
+| DashScope | 9 (incl. GLM-5.2) | 2 | 6 |
+| DeepSeek | 4 | — | — |
+| Gemini | 4 | 2 | 1 |
+| Moonshot | 6 (incl. Kimi K3) | — | — |
+| Ollama | 4 | — | — |
+| xAI | 4 | — | — |
+| **Total** | **48** | **6** | **9** |

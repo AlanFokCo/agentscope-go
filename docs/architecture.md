@@ -10,6 +10,12 @@ agentscope-go is organized as a single Go module at `github.com/alanfokco/agents
 pkg/agentscope/
 ├── config.go              # Global Init(), logging, ID factory
 │
+├── access/                # Multi-tenant access control (RBAC)
+│   ├── access.go          # ResourceKind, PermissionLevel, Principal, Grant, Policy
+│   ├── checker.go         # CheckAccess — evaluates policies against principals
+│   ├── manager.go         # Manager — high-level grant/revoke/check operations
+│   └── store.go           # Store interface for policy persistence
+│
 ├── agent/                 # Agent abstractions
 │   ├── agent.go           # Agent interface + AgentBase (identity, hooks, subscribers)
 │   ├── unified_agent.go   # UnifiedAgent — native tool calling, streaming, middleware
@@ -18,6 +24,28 @@ pkg/agentscope/
 │   ├── a2a_agent.go       # A2AAgent — remote agent proxy via HTTP
 │   ├── compress.go        # Context compression (trigger/reserve ratios, structured summary)
 │   └── agent_state.go     # Serializable session state
+│
+├── a2a/                   # Agent-to-Agent protocol
+│   ├── a2a.go             # A2A HTTP protocol types + client
+│   └── grpc/              # TCP Agent Mesh transport
+│       ├── transport.go   # Transport interface, Server, Client over newline-delimited JSON/TCP
+│       └── transport_test.go
+│
+├── bench/                 # Agent load testing
+│   ├── bench.go           # Scenario, Runner, Report, LatencyStats (p50/p95/p99)
+│   └── bench_test.go
+│
+├── hotreload/             # Hot-reload configuration
+│   ├── hotreload.go       # Watcher — polling-based file change detection + Handler callbacks
+│   ├── config_reloader.go # Reloader[T] — generic typed config reloader with atomic swap
+│   └── hotreload_test.go
+│
+├── hub/                   # Component marketplace
+│   ├── hub.go             # Hub interface, Card, ListOptions, ListResult
+│   ├── mcp_hub.go         # MCP tool hub adapter
+│   ├── skill_hub.go       # Skill hub adapter
+│   ├── registry.go        # Multi-hub registry with search across sources
+│   └── hub_test.go
 │
 ├── model/                 # LLM provider interface
 │   ├── model.go           # ChatModel interface, CallOptions, ToolSchema
@@ -34,7 +62,15 @@ pkg/agentscope/
 │   ├── structured_output.go # GenerateStructuredOutput (JSON Schema via tool call)
 │   ├── wav.go             # PCM-to-WAV conversion for audio streaming
 │   ├── http.go            # ClientOptions, defaultHTTPClient, mergeHeaders
-│   └── models/            # 51 YAML model cards (//go:embed)
+│   └── models/            # 54 YAML model cards (//go:embed)
+│       ├── anthropic/     # 7 cards (Claude Opus/Sonnet/Haiku 4.x)
+│       ├── dashscope/     # 11 cards (Qwen 3.5–3.7, GLM-5.2, embeddings)
+│       ├── deepseek/      # 4 cards (chat, reasoner, v4-flash, v4-pro)
+│       ├── gemini/        # 6 cards (2.5/3.x, embeddings)
+│       ├── moonshot/      # 6 cards (Kimi K2.5–K3, moonshot-v1)
+│       ├── ollama/        # 4 cards (llama4, qwen3, deepseek-r1)
+│       ├── openai/        # 12 cards (GPT-4o/4.1/5.x, o3/o4-mini, embeddings)
+│       └── xai/           # 4 cards (Grok 3/4.3)
 │
 ├── tool/                  # Tool system
 │   ├── tool.go            # Tool interface, BaseTool, FunctionTool, Toolkit
@@ -57,11 +93,37 @@ pkg/agentscope/
 │   └── event.go           # 28 event types (reply, model, text, thinking, data, tool, HITL)
 │
 ├── middleware/             # Agent middleware
-│   ├── middleware.go       # Middleware interface (5 hooks), chain builders
+│   ├── middleware.go       # Middleware interface (7 hooks), chain builders
 │   ├── tracing.go         # TracingMiddleware (OpenTelemetry semantic conventions)
 │   ├── tts.go             # TTSMiddleware (text → audio DataBlock injection)
 │   ├── budget.go          # ReplyBudgetControlMiddleware (token budget enforcement)
 │   └── memory/            # LongTermMemoryMiddleware (3 modes: static/agent/both)
+│
+├── replay/                # Deterministic replay
+│   ├── replay.go          # Tape, Entry — recorded model call sequences
+│   ├── middleware.go       # Middleware — record/replay via OnModelCall hook
+│   ├── store.go           # File-based tape persistence (JSON)
+│   └── replay_test.go
+│
+├── wasm/                  # WASM sandbox execution
+│   ├── wasm.go            # Runtime interface, ExecRequest, ExecResult
+│   ├── sandbox.go         # Sandbox — safe execution environment with resource limits
+│   ├── cli_runtime.go     # CLIRuntime — shells out to wasmtime/wasmer/wasm3
+│   └── wasm_test.go
+│
+├── rag/                   # Retrieval-Augmented Generation
+│   ├── rag.go             # Document, Embedder, Index interfaces, InMemoryIndex
+│   ├── knowledge_base.go  # KnowledgeBase — high-level add/query
+│   ├── qdrant_index.go    # QdrantIndex — Qdrant vector store backend
+│   ├── qdrant_text_index.go # QdrantTextIndex — auto-embeds text then stores
+│   └── parser/            # Document parsers
+│       ├── parser.go      # Parser interface, ChunkConfig, ChunkText
+│       ├── text.go        # TextParser (.txt, .md, .csv, .log)
+│       ├── pdf.go         # PDFParser (stream-based text extraction)
+│       ├── word.go        # WordParser (.docx XML extraction)
+│       ├── excel.go       # ExcelParser (.xlsx → row-based text)
+│       ├── ppt.go         # PPTParser (.pptx slide text extraction)
+│       └── *_test.go      # Tests for each parser
 │
 ├── formatter/             # Per-provider message formatting
 ├── permission/            # Permission engine (5 modes, rule matching, HITL)
@@ -69,19 +131,37 @@ pkg/agentscope/
 ├── credential/            # Provider credential types + factory
 ├── mcp/                   # MCP client (Stdio + HTTP) and server
 ├── embedding/             # Embedding models (4 providers) + cache
-├── rag/                   # Index + KnowledgeBase + Qdrant
 ├── team/                  # Agent teams (leader/worker coordination)
-├── workspace/             # Sandboxed execution (Local, Docker, E2B)
+├── workspace/             # Sandboxed execution environments
+│   ├── local.go           # LocalWorkspace — directory-scoped
+│   ├── docker.go          # DockerWorkspace — container-level
+│   ├── e2b.go             # E2BWorkspace — cloud sandbox
+│   ├── k8s.go             # K8sWorkspace — Kubernetes Pod-based
+│   ├── opensandbox.go     # OpenSandboxWorkspace — OpenSandbox API
+│   ├── daytona.go         # DaytonaWorkspace — Daytona dev environment
+│   ├── applecontainer.go  # AppleContainerWorkspace — Apple Container framework
+│   ├── bubblewrap.go      # BubblewrapWorkspace — Linux bwrap sandbox
+│   └── gateway.go         # WorkspaceGateway — unified workspace router
+│
+├── tts/                   # Text-to-Speech models
+│   ├── tts.go             # TTSModel interface
+│   ├── dashscope.go       # DashScope standard TTS
+│   ├── dashscope_realtime.go # CosyVoice realtime TTS
+│   ├── openai.go          # OpenAI Audio Speech API
+│   ├── gemini.go          # Gemini TTS (generateContent with audio modality)
+│   └── models/            # 9 TTS model cards
+│       ├── dashscope/     # CosyVoice v1/v2/v3, Qwen3-TTS
+│       ├── openai/        # tts-1, tts-1-hd
+│       └── gemini/        # gemini-2.5-flash-preview-tts
+│
 ├── storage/               # State persistence (InMemory, File, Redis)
 ├── service/               # HTTP Agent Service + SSE + AG-UI protocol
-├── tts/                   # TTS models (DashScope standard + CosyVoice realtime)
 ├── tracing/               # Tracer interface + OpenTelemetry + LoggerTracer
 ├── schedule/              # InMemoryScheduler for periodic tasks
 ├── messagebus/            # InMemory + Redis pub/sub + registry operations
 ├── session/               # Session KV store
 ├── skill/                 # Reusable skill system + SkillManager registry
 ├── memory/                # Conversation memory + compression
-├── a2a/                   # Agent-to-Agent protocol types + HTTP client
 ├── prompt/                # Composable system prompt assembly from named sections
 ├── resilience/            # Circuit breaker + rate limiter wrappers for ChatModel
 ├── realtime/              # Realtime streaming interface + echo client
@@ -94,6 +174,12 @@ pkg/agentscope/
 ├── platform/              # Cross-platform shell detection + PowerShell safety checks
 ├── sandbox/               # Sandbox execution policies (Allow/Deny/AskUser)
 ├── errors/                # Typed error hierarchy (Retriable, Throttled, PermissionDenied, Timeout)
+├── tune/                  # Fine-tuning utilities
+├── types/                 # Shared type definitions
+├── config/                # Configuration loading and defaults
+├── app/                   # Full application bootstrap (CreateApp)
+├── agenttest/             # Test helpers and fixtures
+├── exception/             # Exception handling utilities
 └── internal/              # httpx (HTTP+SSE), jsonx (JSON repair)
 ```
 
@@ -113,13 +199,19 @@ The `Agent` interface defines five methods: `ID()`, `Reply()`, `Observe()`, `Int
 
 `ChatModel` provides `Chat()`, `ChatStream()`, `CountTokens()`. Nine provider adapters share common patterns: functional options via `CallOption`, retry logic, `ClientOptions` for HTTP customization. All streaming adapters parse SSE via the shared `internal/httpx` helper.
 
+54 model cards are bundled across 8 provider directories, plus 9 TTS model cards.
+
 ### Tool
 
 `Tool` embeds `permission.Checker` for fine-grained access control. `FunctionTool` wraps plain Go functions. `Toolkit` manages named `ToolGroup`s with activation/deactivation. Built-in tools include a Bash executor with AST-level command safety analysis.
 
 ### Middleware
 
-Five-hook onion chain: `OnReply` wraps the entire reply, `OnModelCall` wraps each API call, `OnActing` wraps tool execution, `OnSystemPrompt` transforms the system prompt, `OnCompressContext` wraps compression. Middleware can also provide additional tools via `ListTools()`.
+Seven-hook onion chain: `OnReply` wraps the entire reply, `OnModelCall` wraps each API call, `OnActing` wraps tool execution, `OnSystemPrompt` transforms the system prompt, `OnCompressContext` wraps compression, `OnCheckPermission` wraps permission checks, `OnReasoning` wraps each ReAct iteration. Middleware can also provide additional tools via `ListTools()`.
+
+### Deterministic Replay
+
+The `replay` package records model call request/response pairs into a `Tape` (JSON-serializable sequence of `Entry` records). In replay mode, the middleware intercepts `OnModelCall` and returns pre-recorded responses instead of calling the LLM. This enables deterministic CI/CD testing without API keys or network access.
 
 ### Agent Loop (v3)
 
@@ -140,7 +232,7 @@ Session lifecycle management:
 - **`SessionEngine`** — single-session manager with `SubmitMessage()`, interrupt support, and budget tracking
 - **`Turn`** — wraps a single loop execution with hooks and budget enforcement
 - **`AgentManager`** — spawns/stops subagents with concurrency limits via `BudgetTracker`
-- **`AgentPool`** — worker pool pattern for parallel agent execution
+- **`AgentPool`** — worker pool pattern for parallel agent execution with fan-out dispatch
 - **`BudgetTracker`** — enforces limits on turns, tokens, duration, and concurrency
 
 ### Metrics (v3)
@@ -160,6 +252,30 @@ Sandboxed command execution:
 - **`NoopSandbox`** — passthrough execution with no restrictions (default)
 - Provider registration via `RegisterProvider()` / `AutoSelect()`
 
+### WASM Sandbox
+
+The `wasm` package provides a separate sandboxing layer that executes WebAssembly modules with strict resource limits (memory, CPU fuel, timeout). The `CLIRuntime` shells out to `wasmtime`, `wasmer`, or `wasm3` binaries (auto-discovered). This is useful for running untrusted user-supplied code in a portable, deterministic sandbox.
+
+### Hot-Reload Configuration
+
+The `hotreload` package provides a polling-based file watcher (`Watcher`) and a generic typed config reloader (`Reloader[T]`). Watch any config file for changes, and handlers are called with the new file contents. `Reloader[T]` adds atomic pointer swap and a typed `Get()` method, so your agent can pick up config changes without restarting.
+
+### Component Hub
+
+The `hub` package defines a `Hub` interface for browsing, searching, and installing components (MCP tools, skills) from remote registries. `MCPHub` and `SkillHub` are concrete adapters. The `Registry` type aggregates multiple hubs for unified search.
+
+### Access Control
+
+The `access` package implements multi-tenant RBAC with four permission levels (`none`, `read`, `write`, `admin`) across four resource kinds (`credential`, `agent`, `knowledge_base`, `session`). Principals can be users, groups, or organizations. Policies are stored via a pluggable `Store` interface.
+
+### Agent Load Testing
+
+The `bench` package provides a `Runner` that executes `Scenario` definitions with configurable concurrency, duration, iterations, and ramp-up. Reports include throughput, latency percentiles (p50/p95/p99), success/failure counts, and error breakdowns.
+
+### TCP Agent Mesh
+
+The `a2a/grpc` package provides a TCP-based transport for inter-agent communication using newline-delimited JSON messages. A `Server` accepts connections and dispatches incoming messages to a handler function. A `Client` connects to a remote server. Supports streaming via `IsStream`/`StreamEnd` flags.
+
 ## Data Flow
 
 ```
@@ -173,6 +289,8 @@ UnifiedAgent.Reply(ctx, input)
     │       ▼
     │   ReAct Loop (max N iterations)
     │       │
+    │       ├── OnReasoning middleware chain
+    │       │
     │       ├── OnSystemPrompt pipeline → build system prompt
     │       │
     │       ├── OnModelCall chain → ChatModel.Chat/ChatStream
@@ -183,11 +301,13 @@ UnifiedAgent.Reply(ctx, input)
     │       │
     │       └── If ToolCallBlock:
     │               │
-    │               ├── Permission check (Engine.CheckPermission)
+    │               ├── OnCheckPermission chain
     │               │       │
-    │               │       ├── ALLOW → execute
-    │               │       ├── ASK → emit RequireUserConfirmEvent → wait
-    │               │       └── DENY → skip
+    │               │       ├── Permission check (Engine.CheckPermission)
+    │               │       │       │
+    │               │       │       ├── ALLOW → execute
+    │               │       │       ├── ASK → emit RequireUserConfirmEvent → wait
+    │               │       │       └── DENY → skip
     │               │
     │               ├── OnActing chain → Tool.Execute
     │               │
@@ -206,3 +326,5 @@ The v3 `loop.Loop` provides the same state machine at a lower level. `UnifiedAge
 - **Streaming via channels**: `<-chan T` pattern. Goroutine writes deltas then final response, defers `close(ch)`
 - **Context propagation**: `context.Context` as first argument everywhere
 - **Explicit errors**: Return `(T, error)` rather than panicking (exception: `message.NewMsg` panics on invalid content type)
+- **Generics where appropriate**: `Reloader[T]` for typed config hot-reload, avoiding `any` casts
+- **Go-native concurrency**: `AgentPool` uses worker goroutines and channels, not thread pools

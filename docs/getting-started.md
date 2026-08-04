@@ -107,7 +107,7 @@ Optional: `DASHSCOPE_BASE_URL` to override the DashScope endpoint.
 
 ## Running Examples
 
-The project includes 25 examples. Run any of them:
+The project includes 35 examples. Run any of them:
 
 ```bash
 export DASHSCOPE_API_KEY=sk-...
@@ -115,6 +115,8 @@ go run ./examples/agent_v2          # Tool calling
 go run ./examples/streaming         # Streaming events
 go run ./examples/multimodal        # Image input
 go run ./examples/model_call        # Raw model API
+go run ./examples/replay            # Deterministic replay
+go run ./examples/pool              # Agent pool fan-out
 ```
 
 See [examples.md](examples.md) for the full list.
@@ -123,6 +125,7 @@ See [examples.md](examples.md) for the full list.
 
 - [Architecture](architecture.md) — Understand the package structure
 - [Model Providers](model-providers.md) — Configure different LLM backends
-- [Tools](tools.md) — Built-in tools and custom function tools
-- [Middleware](middleware.md) — Intercept and extend agent behavior
-- [Deployment](deployment.md) — Run as an HTTP service
+- [Tools](tools.md) — Built-in tools, custom function tools, and document parsers
+- [Middleware](middleware.md) — Intercept and extend agent behavior (7 hooks)
+- [Deployment](deployment.md) — Run as an HTTP service, workspace sandboxing, agent pools
+- [Go-Exclusive Features](go-exclusive.md) — Deterministic replay, fan-out pool, hot-reload, WASM sandbox, TCP mesh, load testing

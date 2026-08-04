@@ -1,6 +1,6 @@
 # Examples
 
-26 runnable examples in `examples/`. Run any with:
+35 runnable examples in `examples/`. Run any with:
 
 ```bash
 export DASHSCOPE_API_KEY=sk-...  # or ANTHROPIC_API_KEY / OPENAI_API_KEY
@@ -57,3 +57,29 @@ go run ./examples/<name>
 | `agent_service` | HTTP Agent Service with REST + SSE streaming endpoints | Yes |
 | `scheduled_task` | One-shot and recurring task scheduling | No |
 | `realtime_echo` | Realtime streaming interface with echo client | No |
+
+## Go-Exclusive Features
+
+| Example | Description | API Key Required |
+|---------|-------------|------------------|
+| `replay` | Record agent interactions to tape, then replay deterministically | Yes (record) / No (replay) |
+| `pool` | Fan-out agent pool with 8 workers processing batch inputs | Yes |
+| `hotreload` | Watch config file for changes and update agent at runtime | Yes |
+| `wasm_sandbox` | Execute WASM modules in a sandboxed environment | No |
+| `grpc_a2a` | TCP Agent Mesh: server + client communicating via newline-delimited JSON | Yes |
+| `bench` | Load-test an agent with configurable concurrency and duration | Yes |
+| `hub_install` | Browse and install MCP tools / skills from a remote hub | No |
+| `access_control` | Multi-tenant RBAC: grant, check, and revoke permissions | No |
+| `document_parser` | Parse PDF, Word, Excel, PPT files into RAG-ready document chunks | No |
+
+## Running All Tests
+
+```bash
+go test ./...
+```
+
+## See Also
+
+- [Getting Started](getting-started.md) — Quick start guide
+- [Go-Exclusive Features](go-exclusive.md) — Detailed documentation for Go-only capabilities
+- [Architecture](architecture.md) — Package structure and design
