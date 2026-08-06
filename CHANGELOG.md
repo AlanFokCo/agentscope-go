@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+
+### Added — Edge & Embedded Intelligence
+- **ConnectivityAwareModel** (`model/connectivity.go`): wraps local + cloud ChatModel with internal circuit breaker; routes to cloud when online, falls back to local (Ollama) when offline, auto-recovers via single-probe half-open
+- **PubSub interface** (`messagebus/pubsub.go`): minimal pub/sub contract for IoT protocols with QoS (0/1/2), retain, configurable buffer size
+- **MQTT adapter** (`messagebus/mqtt/`): Eclipse Paho-based PubSub implementation with auto-reconnect, topic prefix, credentials; build tag `mqtt` to avoid bloating non-MQTT builds
+- **Device framework** (`device/`): `Connector` interface + 4 pure-Go hardware drivers (Serial via termios, GPIO via chardev, CAN via SocketCAN, I2C via i2c-dev) — all `//go:build linux`, zero CGO
+- **DeviceTool**: wraps any Connector as `tool.Tool`; sensors auto-allowed, actuators require bypass-immune ASK; integrated watchdog kick on success
+- **SensorTool**: read-only sensor tool with JSON output and auto-allow permissions
+- **SensorMiddleware**: injects live sensor readings into system prompt (`[SENSOR DATA]...[/SENSOR DATA]`) with configurable max-token budget to prevent context bloat
+- **Watchdog**: timer-based safety; if `Kick()` not called within timeout, triggers safe-state callback (motor off, valve close, etc.)
+- **CI cross-arch job**: build verification for linux/arm64, arm, mips64le, riscv64 with binary size check (< 18MB)
+- 4 edge examples: `edge_offline`, `edge_sensor`, `edge_serial_robot`, `edge_fleet`
+- 4 docs: edge-deployment.md, device-tools.md, offline-operation.md, multi-device.md
 ### Added — Security & Audit
 - **Audit logging** (`audit/`): new package with structured `Logger` interface and 4 implementations (InMemory, File/JSON-Lines, Multi fan-out, Nop); 10 action types; context propagation via `WithLogger`/`GetLogger`
 - **Sandbox execution events**: 3 new event types — `tool_exec_start`, `tool_exec_end`, `tool_policy_denied` — providing visibility into the orchestrator execution layer

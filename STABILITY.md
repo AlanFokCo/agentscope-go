@@ -82,6 +82,10 @@ Landed:
 - **Testing:** fuzzers for the safety parsers and JSON decoder; CI fuzz smoke +
   coverage.
 
+- **Edge & Embedded Intelligence:** ConnectivityAwareModel (cloud/local routing
+  via circuit breaker), PubSub interface + MQTT adapter (build tag: mqtt),
+  Device framework (Serial/GPIO/CAN/I2C pure-Go drivers + DeviceTool + Watchdog +
+  SensorMiddleware), cross-arch CI (arm64/arm/mips64le/riscv64), binary ~6MB.
 Planned (tracked):
 
 - ~~Full tool-in-sandbox execution.~~ **Done:** `workspace.ToolBackend` adapter

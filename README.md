@@ -329,6 +329,22 @@ Production-ready coding agent toolkit:
 - **Embedding** — 4 providers (OpenAI, DashScope, Gemini, Ollama) with batch processing, caching, multimodal support
 - **Cross-Platform** — Shell detection with PowerShell/Cmd safety analysis, Windows support
 
+### Edge & Embedded Intelligence
+
+Designed for deploying AI agents on edge devices (Jetson, RPi, RISC-V) with intermittent or no connectivity:
+
+| Component | Description |
+|-----------|-------------|
+| **ConnectivityAwareModel** | Wraps any `ChatModel`; routes to cloud when online, falls back to local (Ollama) when offline, auto-recovers via circuit breaker |
+| **PubSub Interface** | `messagebus.PubSub` with QoS/retain semantics for IoT protocols |
+| **MQTT Adapter** | Eclipse Paho-based implementation (build tag `mqtt`) with auto-reconnect |
+| **Device Connectors** | Serial (UART), GPIO (chardev), CAN (SocketCAN), I2C — all pure Go, no CGO |
+| **DeviceTool** | Wraps hardware as `tool.Tool` with permission model (sensors auto-allow, actuators require ASK) |
+| **SensorMiddleware** | Injects live sensor readings into system prompt with token budget control |
+| **Watchdog** | Timer-based safety: triggers safe-state if agent loop stalls |
+
+Cross-compiles to arm64/arm/mips64le/riscv64. Stripped binary ~6MB.
+
 ---
 
 ## Quick Start
@@ -468,6 +484,8 @@ pkg/agentscope/
 ├── loop/                   # Configurable agent loop (model → tool → iterate)
 ├── memory/                 # Conversation memory + compression
 ├── messagebus/             # InMemory + Redis pub/sub + registry
+├── messagebus/mqtt/        # MQTT PubSub adapter for edge/IoT (build tag: mqtt)
+├── device/                 # Hardware connectors (Serial/GPIO/CAN/I2C) + DeviceTool + Watchdog
 ├── session/                # Session KV store (memory + JSON file)
 ├── skill/                  # Reusable skill system + SkillManager registry
 ├── prompt/                 # Composable system prompt assembly
@@ -491,7 +509,7 @@ pkg/agentscope/
 
 ## Examples
 
-32+ examples in `examples/`. Run any with `go run ./examples/<name>`.
+36+ examples in `examples/`. Run any with `go run ./examples/<name>`.
 
 | Example | Description |
 |---------|-------------|
@@ -538,6 +556,11 @@ pkg/agentscope/
 | `webui` | Web UI Studio with streaming chat, tool visualization, HITL |
 | `scheduled_task` | One-shot and recurring task scheduling |
 | `realtime_echo` | Realtime streaming interface demo |
+| **Edge & IoT** | |
+| `edge_offline` | ConnectivityAwareModel — automatic cloud/local fallback |
+| `edge_sensor` | SensorMiddleware + Watchdog for physical sensors |
+| `edge_serial_robot` | DeviceTool with serial robot arm control |
+| `edge_fleet` | Multi-agent PubSub coordination across devices |
 
 ---
 
@@ -574,6 +597,7 @@ Factual comparison of features available in each implementation:
 | **Embedding support** | 4 providers | 4 providers |
 | **Agent teams** | Yes | Yes |
 | **Pipeline / MsgHub** | Yes | Yes |
+| **Edge/IoT device support** | Yes (`device/` + MQTT PubSub) | No |
 
 ---
 
@@ -586,8 +610,12 @@ Detailed documentation is available in the [`docs/`](docs/) directory:
 - [Model Providers](docs/model-providers.md) — Configure 9 LLM providers with examples
 - [Tools](docs/tools.md) — Built-in tools, custom functions, permissions
 - [Middleware](docs/middleware.md) — 7-hook system, tracing, budget, memory
-- [Examples](docs/examples.md) — Full catalog of 32+ runnable examples
+- [Examples](docs/examples.md) — Full catalog of 36+ runnable examples
 - [Deployment](docs/deployment.md) — HTTP service, sandboxing, production checklist
+- [Edge Deployment](docs/edge-deployment.md) — Cross-compile, Jetson/RPi quickstart, offline operation
+- [Device Tools](docs/device-tools.md) — Serial/GPIO/CAN/I2C connectors, DeviceTool, Watchdog
+- [Multi-Device](docs/multi-device.md) — Fleet coordination via MQTT PubSub
+- [Offline Operation](docs/offline-operation.md) — ConnectivityAwareModel, data buffering, power management
 
 ## Contributing
 
