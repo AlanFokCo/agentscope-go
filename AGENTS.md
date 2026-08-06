@@ -46,9 +46,17 @@ Rsync example (single file, preserving path):
 rsync -azR pkg/agentscope/model/model.go root@builder:/opt/Projects/agentscope-go/
 ```
 
-## Current state (2026-07)
+## Current state (2026-08)
 
 Feature-complete Python parity **plus** a large production-hardening pass (see `STABILITY.md` for the full list). Highlights already shipped: bash-redirect safety, workspace jail + Docker/E2B backend routing for file/shell tools, WebFetch SSRF guard, MCP env isolation, per-tool timeout/result caps, 429/Retry-After+jitter retries, ordered fallback chain, single-probe circuit breaker, streaming-error propagation (`ChatResponse.Error`/`StopReason`), ctx-aware event emission (goroutine-leak fixes), atomic file writes, token/duration budget enforcement, HTTP hardening + `/healthz`+`/readyz`+`/metrics`, a Prometheus metrics provider, JSON-Schema tool-input validation, MultiEdit + ApplyPatch tools, and fuzz targets. All green under `-race` and golangci-lint.
+
+Recent additions (2026-08):
+- **Process-group isolation** (`proc_unix.go`/`proc_windows.go`): child processes are killed as a group on timeout, preventing orphans/fork-bombs.
+- **Interpreter attack detection** (`CheckInterpreterAttack`): blocks dangerous API calls hidden inside `python -c`, `node -e`, `perl -e`, etc.
+- **Write hardening**: 10 MB size cap, atomic writes (`fsutil.WriteFileAtomic`), executable-extension bypass-immune ASK.
+- **Sandbox Policy enforcement** (`orchestrator.enforceSandboxPolicy`): the `sandbox.Policy` struct now actually controls tool execution — FSReadOnly blocks writes, AllowExec=false blocks bash, NetDisabled blocks WebFetch, DenyPaths blocks file access.
+- **Audit logging** (`audit/`): structured `audit.Logger` interface with InMemory/File/Multi/Nop implementations; orchestrator records every tool execution, permission denial, and policy decision.
+- **Sandbox execution events** (`event/`): `tool_exec_start`, `tool_exec_end`, `tool_policy_denied` — visibility into what happens inside the execution layer.
 
 **Open / decision-gated** (tracked in `STABILITY.md` "Planned"): USD cost cap (needs model-card pricing), OTLP exporter + `loop.Hook` ctx-threading (API break, needs sign-off), durable `FullStorage` + session-history resume, Anthropic prompt-caching write path (needs live-API validation), record/replay eval harness, WebSearch/generic-HTTP tools (dependency decision).
 

@@ -295,6 +295,18 @@ Production-ready coding agent toolkit:
 - **Permission Engine** — 5 permission modes with per-tool rule matching and bypass-immune safety checks
 - **Context Compression** — Automatic structured summarization when context exceeds thresholds
 
+### Security & Execution Safety
+
+- **AST-level Bash Analysis** — `mvdan.cc/sh/v3/syntax`-based analysis: injection risk, dangerous removal, redirect safety, read-only verification, sed constraints, file path extraction
+- **Interpreter Attack Detection** — Blocks dangerous API calls hidden inside `python -c`, `node -e`, `perl -e`, `ruby -e`, `lua -e`, `php -r` (8 languages, 20+ patterns)
+- **Process-group Isolation** — Child processes killed as a group on timeout (`Setpgid` + `SIGKILL` to pgid), preventing orphans and fork-bombs
+- **Sandbox Policy Enforcement** — `sandbox.Policy` controls: FSReadOnly blocks writes, AllowExec=false blocks bash, NetDisabled blocks WebFetch, DenyPaths blocks file access
+- **Write Hardening** — 10 MB size cap, atomic writes (temp+fsync+rename), executable-extension bypass-immune ASK
+- **SSRF Guard** — Dial-time IP resolution blocks loopback/private/link-local addresses (covers DNS rebinding + redirects)
+- **Workspace Jail** — Symlink-aware path confinement to workspace root
+- **Credential Protection** — 40+ dangerous file paths protected (.kube/config, .aws/credentials, .docker/config.json, SSH keys, .gnupg/*)
+- **Audit Logging** — Structured `audit.Logger` records every tool execution, permission decision, and policy denial (InMemory/File/Multi/Nop backends)
+
 ### Integration Protocols
 
 | Protocol | Description |
@@ -309,7 +321,9 @@ Production-ready coding agent toolkit:
 ### Observability & Operations
 
 - **Tracing** — `TracingMiddleware` with OpenTelemetry semantic conventions, nested spans
-- **Metrics** — `Counter`/`Histogram` interfaces with `InMemoryProvider` and `MetricsHook`
+- **Metrics** — `Counter`/`Histogram` interfaces with `InMemoryProvider`, `Prometheus` provider, and `MetricsHook`
+- **Audit** — `audit.Logger` interface with InMemory/File(JSON-Lines)/Multi/Nop backends; records tool executions, permission decisions, and sandbox policy denials
+- **Sandbox Events** — `tool_exec_start`, `tool_exec_end`, `tool_policy_denied` events for execution-layer visibility
 - **Budget Tracking** — Turn/token/duration/concurrency limits with `BudgetTracker`
 - **Resilience** — Circuit breaker + rate limiter wrappers for `ChatModel`
 - **Embedding** — 4 providers (OpenAI, DashScope, Gemini, Ollama) with batch processing, caching, multimodal support
@@ -518,6 +532,7 @@ pkg/agentscope/
 | `hub_install` | Browse and install MCP servers/skills from hub |
 | `access_control` | Resource sharing across users/groups/orgs |
 | `document_parser` | Parse PDF/Word/Excel/PPT into RAG chunks |
+| `audit_logging` | Sandbox policy enforcement + structured audit trail |
 | **Deployment** | |
 | `agent_service` | HTTP Agent Service (REST + SSE streaming) |
 | `webui` | Web UI Studio with streaming chat, tool visualization, HITL |

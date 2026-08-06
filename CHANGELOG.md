@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added — Security & Audit
+- **Audit logging** (`audit/`): new package with structured `Logger` interface and 4 implementations (InMemory, File/JSON-Lines, Multi fan-out, Nop); 10 action types; context propagation via `WithLogger`/`GetLogger`
+- **Sandbox execution events**: 3 new event types — `tool_exec_start`, `tool_exec_end`, `tool_policy_denied` — providing visibility into the orchestrator execution layer
+- **Sandbox Policy enforcement**: `sandbox.Policy` now actually controls tool execution; `OrchestratorConfig.Policy` blocks tool calls that violate filesystem/network/process policies before execution
+- **Process-group isolation** (`proc_unix.go`/`proc_windows.go`): child processes killed as a group on timeout via `Setpgid` + `SIGKILL` to process group, preventing orphans and fork-bombs
+- **Interpreter attack detection** (`CheckInterpreterAttack`): detects dangerous API calls hidden inside interpreter inline-code flags (`python -c`, `node -e`, `perl -e`, `ruby -e`, `lua -e`, `php -r`); checks for `os.system`, `subprocess`, `child_process`, etc.
+- **Write hardening**: 10 MB size cap (`MaxWriteBytes`), atomic writes via `fsutil.WriteFileAtomic`, executable-extension detection triggers bypass-immune ASK for .sh/.py/.exe/.dll etc.
+- **Expanded dangerous paths**: added 20+ credential files (.kube/config, .aws/credentials, .docker/config.json, SSH private keys, .gnupg/*) and 4 directories (.kube, .aws, .docker, .gnupg) to the safety layer
+- **awk removed from read-only allowlist**: `awk` can execute arbitrary commands via `system()` and write files
+
 ### Added — Go-Exclusive Features
 - **Web UI Studio** (`webui/`): Embedded single-page web interface for agent interaction; zero-dependency SPA served via `go:embed` with streaming chat, thinking block display, tool call visualization, human-in-the-loop confirmation, session management, and model browser; mount with `service.HandlerWithWebUI` or use `webui.Handler` directly
 - **Deterministic Replay** (`replay/`): Record/replay middleware that captures model call request/response pairs into JSON tapes; replay mode returns pre-recorded responses without calling the LLM, enabling fully offline deterministic CI/CD testing

@@ -87,6 +87,19 @@ consistent.
   - For OpenTelemetry, prefer wiring through `tracing.OTELTracer` instead of using the
     OTEL SDK directly in business logic.
 
+- **Security & audit**
+  - Tool-facing code (anything in `tool/`) MUST NOT weaken existing safety checks.
+    New tools should implement `CheckPermissions` with appropriate bypass-immune guards.
+  - When adding new file operations or shell commands, check against `DangerousFiles`,
+    `DangerousDirectories`, and `systemPathPrefixes` in `safety.go`.
+  - New execution paths should emit audit entries via `audit.Logger` (passed through
+    `OrchestratorConfig.AuditLogger`). At minimum: action type, tool name, input
+    summary, decision (allowed/denied/ask), and duration.
+  - Sandbox policy enforcement (`sandbox.Policy`) must remain backwards-compatible:
+    nil policy = no restrictions (existing behavior).
+  - Always run `go test -fuzz=FuzzBashSafety -fuzztime=30s` after modifying
+    `bash_parser.go` or `safety.go`.
+
 ### Documentation & examples
 
 - Keep `README.md` up to date whenever you:

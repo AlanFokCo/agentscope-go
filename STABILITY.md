@@ -64,7 +64,21 @@ Landed:
 - **Ops:** HTTP servers set `ReadHeaderTimeout`/`IdleTimeout`/`MaxHeaderBytes` and
   cap request bodies; `/healthz` + `/readyz`; graceful `Shutdown`; reference
   Dockerfile.
-- **Observability:** OTEL span attributes recorded; label-aware in-memory metrics.
+- **Observability:** OTEL span attributes recorded; label-aware in-memory metrics;
+  sandbox execution events (`tool_exec_start`/`tool_exec_end`/`tool_policy_denied`).
+- **Audit:** structured `audit.Logger` interface with InMemory/File/Multi/Nop
+  implementations; the orchestrator records every tool execution, permission
+  denial, and sandbox policy decision.
+- **Process isolation:** child processes run in a dedicated process group
+  (`Setpgid`); timeout kills the entire group, preventing orphans and fork-bombs.
+- **Interpreter attack detection:** `CheckInterpreterAttack` detects dangerous
+  API calls hidden inside `python -c`, `node -e`, `perl -e`, etc. (8 languages,
+  20+ dangerous API patterns).
+- **Sandbox policy enforcement:** `sandbox.Policy` is now actually enforced by
+  the orchestrator — FSReadOnly blocks writes, AllowExec=false blocks bash,
+  NetDisabled blocks WebFetch, DenyPaths blocks file access.
+- **Write hardening:** 10 MB write-size cap, atomic writes via `fsutil.WriteFileAtomic`,
+  executable-extension bypass-immune ASK (.sh/.py/.exe etc.).
 - **Testing:** fuzzers for the safety parsers and JSON decoder; CI fuzz smoke +
   coverage.
 
