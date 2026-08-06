@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/audit"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/exception"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/permission"
@@ -21,6 +22,7 @@ type Orchestrator struct {
 	permEngine         *permission.Engine
 	sandbox            sandbox.Sandbox
 	policy             *sandbox.Policy
+	auditLogger        audit.Logger
 	onPermDenied       func(string, permission.Decision)
 	defaultToolTimeout time.Duration
 	maxToolResultBytes int
@@ -39,6 +41,10 @@ type OrchestratorConfig struct {
 	// the policy into the execution context so individual tools can read it.
 	Policy *sandbox.Policy
 
+	// AuditLogger receives a structured [audit.Entry] for every tool
+	// execution, permission decision, and policy denial. Nil disables audit.
+	AuditLogger audit.Logger
+
 	// DefaultToolTimeout bounds each tool execution. Zero means no timeout (a
 	// blocking custom/MCP tool could otherwise hang the whole loop).
 	DefaultToolTimeout time.Duration
@@ -54,12 +60,17 @@ type OrchestratorResult struct {
 }
 
 // NewOrchestrator creates an Orchestrator from the given config.
-func NewOrchestrator(cfg OrchestratorConfig) *Orchestrator {
+func NewOrchestrator(cfg OrchestratorConfig) *Orchestrator { //nolint:gocritic // config structs are passed by value at construction
+	al := cfg.AuditLogger
+	if al == nil {
+		al = audit.NopLogger{}
+	}
 	o := &Orchestrator{
 		toolkit:            cfg.Toolkit,
 		permEngine:         cfg.PermEngine,
 		sandbox:            cfg.Sandbox,
 		policy:             cfg.Policy,
+		auditLogger:        al,
 		onPermDenied:       cfg.OnPermissionDenied,
 		defaultToolTimeout: cfg.DefaultToolTimeout,
 		maxToolResultBytes: cfg.MaxToolResultBytes,
@@ -74,6 +85,8 @@ func NewOrchestrator(cfg OrchestratorConfig) *Orchestrator {
 
 // Execute runs a single tool call through the permission + execution pipeline.
 func (o *Orchestrator) Execute(ctx context.Context, call message.ToolCallBlock) (*ToolResponse, error) { //nolint:gocritic // public API
+	start := time.Now()
+
 	// 1. Look up tool
 	t := o.toolkit.Get(call.Name)
 	if t == nil {
@@ -98,6 +111,16 @@ func (o *Orchestrator) Execute(ctx context.Context, call message.ToolCallBlock) 
 			if o.onPermDenied != nil {
 				o.onPermDenied(call.Name, decision)
 			}
+			_ = o.auditLogger.Log(ctx, &audit.Entry{
+				Timestamp:  start,
+				ToolCallID: call.ID,
+				Action:     audit.ActionPermissionAsk,
+				ToolName:   call.Name,
+				Input:      call.Input,
+				Decision:   "ask",
+				Reason:     decision.Message,
+			})
+
 			return &ToolResponse{
 				Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: decision.Message}},
 				State:   message.ToolResultError,
@@ -106,6 +129,15 @@ func (o *Orchestrator) Execute(ctx context.Context, call message.ToolCallBlock) 
 			if o.onPermDenied != nil {
 				o.onPermDenied(call.Name, decision)
 			}
+			_ = o.auditLogger.Log(ctx, &audit.Entry{
+				Timestamp:  start,
+				ToolCallID: call.ID,
+				Action:     audit.ActionPermissionAsk,
+				ToolName:   call.Name,
+				Input:      call.Input,
+				Decision:   "ask",
+				Reason:     decision.Message,
+			})
 			return &ToolResponse{
 				Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: "Permission required: " + decision.Message}},
 				State:   message.ToolResultError,
@@ -117,6 +149,15 @@ func (o *Orchestrator) Execute(ctx context.Context, call message.ToolCallBlock) 
 	// before any execution happens.
 	if o.policy != nil {
 		if resp := o.enforceSandboxPolicy(call.Name, input); resp != nil {
+			_ = o.auditLogger.Log(ctx, &audit.Entry{
+				Timestamp:  start,
+				ToolCallID: call.ID,
+				Action:     audit.ActionPolicyDenied,
+				ToolName:   call.Name,
+				Input:      call.Input,
+				Decision:   "policy_denied",
+				Reason:     resp.Content[0].(message.TextBlock).Text,
+			})
 			return resp, nil
 		}
 	}
@@ -134,6 +175,26 @@ func (o *Orchestrator) Execute(ctx context.Context, call message.ToolCallBlock) 
 		defer cancel()
 	}
 	resp, err := o.toolkit.CallTool(execCtx, call.Name, input)
+	elapsed := time.Since(start)
+
+	// 6. Audit the execution result.
+	auditEntry := &audit.Entry{
+		Timestamp:  start,
+		ToolCallID: call.ID,
+		Action:     audit.ActionToolExecute,
+		ToolName:   call.Name,
+		Input:      call.Input,
+		Decision:   "allowed",
+		Duration:   elapsed,
+	}
+	if err != nil {
+		auditEntry.Error = err.Error()
+	}
+	if resp != nil {
+		auditEntry.Output = truncateForAudit(resp)
+	}
+	_ = o.auditLogger.Log(ctx, auditEntry)
+
 	if err != nil {
 		return resp, err
 	}
@@ -181,6 +242,24 @@ func (o *Orchestrator) BatchExecute(ctx context.Context, calls []message.ToolCal
 		}
 	}
 	return results
+}
+
+// truncateForAudit extracts a short text summary from a ToolResponse for the
+// audit log. Output is capped at 512 bytes to keep audit entries compact.
+func truncateForAudit(resp *ToolResponse) string {
+	if resp == nil || len(resp.Content) == 0 {
+		return ""
+	}
+	const maxAuditOutput = 512
+	for _, b := range resp.Content {
+		if tb, ok := b.(message.TextBlock); ok {
+			if len(tb.Text) > maxAuditOutput {
+				return tb.Text[:maxAuditOutput] + "..."
+			}
+			return tb.Text
+		}
+	}
+	return ""
 }
 
 // ---------------------------------------------------------------------------

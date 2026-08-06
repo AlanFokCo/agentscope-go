@@ -29,5 +29,8 @@ func (e RequireUserConfirmEvent) EventTypeString() string       { return string(
 func (e UserConfirmResultEvent) EventTypeString() string        { return string(e.GetEventType()) }
 func (e RequireExternalExecutionEvent) EventTypeString() string { return string(e.GetEventType()) }
 func (e ExternalExecutionResultEvent) EventTypeString() string  { return string(e.GetEventType()) }
+func (e ToolExecStartEvent) EventTypeString() string            { return string(e.GetEventType()) }
+func (e ToolExecEndEvent) EventTypeString() string              { return string(e.GetEventType()) }
+func (e ToolPolicyDeniedEvent) EventTypeString() string         { return string(e.GetEventType()) }
 func (e ExceedMaxItersEvent) EventTypeString() string           { return string(e.GetEventType()) }
 func (e CustomEvent) EventTypeString() string                   { return string(e.GetEventType()) }

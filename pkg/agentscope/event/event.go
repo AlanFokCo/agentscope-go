@@ -54,6 +54,11 @@ const (
 	EventRequireExternalExecution EventType = "require_external_execution"
 	EventExternalExecutionResult  EventType = "external_execution_result"
 
+	// Sandbox / tool execution lifecycle
+	EventToolExecStart    EventType = "tool_exec_start"
+	EventToolExecEnd      EventType = "tool_exec_end"
+	EventToolPolicyDenied EventType = "tool_policy_denied"
+
 	// Control
 	EventExceedMaxIters EventType = "exceed_max_iters"
 	EventCustom         EventType = "custom"
@@ -528,4 +533,82 @@ func (e CustomEvent) GetReplyID() string      { return e.ReplyID }
 
 func NewCustomEvent(replyID, name string, value map[string]any) CustomEvent {
 	return CustomEvent{Base: newBase(), ReplyID: replyID, Name: name, Value: value}
+}
+
+// --- Tool execution lifecycle ---
+//
+// These events give visibility into the orchestrator/sandbox execution layer
+// which sits below the agent loop's tool_call/tool_result events. They record
+// what actually happened at the execution level: permission decisions, sandbox
+// policy enforcement, command execution, and resource usage.
+
+// ToolExecStartEvent is emitted when the orchestrator begins executing a tool.
+type ToolExecStartEvent struct {
+	Base
+	ReplyID    string `json:"reply_id"`
+	SessionID  string `json:"session_id,omitempty"`
+	ToolCallID string `json:"tool_call_id"`
+	ToolName   string `json:"tool_name"`
+	Input      string `json:"input,omitempty"`   // JSON input (may be redacted)
+	Backend    string `json:"backend,omitempty"` // "local", "docker", "acs", ...
+}
+
+func (e ToolExecStartEvent) GetEventType() EventType { return EventToolExecStart }
+func (e ToolExecStartEvent) GetEventID() string      { return e.ID }
+func (e ToolExecStartEvent) GetReplyID() string      { return e.ReplyID }
+
+// NewToolExecStartEvent creates a ToolExecStartEvent.
+func NewToolExecStartEvent(replyID, sessionID, toolCallID, toolName, input, backend string) ToolExecStartEvent {
+	return ToolExecStartEvent{
+		Base: newBase(), ReplyID: replyID, SessionID: sessionID,
+		ToolCallID: toolCallID, ToolName: toolName, Input: input, Backend: backend,
+	}
+}
+
+// ToolExecEndEvent is emitted when the orchestrator finishes executing a tool.
+type ToolExecEndEvent struct {
+	Base
+	ReplyID    string                  `json:"reply_id"`
+	SessionID  string                  `json:"session_id,omitempty"`
+	ToolCallID string                  `json:"tool_call_id"`
+	ToolName   string                  `json:"tool_name"`
+	State      message.ToolResultState `json:"state"`
+	DurationMs int64                   `json:"duration_ms"`
+	ExitCode   int                     `json:"exit_code,omitempty"`
+	Error      string                  `json:"error,omitempty"`
+}
+
+func (e ToolExecEndEvent) GetEventType() EventType { return EventToolExecEnd }
+func (e ToolExecEndEvent) GetEventID() string      { return e.ID }
+func (e ToolExecEndEvent) GetReplyID() string      { return e.ReplyID }
+
+// NewToolExecEndEvent creates a ToolExecEndEvent.
+func NewToolExecEndEvent(replyID, sessionID, toolCallID, toolName string, state message.ToolResultState, durationMs int64) ToolExecEndEvent {
+	return ToolExecEndEvent{
+		Base: newBase(), ReplyID: replyID, SessionID: sessionID,
+		ToolCallID: toolCallID, ToolName: toolName, State: state, DurationMs: durationMs,
+	}
+}
+
+// ToolPolicyDeniedEvent is emitted when a tool call is blocked by sandbox policy.
+type ToolPolicyDeniedEvent struct {
+	Base
+	ReplyID    string `json:"reply_id"`
+	SessionID  string `json:"session_id,omitempty"`
+	ToolCallID string `json:"tool_call_id"`
+	ToolName   string `json:"tool_name"`
+	Reason     string `json:"reason"`
+	Policy     string `json:"policy,omitempty"` // which policy sub-type triggered the denial
+}
+
+func (e ToolPolicyDeniedEvent) GetEventType() EventType { return EventToolPolicyDenied }
+func (e ToolPolicyDeniedEvent) GetEventID() string      { return e.ID }
+func (e ToolPolicyDeniedEvent) GetReplyID() string      { return e.ReplyID }
+
+// NewToolPolicyDeniedEvent creates a ToolPolicyDeniedEvent.
+func NewToolPolicyDeniedEvent(replyID, sessionID, toolCallID, toolName, reason, policy string) ToolPolicyDeniedEvent {
+	return ToolPolicyDeniedEvent{
+		Base: newBase(), ReplyID: replyID, SessionID: sessionID,
+		ToolCallID: toolCallID, ToolName: toolName, Reason: reason, Policy: policy,
+	}
 }
