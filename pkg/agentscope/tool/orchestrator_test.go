@@ -3,11 +3,13 @@ package tool
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/exception"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/permission"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/sandbox"
 )
 
 func makeEchoTool(name string) *FunctionTool {
@@ -213,5 +215,184 @@ func TestOrchestratorAsToolExecutor(t *testing.T) {
 	}
 	if results[0].Err != nil {
 		t.Fatalf("unexpected error: %v", results[0].Err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Sandbox policy enforcement tests
+// ---------------------------------------------------------------------------
+
+func TestOrchestratorPolicy_ReadOnlyBlocksWrite(t *testing.T) {
+	tk := NewToolkit(makeEchoTool("Write"), makeEchoTool("Read"))
+	o := NewOrchestrator(OrchestratorConfig{
+		Toolkit: tk,
+		Policy: &sandbox.Policy{
+			FileSystem: sandbox.FileSystemPolicy{Mode: sandbox.FSReadOnly},
+			Process:    sandbox.ProcessPolicy{AllowExec: true},
+		},
+	})
+
+	// Write should be blocked.
+	resp, err := o.Execute(context.Background(), makeToolCall("Write", `{}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.State != message.ToolResultError {
+		t.Fatalf("expected error state for Write under read-only policy, got %v", resp.State)
+	}
+	tb := resp.Content[0].(message.TextBlock)
+	if !strings.Contains(tb.Text, "read-only") {
+		t.Fatalf("expected read-only denial message, got %q", tb.Text)
+	}
+
+	// Read should still work.
+	resp, err = o.Execute(context.Background(), makeToolCall("Read", `{}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.State != message.ToolResultSuccess {
+		t.Fatalf("expected success for Read under read-only policy, got %v", resp.State)
+	}
+}
+
+func TestOrchestratorPolicy_AllowExecFalseBlocksBash(t *testing.T) {
+	tk := NewToolkit(makeEchoTool("Bash"), makeEchoTool("Read"))
+	o := NewOrchestrator(OrchestratorConfig{
+		Toolkit: tk,
+		Policy: &sandbox.Policy{
+			Process: sandbox.ProcessPolicy{AllowExec: false},
+		},
+	})
+
+	// Bash should be blocked.
+	resp, err := o.Execute(context.Background(), makeToolCall("Bash", `{}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.State != message.ToolResultError {
+		t.Fatalf("expected error state for Bash with AllowExec=false, got %v", resp.State)
+	}
+	tb := resp.Content[0].(message.TextBlock)
+	if !strings.Contains(tb.Text, "AllowExec") {
+		t.Fatalf("expected AllowExec denial message, got %q", tb.Text)
+	}
+
+	// Read should still work.
+	resp, err = o.Execute(context.Background(), makeToolCall("Read", `{}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.State != message.ToolResultSuccess {
+		t.Fatalf("expected success for Read, got %v", resp.State)
+	}
+}
+
+func TestOrchestratorPolicy_NetDisabledBlocksWebFetch(t *testing.T) {
+	tk := NewToolkit(makeEchoTool("WebFetch"), makeEchoTool("Read"))
+	o := NewOrchestrator(OrchestratorConfig{
+		Toolkit: tk,
+		Policy: &sandbox.Policy{
+			Process: sandbox.ProcessPolicy{AllowExec: true},
+			Network: sandbox.NetworkPolicy{Mode: sandbox.NetDisabled},
+		},
+	})
+
+	resp, err := o.Execute(context.Background(), makeToolCall("WebFetch", `{}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.State != message.ToolResultError {
+		t.Fatalf("expected error state for WebFetch with NetDisabled, got %v", resp.State)
+	}
+	tb := resp.Content[0].(message.TextBlock)
+	if !strings.Contains(tb.Text, "NetDisabled") {
+		t.Fatalf("expected NetDisabled denial message, got %q", tb.Text)
+	}
+}
+
+func TestOrchestratorPolicy_DenyPathsBlocksAccess(t *testing.T) {
+	tk := NewToolkit(makeEchoTool("Read"))
+	o := NewOrchestrator(OrchestratorConfig{
+		Toolkit: tk,
+		Policy: &sandbox.Policy{
+			Process: sandbox.ProcessPolicy{AllowExec: true},
+			FileSystem: sandbox.FileSystemPolicy{
+				Mode:      sandbox.FSFullAccess,
+				DenyPaths: []string{"/etc/secrets", "/var/private"},
+			},
+		},
+	})
+
+	// Path under a denied prefix should be blocked.
+	resp, err := o.Execute(context.Background(),
+		makeToolCall("Read", `{"file_path":"/etc/secrets/key.pem"}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.State != message.ToolResultError {
+		t.Fatalf("expected error for denied path, got %v", resp.State)
+	}
+	tb := resp.Content[0].(message.TextBlock)
+	if !strings.Contains(tb.Text, "denied by sandbox policy") {
+		t.Fatalf("expected deny message, got %q", tb.Text)
+	}
+
+	// Path NOT under a denied prefix should work.
+	resp, err = o.Execute(context.Background(),
+		makeToolCall("Read", `{"file_path":"/home/user/notes.txt"}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.State != message.ToolResultSuccess {
+		t.Fatalf("expected success for non-denied path, got %v", resp.State)
+	}
+}
+
+func TestOrchestratorPolicy_NilPolicyNoEffect(t *testing.T) {
+	tk := NewToolkit(makeEchoTool("Write"), makeEchoTool("Bash"))
+	o := NewOrchestrator(OrchestratorConfig{Toolkit: tk}) // no policy
+
+	// Both should succeed with no policy.
+	for _, name := range []string{"Write", "Bash"} {
+		resp, err := o.Execute(context.Background(), makeToolCall(name, `{}`))
+		if err != nil {
+			t.Fatalf("%s: unexpected error: %v", name, err)
+		}
+		if resp.State != message.ToolResultSuccess {
+			t.Fatalf("%s: expected success, got %v", name, resp.State)
+		}
+	}
+}
+
+func TestOrchestratorPolicy_ResourceTimeoutApplied(t *testing.T) {
+	tk := NewToolkit(makeEchoTool("Bash"))
+	o := NewOrchestrator(OrchestratorConfig{
+		Toolkit: tk,
+		Policy: &sandbox.Policy{
+			Process:   sandbox.ProcessPolicy{AllowExec: true},
+			Resources: sandbox.ResourcePolicy{TimeoutSec: 30},
+		},
+	})
+
+	// The resource timeout should have been adopted as defaultToolTimeout.
+	if o.defaultToolTimeout != 30*1e9 { // 30s in nanoseconds
+		t.Fatalf("expected defaultToolTimeout=30s, got %v", o.defaultToolTimeout)
+	}
+}
+
+func TestOrchestratorPolicy_ExplicitTimeoutTakesPrecedence(t *testing.T) {
+	tk := NewToolkit(makeEchoTool("Bash"))
+	o := NewOrchestrator(OrchestratorConfig{
+		Toolkit:            tk,
+		DefaultToolTimeout: 60 * 1e9, // 60s
+		Policy: &sandbox.Policy{
+			Process:   sandbox.ProcessPolicy{AllowExec: true},
+			Resources: sandbox.ResourcePolicy{TimeoutSec: 30},
+		},
+	})
+
+	// Explicit config timeout should not be overridden by policy.
+	if o.defaultToolTimeout != 60*1e9 {
+		t.Fatalf("expected defaultToolTimeout=60s (explicit), got %v", o.defaultToolTimeout)
 	}
 }

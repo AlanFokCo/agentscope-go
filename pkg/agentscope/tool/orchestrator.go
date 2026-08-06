@@ -3,6 +3,8 @@ package tool
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/exception"
@@ -11,12 +13,14 @@ import (
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/sandbox"
 )
 
-// Orchestrator composes permission checking and tool execution into a pipeline.
-// It can be adapted to loop.ToolExecutor via AsToolExecutor.
+// Orchestrator composes permission checking, sandbox policy enforcement and
+// tool execution into a pipeline. It can be adapted to loop.ToolExecutor via
+// AsToolExecutor.
 type Orchestrator struct {
 	toolkit            *Toolkit
 	permEngine         *permission.Engine
 	sandbox            sandbox.Sandbox
+	policy             *sandbox.Policy
 	onPermDenied       func(string, permission.Decision)
 	defaultToolTimeout time.Duration
 	maxToolResultBytes int
@@ -28,6 +32,12 @@ type OrchestratorConfig struct {
 	PermEngine         *permission.Engine
 	Sandbox            sandbox.Sandbox
 	OnPermissionDenied func(toolName string, decision permission.Decision)
+
+	// Policy configures sandbox restrictions enforced before every tool call.
+	// When set the orchestrator blocks tool calls that violate the policy
+	// (e.g. writes under FSReadOnly, bash under AllowExec=false) and injects
+	// the policy into the execution context so individual tools can read it.
+	Policy *sandbox.Policy
 
 	// DefaultToolTimeout bounds each tool execution. Zero means no timeout (a
 	// blocking custom/MCP tool could otherwise hang the whole loop).
@@ -45,14 +55,21 @@ type OrchestratorResult struct {
 
 // NewOrchestrator creates an Orchestrator from the given config.
 func NewOrchestrator(cfg OrchestratorConfig) *Orchestrator {
-	return &Orchestrator{
+	o := &Orchestrator{
 		toolkit:            cfg.Toolkit,
 		permEngine:         cfg.PermEngine,
 		sandbox:            cfg.Sandbox,
+		policy:             cfg.Policy,
 		onPermDenied:       cfg.OnPermissionDenied,
 		defaultToolTimeout: cfg.DefaultToolTimeout,
 		maxToolResultBytes: cfg.MaxToolResultBytes,
 	}
+	// If a policy specifies a resource timeout and no explicit tool timeout
+	// was configured, adopt the policy timeout.
+	if o.policy != nil && o.policy.Resources.TimeoutSec > 0 && o.defaultToolTimeout == 0 {
+		o.defaultToolTimeout = time.Duration(o.policy.Resources.TimeoutSec) * time.Second
+	}
+	return o
 }
 
 // Execute runs a single tool call through the permission + execution pipeline.
@@ -96,12 +113,24 @@ func (o *Orchestrator) Execute(ctx context.Context, call message.ToolCallBlock) 
 		}
 	}
 
-	// 4. Execute via toolkit (handles validation + middleware), bounded by an
-	// optional per-tool timeout and result-size cap.
+	// 4. Sandbox policy enforcement — reject calls that violate the policy
+	// before any execution happens.
+	if o.policy != nil {
+		if resp := o.enforceSandboxPolicy(call.Name, input); resp != nil {
+			return resp, nil
+		}
+	}
+
+	// 5. Execute via toolkit (handles validation + middleware), bounded by an
+	// optional per-tool timeout and result-size cap. If a sandbox policy is
+	// configured, inject it into the context so individual tools can read it.
 	execCtx := ctx
+	if o.policy != nil {
+		execCtx = sandbox.WithPolicy(execCtx, o.policy)
+	}
 	if o.defaultToolTimeout > 0 {
 		var cancel context.CancelFunc
-		execCtx, cancel = context.WithTimeout(ctx, o.defaultToolTimeout)
+		execCtx, cancel = context.WithTimeout(execCtx, o.defaultToolTimeout)
 		defer cancel()
 	}
 	resp, err := o.toolkit.CallTool(execCtx, call.Name, input)
@@ -152,6 +181,94 @@ func (o *Orchestrator) BatchExecute(ctx context.Context, calls []message.ToolCal
 		}
 	}
 	return results
+}
+
+// ---------------------------------------------------------------------------
+// Sandbox policy enforcement
+// ---------------------------------------------------------------------------
+
+// writingTools lists tool names that mutate the filesystem.
+var writingTools = map[string]bool{
+	"Write": true, "Edit": true, "MultiEdit": true, "ApplyPatch": true,
+	"NotebookEdit": true,
+}
+
+// enforceSandboxPolicy checks the call against the configured sandbox.Policy
+// and returns a denied ToolResponse if the call violates the policy. Returns
+// nil when the call is acceptable.
+func (o *Orchestrator) enforceSandboxPolicy(toolName string, input map[string]any) *ToolResponse {
+	p := o.policy
+
+	// ---- Process policy ----
+	if !p.Process.AllowExec && toolName == "Bash" {
+		return policyDeniedResponse("sandbox policy denies command execution (AllowExec=false)")
+	}
+
+	// ---- Filesystem policy ----
+	switch p.FileSystem.Mode {
+	case sandbox.FSReadOnly:
+		if writingTools[toolName] {
+			return policyDeniedResponse("sandbox policy enforces read-only filesystem")
+		}
+		// Bash commands that are not read-only are blocked.
+		if toolName == "Bash" {
+			if cmdStr, _ := input["command"].(string); cmdStr != "" {
+				if !IsReadOnlyCommand(strings.TrimSpace(cmdStr)) {
+					return policyDeniedResponse("sandbox policy enforces read-only filesystem; command is not read-only")
+				}
+			}
+		}
+	case sandbox.FSWorkspaceOnly:
+		// workspace jail already enforces path confinement; additionally
+		// check explicit DenyPaths from the policy.
+	}
+
+	// Check deny-listed paths for tools that operate on files.
+	if len(p.FileSystem.DenyPaths) > 0 {
+		for _, fp := range extractToolFilePaths(toolName, input) {
+			clean := filepath.Clean(fp)
+			for _, deny := range p.FileSystem.DenyPaths {
+				denyClean := filepath.Clean(deny)
+				if clean == denyClean || strings.HasPrefix(clean, denyClean+string(filepath.Separator)) {
+					return policyDeniedResponse(fmt.Sprintf("path %q denied by sandbox policy", fp))
+				}
+			}
+		}
+	}
+
+	// ---- Network policy ----
+	if p.Network.Mode == sandbox.NetDisabled && toolName == "WebFetch" {
+		return policyDeniedResponse("sandbox policy denies network access (NetDisabled)")
+	}
+
+	return nil // no violation
+}
+
+// extractToolFilePaths returns file paths referenced by a tool call's input.
+func extractToolFilePaths(toolName string, input map[string]any) []string {
+	switch toolName {
+	case "Read", "Write", "Edit", "MultiEdit", "ApplyPatch":
+		if p, ok := input["file_path"].(string); ok && p != "" {
+			return []string{p}
+		}
+	case "Glob":
+		if p, ok := input["pattern"].(string); ok && p != "" {
+			return []string{p}
+		}
+	case "Bash":
+		if cmdStr, ok := input["command"].(string); ok {
+			return ExtractFilePaths(cmdStr)
+		}
+	}
+	return nil
+}
+
+// policyDeniedResponse creates a ToolResponse indicating a sandbox policy denial.
+func policyDeniedResponse(msg string) *ToolResponse {
+	return &ToolResponse{
+		Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: msg}},
+		State:   message.ToolResultError,
+	}
 }
 
 // toolExecutorAdapter wraps an Orchestrator with method signatures matching

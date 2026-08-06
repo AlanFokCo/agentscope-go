@@ -7,6 +7,21 @@ import (
 	"time"
 )
 
+type policyCtxKey struct{}
+
+// WithPolicy returns a copy of ctx carrying the given sandbox Policy.
+func WithPolicy(ctx context.Context, p *Policy) context.Context {
+	return context.WithValue(ctx, policyCtxKey{}, p)
+}
+
+// GetPolicy returns the sandbox Policy attached to ctx, or nil.
+func GetPolicy(ctx context.Context) *Policy {
+	if v, ok := ctx.Value(policyCtxKey{}).(*Policy); ok {
+		return v
+	}
+	return nil
+}
+
 // Sandbox defines the interface for sandboxed command execution.
 type Sandbox interface {
 	Type() string
