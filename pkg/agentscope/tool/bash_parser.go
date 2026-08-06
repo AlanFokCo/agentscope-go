@@ -115,7 +115,9 @@ var ReadOnlyCommands = map[string]bool{
 	"whoami": true, "id": true, "groups": true, "env": true, "printenv": true,
 	"echo": true, "printf": true, "true": true, "false": true, "test": true,
 	"grep": true, "egrep": true, "fgrep": true, "rg": true, "ag": true,
-	"awk": true, "sed": false, // sed can modify files, handled separately
+	// awk is NOT read-only: it can execute arbitrary commands via system()
+	// and write to files via output redirection within awk programs.
+	"sed":  false, // sed can modify files, handled separately
 	"sort": true, "uniq": true, "cut": true, "tr": true, "paste": true,
 	"diff": true, "cmp": true, "comm": true,
 	"date": true, "cal": true, "bc": true, "expr": true,
@@ -631,6 +633,142 @@ func extractWordLiteral(word *syntax.Word) string {
 			return ""
 		}
 		b.WriteString(lit.Value)
+	}
+	return b.String()
+}
+
+// interpreterCommands maps interpreter binaries to their inline-execution
+// flags. When an agent runs e.g. `python3 -c "os.system('rm -rf /')"`, the
+// bash AST only sees "python3" as the command; the dangerous payload is
+// hidden inside a string literal. This function detects such patterns.
+var interpreterCommands = map[string][]string{
+	"python":  {"-c"},
+	"python2": {"-c"},
+	"python3": {"-c"},
+	"node":    {"-e", "--eval"},
+	"perl":    {"-e", "-E"},
+	"ruby":    {"-e"},
+	"lua":     {"-e"},
+	"php":     {"-r"},
+}
+
+// interpreterDangerousAPIs lists language-specific patterns that indicate
+// the inline code can escape the interpreter sandbox (shell-out, file I/O,
+// network access, process spawning, etc.).
+var interpreterDangerousAPIs = []string{
+	// Python
+	"os.system", "os.popen", "os.exec", "subprocess",
+	"os.remove", "os.unlink", "os.rmdir", "shutil.rmtree",
+	"__import__",
+	// Node.js
+	"child_process", "execSync", "spawnSync", "exec(",
+	"require('fs')", "require(\"fs\")",
+	// Perl
+	"system(", "exec(", "qx{", "qx(", "`",
+	// Ruby
+	"system(", "exec(", "IO.popen", "Kernel.exec",
+	// General (any language)
+	"eval(", "curl ", "wget ",
+}
+
+// CheckInterpreterAttack detects interpreter-wrapped commands where dangerous
+// code is hidden inside a string argument (e.g. python3 -c "import os; ...").
+// Returns (true, reason) if the command invokes an interpreter with inline
+// code that contains dangerous API calls.
+func CheckInterpreterAttack(cmd string) (bool, string) {
+	if isWindowsShell() {
+		return false, "" // Windows covered by PowerShell injection patterns
+	}
+
+	f, err := parseBashAST(cmd)
+	if err != nil {
+		return false, ""
+	}
+
+	var attack bool
+	var reason string
+
+	syntax.Walk(f, func(node syntax.Node) bool {
+		if attack {
+			return false
+		}
+		callExpr, ok := node.(*syntax.CallExpr)
+		if !ok || len(callExpr.Args) == 0 {
+			return true
+		}
+
+		name := extractCommandName(callExpr.Args[0])
+		flags, isInterpreter := interpreterCommands[name]
+		if !isInterpreter {
+			return true
+		}
+
+		// Look for the inline-code flag followed by a code string.
+		for i := 1; i < len(callExpr.Args); i++ {
+			argVal := extractWordLiteral(callExpr.Args[i])
+			if argVal == "" {
+				continue
+			}
+
+			isInlineFlag := false
+			for _, flag := range flags {
+				if argVal == flag {
+					isInlineFlag = true
+					break
+				}
+			}
+
+			if isInlineFlag && i+1 < len(callExpr.Args) {
+				// The next argument is the inline code; extract it even if it
+				// contains quotes (simple literal extraction).
+				codeArg := extractInlineCode(callExpr.Args[i+1])
+				if codeArg == "" {
+					// Non-literal code (variable expansion etc.) is risky by itself.
+					attack = true
+					reason = fmt.Sprintf("%s with %s and non-literal code argument", name, argVal)
+					return false
+				}
+				lower := strings.ToLower(codeArg)
+				for _, api := range interpreterDangerousAPIs {
+					if strings.Contains(lower, strings.ToLower(api)) {
+						attack = true
+						reason = fmt.Sprintf("%s inline code contains dangerous API %q", name, api)
+						return false
+					}
+				}
+			}
+		}
+		return true
+	})
+
+	return attack, reason
+}
+
+// extractInlineCode extracts the text content of a word node, including
+// content inside quotes. Unlike extractWordLiteral, it handles single-quoted
+// and double-quoted strings.
+func extractInlineCode(word *syntax.Word) string {
+	if len(word.Parts) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, p := range word.Parts {
+		switch v := p.(type) {
+		case *syntax.Lit:
+			b.WriteString(v.Value)
+		case *syntax.SglQuoted:
+			b.WriteString(v.Value)
+		case *syntax.DblQuoted:
+			for _, dp := range v.Parts {
+				if lit, ok := dp.(*syntax.Lit); ok {
+					b.WriteString(lit.Value)
+				} else {
+					return "" // contains expansion — can't statically analyze
+				}
+			}
+		default:
+			return "" // complex node — can't analyze
+		}
 	}
 	return b.String()
 }

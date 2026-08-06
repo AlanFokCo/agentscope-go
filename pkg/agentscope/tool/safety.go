@@ -10,6 +10,7 @@ import (
 // DangerousFiles lists files that should be protected from auto-editing.
 // Includes shell configs, credential files, and environment secrets.
 var DangerousFiles = []string{
+	// Shell configs
 	".gitconfig",
 	".gitmodules",
 	".bashrc",
@@ -17,11 +18,35 @@ var DangerousFiles = []string{
 	".zshrc",
 	".zprofile",
 	".profile",
+	// SSH
 	".ssh/config",
 	".ssh/authorized_keys",
+	".ssh/id_rsa",
+	".ssh/id_ed25519",
+	".ssh/id_ecdsa",
+	".ssh/id_dsa",
+	".ssh/known_hosts",
+	// Cloud provider credentials
+	".aws/credentials",
+	".aws/config",
+	".azure/credentials",
+	".config/gcloud/credentials.db",
+	".config/gcloud/application_default_credentials.json",
+	// Container / Kubernetes credentials
+	".kube/config",
+	".docker/config.json",
+	".helm/repository/repositories.yaml",
+	// Package manager configs (can contain registry tokens)
 	".netrc",
 	".npmrc",
 	".pypirc",
+	".gem/credentials",
+	".cargo/credentials.toml",
+	".composer/auth.json",
+	// GnuPG
+	".gnupg/secring.gpg",
+	".gnupg/trustdb.gpg",
+	// Environment secrets
 	".env",
 	".envrc",
 	".env.local",
@@ -40,6 +65,10 @@ var DangerousDirectories = []string{
 	".vscode",
 	".idea",
 	".ssh",
+	".gnupg",
+	".kube",
+	".aws",
+	".docker",
 }
 
 // systemPathPrefixes are absolute directory prefixes that must never be written

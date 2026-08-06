@@ -128,6 +128,7 @@ func (t *bashTool) ExecuteStream(ctx context.Context, args map[string]any) (<-ch
 		if t.cwd != "" {
 			cmd.Dir = t.cwd
 		}
+		configureProcIsolation(cmd) // process-group kill on timeout
 
 		stdout, pipeErr := cmd.StdoutPipe()
 		if pipeErr != nil {
@@ -268,6 +269,7 @@ func (t *bashTool) runCommand(ctx context.Context, cmdStr string, timeoutMs int)
 	if t.cwd != "" {
 		cmd.Dir = t.cwd
 	}
+	configureProcIsolation(cmd) // process-group kill on timeout
 
 	// Use pipes for streaming-capable output capture
 	stdout, pipeErr := cmd.StdoutPipe()
@@ -376,6 +378,15 @@ func (t *bashTool) CheckPermissions(input map[string]any, ctx *permission.Contex
 				Message:      "PowerShell dangerous command: " + reason,
 				BypassImmune: true,
 			}
+		}
+	}
+
+	// Step 1.7: Interpreter-wrapped attacks (python -c, node -e, etc.)
+	if risky, reason := CheckInterpreterAttack(cmdStr); risky {
+		return permission.Decision{
+			Behavior:     permission.BehaviorAsk,
+			Message:      reason,
+			BypassImmune: true,
 		}
 	}
 

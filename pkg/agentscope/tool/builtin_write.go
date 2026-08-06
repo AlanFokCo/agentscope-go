@@ -9,8 +9,29 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/internal/fsutil"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/permission"
 )
+
+const (
+	// MaxWriteBytes is the maximum size of a single file write (10 MB).
+	// This prevents agents from exhausting disk space via unbounded writes.
+	MaxWriteBytes = 10 * 1024 * 1024
+)
+
+// executableExtensions lists file extensions that produce directly executable
+// files. Writes to these paths receive elevated permission scrutiny.
+var executableExtensions = map[string]bool{
+	".sh": true, ".bash": true, ".zsh": true, ".fish": true, ".csh": true,
+	".py": true, ".rb": true, ".pl": true, ".php": true, ".lua": true,
+	".js": true, ".mjs": true, ".cjs": true, ".ts": true,
+	".exe": true, ".bat": true, ".cmd": true, ".ps1": true, ".psm1": true,
+	".com": true, ".scr": true, ".msi": true,
+	".so": true, ".dylib": true, ".dll": true,
+	".elf": true, ".bin": true, ".run": true,
+	".jar": true, ".war": true,
+	".AppImage": true,
+}
 
 var writeSchema = json.RawMessage(`{
 	"type": "object",
@@ -54,6 +75,12 @@ func (t *writeTool) Execute(ctx context.Context, args map[string]any) (*ToolResp
 		return NewErrorResponse(fmt.Errorf("content must be a string")), nil
 	}
 
+	// Enforce maximum write size to prevent disk exhaustion.
+	if len(content) > MaxWriteBytes {
+		return NewErrorResponse(fmt.Errorf("content size %d bytes exceeds maximum %d bytes (%d MB)",
+			len(content), MaxWriteBytes, MaxWriteBytes/(1024*1024))), nil
+	}
+
 	// If a custom backend (Docker/E2B) is configured, write inside it using the
 	// caller-provided (workspace-relative) path.
 	if b, ok := getBackendIfSet(ctx); ok {
@@ -94,12 +121,7 @@ func (t *writeTool) Execute(ctx context.Context, args map[string]any) (*ToolResp
 		oldContent = string(existingData)
 	}
 
-	dir := filepath.Dir(abs)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return NewErrorResponse(fmt.Errorf("create directories: %w", err)), nil
-	}
-
-	if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+	if err := fsutil.WriteFileAtomic(abs, []byte(content), 0o644); err != nil {
 		return NewErrorResponse(fmt.Errorf("write file: %w", err)), nil
 	}
 
@@ -136,6 +158,17 @@ func (t *writeTool) CheckPermissions(input map[string]any, ctx *permission.Conte
 		return permission.Decision{
 			Behavior:     permission.BehaviorAsk,
 			Message:      reason,
+			BypassImmune: true,
+		}
+	}
+
+	// Executable file extensions get elevated scrutiny: ASK even in
+	// AcceptEdits mode because a written script could later be executed.
+	ext := strings.ToLower(filepath.Ext(path))
+	if executableExtensions[ext] {
+		return permission.Decision{
+			Behavior:     permission.BehaviorAsk,
+			Message:      fmt.Sprintf("writing executable file (%s extension)", ext),
 			BypassImmune: true,
 		}
 	}
