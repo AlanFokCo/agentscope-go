@@ -48,6 +48,43 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.go == '1.25'
         run: go test -bench=. -benchmem ./pkg/agentscope/loop/
 
+  cross-arch:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [arm64, arm, mips64le, riscv64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cross-compile (linux/${{ matrix.arch }})
+        env:
+          CGO_ENABLED: '0'
+          GOOS: linux
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          go build ./...
+          go build ./examples/...
+
+      - name: Check edge binary size
+        if: matrix.arch == 'arm64'
+        env:
+          CGO_ENABLED: '0'
+          GOOS: linux
+          GOARCH: arm64
+        run: |
+          go build -ldflags="-s -w" -o /tmp/edge-agent ./examples/edge_offline/
+          SIZE=$(stat --format=%s /tmp/edge-agent)
+          echo "Binary size: $SIZE bytes ($(( SIZE / 1024 / 1024 ))MB)"
+          if [ "$SIZE" -gt 18874368 ]; then
+            echo "ERROR: Binary exceeds 18MB limit"
+            exit 1
+          fi
+
   lint:
     runs-on: ubuntu-latest
     steps:
