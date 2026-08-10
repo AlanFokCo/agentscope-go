@@ -31,15 +31,15 @@ type EvalResult struct {
 	Error    string  `json:"error,omitempty"`
 }
 
-// EvalReport summarises evaluation of a full tape.
+// EvalReport summarizes evaluation of a full tape.
 type EvalReport struct {
-	TapePath   string       `json:"tape_path,omitempty"`
-	Total      int          `json:"total"`
-	Passed     int          `json:"passed"`
-	Failed     int          `json:"failed"`
-	Errors     int          `json:"errors"`
-	MeanScore  float64      `json:"mean_score"`
-	Results    []EvalResult `json:"results"`
+	TapePath  string       `json:"tape_path,omitempty"`
+	Total     int          `json:"total"`
+	Passed    int          `json:"passed"`
+	Failed    int          `json:"failed"`
+	Errors    int          `json:"errors"`
+	MeanScore float64      `json:"mean_score"`
+	Results   []EvalResult `json:"results"`
 }
 
 // EvalTape evaluates every entry in recorded against the corresponding entry

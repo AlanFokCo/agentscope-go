@@ -30,7 +30,7 @@ type MCPHub struct {
 }
 
 // NewMCPHub creates a new MCP hub client.
-func NewMCPHub(cfg MCPHubConfig) *MCPHub {
+func NewMCPHub(cfg MCPHubConfig) *MCPHub { //nolint:gocritic // stable API: value receiver for backward compat
 	return &MCPHub{
 		cfg:    cfg,
 		client: &http.Client{},

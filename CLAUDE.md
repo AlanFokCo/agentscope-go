@@ -10,7 +10,7 @@ See `STABILITY.md` for the API-stability policy, stability tiers, and the produc
 
 Python reference code is at `/Users/alanfokco/Github/agentscope/` (main branch). When adding features, check the Python implementation first for design consistency.
 
-`go.mod` declares `go 1.25.0`. Keep code compatible with Go 1.25+ (the minimum version in `go.mod`).
+`go.mod` declares `go 1.26.0`. Keep code compatible with Go 1.26+ (the minimum version in `go.mod`).
 
 ## Common commands
 
@@ -93,7 +93,7 @@ The package layout intentionally mirrors the Python project. Each subpackage exp
   - **`ChatUsage`** tracks `InputTokens`, `OutputTokens`, `CacheCreationInputTokens`, `CacheInputTokens`; loop + budget account all dimensions.
   - **Retry**: `internal/httpx` is the transport-level retry authority — retries 429 + 5xx, honors `Retry-After`, full-jitter exponential backoff, ctx-aware (no sleeping through a cancelled context). `IsRetryableError` also honors typed `errors.AgentError.Retryable`.
   - **`FallbackChatModel`** — `NewFallbackChatModel(primary, fallback)` or `NewFallbackChain(models...)` (ordered failover chain), ctx-aware backoff.
-  - **`SecretStr`** — wrapper type that redacts API keys in `String()`/`MarshalJSON()`.
+  - **`SecretStr`** — wrapper type that redacts API keys in `String()`/`MarshalJSON()`/`MarshalText()`. `UnmarshalJSON` for config file loading. `ResolveAPIKey(plain, secret)` helper for the dual-field migration pattern. All 22 config structs carry `SecretAPIKey SecretStr` alongside deprecated `APIKey string`.
   - **`GenerateStructuredOutput`** — forces tool call, auto-retries with `tool_choice: "auto"` when thinking-mode conflicts.
   - **`ValidateToolChoice`** — validates tool names against available schemas.
   - **Model cards** — YAML files under `model/models/` loaded via `//go:embed`. `GetModelCard(name)`, `ListModels()`.
@@ -120,7 +120,7 @@ The package layout intentionally mirrors the Python project. Each subpackage exp
   - `OnCompressContext` — wraps context compression
   - `ListTools() []tool.Tool` — middleware can provide additional tools
   - Chain builders: `BuildReplyChain`, `BuildReasoningChain`, `BuildModelCallChain`, `BuildActingChain`, `BuildCompressChain`, `ApplySystemPromptPipeline`.
-  - Built-in: budget control, TTS, tracing (with `SpanAttribute`/`AttributedTracer`), long-term memory (3 modes: static/agent/both with vector store).
+   - Built-in: budget control, TTS, tracing (with `SpanAttribute`/`AttributedTracer`), long-term memory (3 modes: static/agent/both with vector store), **cost tracker** (`WithMaxCostUSD` hard cap + `WithExchangeRate` for multi-currency display), **guardrails** (Block/Redact/Warn content filtering on model responses with `KeywordBlockRule`/`KeywordRedactRule`/`MaxLengthRule`/`CustomRule`).
 
 ### Tool
 
@@ -149,17 +149,19 @@ The package layout intentionally mirrors the Python project. Each subpackage exp
 - **`mcp`** — MCP client (Stdio + HTTP). Name validation (`^[a-zA-Z0-9_-]+$`), execution timeout wiring.
 - **`workspace`** — `Workspace` interface + 8 backends: `LocalWorkspace`, `DockerWorkspace`, `E2BWorkspace`, `K8sWorkspace`, `OpenSandboxWorkspace`, `DaytonaWorkspace`, `AppleContainerWorkspace`, `BubblewrapWorkspace`. `ManagedWorkspace` extends with MCP/Skill management (`.mcp.json` persistence, `skills/` directory). `ToolBackend` adapts any Workspace into a `tool.Backend`.
 - **`permission`** — `Engine` with 5 modes (default, accept_edits, explore, bypass, dont_ask). `Checker` interface embedded by `Tool`. `Decision` with bypass-immune safety checks.
-- **`storage`** — `InMemoryStorage`, `FileStorage`, `RedisStorage` for agent state persistence. All file-backed writes go through **`internal/fsutil.WriteFileAtomic`** (temp + fsync + rename) so a crash mid-write cannot corrupt state.
+- **`storage`** — `InMemoryStorage`, `FileStorage`, `RedisStorage` for agent state persistence; **`RedisFullStorage`** implements the 17-method `FullStorage` interface over Redis (credentials, agents, sessions, schedules, messages, teams) with reverse-index message lookup and mutex-protected append. All file-backed writes go through **`internal/fsutil.WriteFileAtomic`** (temp + fsync + rename) so a crash mid-write cannot corrupt state.
 - **`internal/fsutil`** — `WriteFileAtomic`. **`internal/httpsec`** — `Harden(*http.Server)` (ReadHeaderTimeout/IdleTimeout/MaxHeaderBytes) + `LimitBody` (MaxBytesReader) for the HTTP servers.
 - **`pipeline`** — `Pipeline` with `Then`/`If` combinators. `MsgHub` for agent message routing.
 - **`tracing`** — `Tracer` interface + `AttributedTracer` optional extension with `SpanAttribute`. `NoopTracer`, `LoggerTracer`.
+- **`replay`** — Deterministic record/replay of LLM calls. `Tape` (versioned sequence of `Entry`), `Recorder`/`Replayer` middleware hooking `OnModelCall`. `FileStore` for tape persistence. **Eval harness**: `Scorer` interface, 5 built-in scorers (ExactMatch, Contains, JSONField, TextContains, Composite), `EvalTape()` runner producing `EvalReport`, `AssertTape(t, ...)` go-test helper for regression testing.
+- **`rag`** — `Index` + `KnowledgeBase` interfaces, 5 vector stores (InMemory, Qdrant, QdrantText, Elasticsearch, Milvus, MongoDB). **Reranker**: `Reranker` interface + `RerankedIndex` wrapper (fetches N*multiplier candidates, reranks for precision). Document parsers under `rag/parser/` (Text, PDF, Word, Excel, PPT).
 - **`skill`** — `Skill` struct with `Category` field, `LocalSkillLoader`, `FormatSkillInstructions`. `SkillManager` registry with `Register`, `Get`, `List`, `ListByCategory`, `LoadFromDir`, `FormatInstructions`.
 - **`schedule`** — `InMemoryScheduler` for periodic agent task execution.
 
 ### v3 Infrastructure
 
 - **`protocol`** — Shared types for the agent loop: `LoopState` (Idle/Thinking/Acting/Done/Error), `LoopEvent` (state transitions, model results, tool results, errors), `ModelCallResult`, `ToolCallResult`. Used by `loop/`, `runtime/`, and `agent/`.
-- **`errors`** — Structured `AgentError{Category, Code, Message, Cause, Retryable, RetryAfter}` (single type, NOT a per-kind type hierarchy) with a `Category` enum (Model/Tool/Permission/Context/Config/Platform/Network/Resource). Sentinels for `errors.Is`: `ErrModelRateLimited`, `ErrModelTimeout`, `ErrModelContextLimit`, `ErrToolDenied`, `ErrToolTimeout`, `ErrSandboxDenied`, `ErrLoopInterrupted`, `ErrLoopMaxIters`, `ErrBudgetExceeded`. Helpers: `Newf`, `Wrap`, `IsRetryable`, `NewThrottled(retryAfter, ...)`, `RetryAfterOf(err)`. (A legacy `exception` package coexists for LLM-facing messages; kept intentionally separate.)
+- **`errors`** — Structured `AgentError{Category, Code, Message, Cause, Retryable, RetryAfter, AgentMsg}` with `Is(target)` matching by `Code` for sentinel support and `AgentMessage()` bridging operator-facing/LLM-facing error audiences. `Category` enum: Model/Tool/Permission/Context/Config/Platform/Network/Resource. Sentinels: `ErrModelRateLimited`, `ErrModelTimeout`, `ErrModelContextLimit`, `ErrToolDenied`, `ErrToolTimeout`, `ErrSandboxDenied`, `ErrLoopInterrupted`, `ErrLoopMaxIters`, `ErrBudgetExceeded`, `ErrGuardrailBlocked`. Tool error types: `ToolNotFoundError`, `ToolInterruptedError`, `ToolJSONDecodeError`, `ToolGroupInactiveError`, `ToolExecutionError`, `ToolImplError` (migrated from former `exception` package, now deleted). Helpers: `Newf`, `Wrap`, `IsRetryable`, `NewThrottled`, `RetryAfterOf`, `IsAgentError`, `GetAgentMessage`.
 - **`loop`** — `Loop` struct configured via `WithModelCaller`, `WithToolExecutor`, `WithSchemaProvider`, `WithMaxIters`, `WithSystemPrompt`, `WithHooks`. `RunSync` executes the full reasoning-acting cycle. `Hook` interface: `OnLoopStart/End`, `OnModelCallStart/End`, `OnToolExecStart/End`, `OnIteration`.
 - **`runtime`** — `SessionEngine` (single-session lifecycle with state machine) and `Harness` (multi-session manager with `Start`/`Stop`/`GetSession`/`ListSessions`). `AgentManager` (subagent lifecycle: `Spawn`/`Stop`/`List`/`WaitAll` with `BudgetTracker` concurrency limits and `SessionHookManager` notifications via `HookSubagentStart`/`HookSubagentEnd`). Uses `protocol.LoopState` for state tracking.
 - **`metrics`** — `MetricsProvider` interface (`Counter`/`Histogram` factories, label-aware) + `Noop`. `InMemoryProvider` (label-aware, `Snapshot()`/`ValueFor`) for testing. **`metrics/prometheus`** subpackage: a real `MetricsProvider` over `prometheus/client_golang` + `Handler()` (promhttp) — the only place that pulls the prometheus dep; wire `app.Config.MetricsHandler = provider.Handler()` to expose `GET /metrics`. `MetricsHook` implements `loop.Hook`.

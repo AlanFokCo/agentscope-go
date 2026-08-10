@@ -11,8 +11,8 @@ import (
 	"github.com/sirupsen/logrus"
 
 	agentscope "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
-	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/event"
 	agenterrors "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/errors"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/event"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/loop"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/middleware"

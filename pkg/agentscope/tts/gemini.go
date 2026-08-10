@@ -34,7 +34,7 @@ type GeminiTTSConfig struct {
 }
 
 // NewGeminiTTSModel creates a TTS model backed by the Gemini generateContent API.
-func NewGeminiTTSModel(cfg GeminiTTSConfig) (*GeminiTTSModel, error) {
+func NewGeminiTTSModel(cfg GeminiTTSConfig) (*GeminiTTSModel, error) { //nolint:gocritic // stable API: value receiver for backward compat
 	apiKey := model.ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
 	if apiKey == "" {
 		return nil, fmt.Errorf("gemini-tts: APIKey is required")

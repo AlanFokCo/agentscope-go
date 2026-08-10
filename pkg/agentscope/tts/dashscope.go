@@ -40,7 +40,7 @@ type DashScopeTTSModel struct {
 }
 
 // NewDashScopeTTSModel creates a DashScope TTS model.
-func NewDashScopeTTSModel(cfg DashScopeConfig) (*DashScopeTTSModel, error) {
+func NewDashScopeTTSModel(cfg DashScopeConfig) (*DashScopeTTSModel, error) { //nolint:gocritic // stable API: value receiver for backward compat
 	apiKey := model.ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
 	if apiKey == "" {
 		return nil, fmt.Errorf("tts: DashScope API key is required")

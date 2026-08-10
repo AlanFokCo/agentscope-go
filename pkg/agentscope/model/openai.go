@@ -28,14 +28,14 @@ type OpenAIConfig struct {
 	APIKey       string
 	SecretAPIKey SecretStr // Preferred over APIKey. Use model.NewSecretStr(key).
 	BaseURL      string
-	Model   string
+	Model        string
 
 	HTTPClient    *http.Client
 	ClientOptions *ClientOptions
 }
 
 // NewOpenAIChatModel creates a ChatModel backed by OpenAI.
-func NewOpenAIChatModel(cfg OpenAIConfig) (*OpenAIChatModel, error) {
+func NewOpenAIChatModel(cfg OpenAIConfig) (*OpenAIChatModel, error) { //nolint:gocritic // stable API: value receiver for backward compat
 	apiKey := ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
 	if apiKey == "" {
 		return nil, fmt.Errorf("openai: APIKey is required")

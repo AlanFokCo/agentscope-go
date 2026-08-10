@@ -31,7 +31,7 @@ type DeepSeekConfig struct {
 }
 
 // NewDeepSeekChatModel creates a ChatModel backed by DeepSeek.
-func NewDeepSeekChatModel(cfg DeepSeekConfig) (*DeepSeekChatModel, error) {
+func NewDeepSeekChatModel(cfg DeepSeekConfig) (*DeepSeekChatModel, error) { //nolint:gocritic // stable API: value receiver for backward compat
 	apiKey := ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
 	if apiKey == "" {
 		return nil, fmt.Errorf("deepseek: APIKey is required")

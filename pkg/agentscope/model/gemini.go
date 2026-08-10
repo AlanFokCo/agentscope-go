@@ -33,7 +33,7 @@ type GeminiConfig struct {
 }
 
 // NewGeminiChatModel creates a ChatModel backed by Google Gemini.
-func NewGeminiChatModel(cfg GeminiConfig) (*GeminiChatModel, error) {
+func NewGeminiChatModel(cfg GeminiConfig) (*GeminiChatModel, error) { //nolint:gocritic // stable API: value receiver for backward compat
 	apiKey := ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
 	if apiKey == "" {
 		return nil, fmt.Errorf("gemini: APIKey is required")

@@ -8,7 +8,7 @@ A Go port of the Python [AgentScope](https://github.com/agentscope-ai/agentscope
 
 - **Module path: `github.com/alanfokco/agentscope-go/v2`** (v2+ line). Imports use `github.com/alanfokco/agentscope-go/v2/pkg/agentscope/...`. Latest tag: **`v2.1.0`**.
 - Library under `pkg/agentscope/`; runnable demos under `examples/`.
-- `go.mod` says `go 1.25.0` — keep code **Go 1.25+ compatible** (the minimum version declared in `go.mod`).
+- `go.mod` says `go 1.26.0` — keep code **Go 1.26+ compatible** (the minimum version declared in `go.mod`).
 - Python reference (for design parity) at `/Users/alanfokco/Github/agentscope/`.
 
 ## Build / test / lint
@@ -57,8 +57,15 @@ Recent additions (2026-08):
 - **Sandbox Policy enforcement** (`orchestrator.enforceSandboxPolicy`): the `sandbox.Policy` struct now actually controls tool execution — FSReadOnly blocks writes, AllowExec=false blocks bash, NetDisabled blocks WebFetch, DenyPaths blocks file access.
 - **Audit logging** (`audit/`): structured `audit.Logger` interface with InMemory/File/Multi/Nop implementations; orchestrator records every tool execution, permission denial, and policy decision.
 - **Sandbox execution events** (`event/`): `tool_exec_start`, `tool_exec_end`, `tool_policy_denied` — visibility into what happens inside the execution layer.
+- **Eval harness** (`replay/eval.go`): `Scorer` interface with 5 built-in scorers (ExactMatch, Contains, JSONField, TextContains, Composite), `EvalTape()` runner, `AssertTape(t, ...)` go-test helper for regression testing.
+- **Hard spend cap** (`middleware/cost_tracker.go`): `WithMaxCostUSD(limit)` pre-flight budget enforcement + `WithExchangeRate("CNY", 7.2)` for multi-currency display.
+- **Output guardrails** (`middleware/guardrail.go`): `GuardrailMiddleware` with Block/Redact/Warn actions + 4 built-in rules (KeywordBlock, KeywordRedact, MaxLength, Custom).
+- **Reranker** (`rag/rerank.go`): `Reranker` interface + `RerankedIndex` wrapper for precision-improving two-stage retrieval.
+- **RedisFullStorage** (`storage/redis_full.go`): full `FullStorage` implementation over Redis (17 methods) with reverse-index message lookup.
+- **SecretStr adoption**: `UnmarshalJSON` + `ResolveAPIKey()` helper; `SecretAPIKey` dual-field across all 22 config structs.
+- **`exception` → `errors` migration**: tool error types moved to `errors/tool_errors.go`; `AgentError.Is()` matches sentinels by Code; `AgentError.AgentMessage()` bridges LLM-facing/operator-facing errors. `exception/` package removed.
 
-**Open / decision-gated** (tracked in `STABILITY.md` "Planned"): USD cost cap (needs model-card pricing), dedicated OTLP exporter package (Prometheus provider + ctx-threaded `loop.Hook` already shipped), durable `FullStorage` + session-history resume, Anthropic prompt-caching write path (needs live-API validation), record/replay eval harness, WebSearch/generic-HTTP tools (dependency decision).
+All originally-planned STABILITY.md items are now complete. Remaining: `exception` final deletion (one more minor), SecretStr v3 full adoption, output guardrails iteration.
 
 ## Conventions (summary; full list in CLAUDE.md)
 
@@ -67,4 +74,5 @@ Recent additions (2026-08):
 - Streaming = `<-chan T`, deltas then final `IsLast=true`, `defer close(ch)`; sends should be ctx-aware.
 - **TDD** for behavior changes: write the failing test, watch it fail, then implement.
 - New example → own `examples/<name>/main.go` + add to `README.md` (CI builds all examples).
-- Errors: structured `errors.AgentError` + sentinels (`errors.Is`/`As`); `IsRetryableError` honors the typed retryable flag.
+- Errors: structured `errors.AgentError` + sentinels (`errors.Is`/`As` via `AgentError.Is()` matching by `Code`); `IsRetryableError` honors the typed retryable flag; `AgentMessage()` for LLM-facing messages.
+- `golangci-lint run ./...` must pass before every commit (CI gates on it).

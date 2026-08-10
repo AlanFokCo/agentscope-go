@@ -30,14 +30,14 @@ type DashScopeConfig struct {
 	APIKey       string
 	SecretAPIKey SecretStr // Preferred over APIKey. Use model.NewSecretStr(key).
 	BaseURL      string    // Optional, defaults to DashScope compatible endpoint
-	Model   string
+	Model        string
 
 	HTTPClient    *http.Client
 	ClientOptions *ClientOptions
 }
 
 // NewDashScopeChatModel creates a ChatModel using the DashScope backend.
-func NewDashScopeChatModel(cfg DashScopeConfig) (*DashScopeChatModel, error) {
+func NewDashScopeChatModel(cfg DashScopeConfig) (*DashScopeChatModel, error) { //nolint:gocritic // stable API: value receiver for backward compat
 	apiKey := ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
 	if apiKey == "" {
 		return nil, fmt.Errorf("dashscope: APIKey is required")

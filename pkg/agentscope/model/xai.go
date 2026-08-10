@@ -31,7 +31,7 @@ type XAIConfig struct {
 }
 
 // NewXAIChatModel creates a ChatModel backed by xAI/Grok.
-func NewXAIChatModel(cfg XAIConfig) (*XAIChatModel, error) {
+func NewXAIChatModel(cfg XAIConfig) (*XAIChatModel, error) { //nolint:gocritic // stable API: value receiver for backward compat
 	apiKey := ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
 	if apiKey == "" {
 		return nil, fmt.Errorf("xai: APIKey is required")

@@ -31,7 +31,7 @@ type MoonshotConfig struct {
 }
 
 // NewMoonshotChatModel creates a ChatModel backed by Moonshot/Kimi.
-func NewMoonshotChatModel(cfg MoonshotConfig) (*MoonshotChatModel, error) {
+func NewMoonshotChatModel(cfg MoonshotConfig) (*MoonshotChatModel, error) { //nolint:gocritic // stable API: value receiver for backward compat
 	apiKey := ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
 	if apiKey == "" {
 		return nil, fmt.Errorf("moonshot: APIKey is required")

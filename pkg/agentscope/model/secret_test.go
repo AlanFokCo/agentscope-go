@@ -121,7 +121,7 @@ func TestSecretStr_RoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Unmarshal the marshalled value.
+	// Unmarshal the marshaled value.
 	var restored SecretStr
 	if err := json.Unmarshal(b, &restored); err != nil {
 		t.Fatal(err)

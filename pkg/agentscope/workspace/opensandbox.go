@@ -37,7 +37,7 @@ type OpenSandboxWorkspace struct {
 var _ Workspace = (*OpenSandboxWorkspace)(nil)
 
 // NewOpenSandboxWorkspace creates or connects to an OpenSandbox instance.
-func NewOpenSandboxWorkspace(cfg OpenSandboxConfig) (*OpenSandboxWorkspace, error) {
+func NewOpenSandboxWorkspace(cfg OpenSandboxConfig) (*OpenSandboxWorkspace, error) { //nolint:gocritic // stable API: value receiver for backward compat
 	if cfg.BaseURL == "" {
 		return nil, fmt.Errorf("opensandbox: base URL is required")
 	}

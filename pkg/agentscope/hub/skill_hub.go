@@ -33,7 +33,7 @@ type SkillHub struct {
 }
 
 // NewSkillHub creates a new skill hub client.
-func NewSkillHub(cfg SkillHubConfig) *SkillHub {
+func NewSkillHub(cfg SkillHubConfig) *SkillHub { //nolint:gocritic // stable API: value receiver for backward compat
 	return &SkillHub{
 		cfg:    cfg,
 		client: &http.Client{},
