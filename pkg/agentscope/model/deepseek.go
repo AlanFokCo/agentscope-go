@@ -23,6 +23,7 @@ type DeepSeekChatModel struct {
 // DeepSeekConfig configures DeepSeekChatModel.
 type DeepSeekConfig struct {
 	APIKey        string
+	SecretAPIKey  SecretStr // Preferred over APIKey. Use model.NewSecretStr(key).
 	BaseURL       string
 	Model         string
 	HTTPClient    *http.Client
@@ -31,7 +32,8 @@ type DeepSeekConfig struct {
 
 // NewDeepSeekChatModel creates a ChatModel backed by DeepSeek.
 func NewDeepSeekChatModel(cfg DeepSeekConfig) (*DeepSeekChatModel, error) {
-	if cfg.APIKey == "" {
+	apiKey := ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
+	if apiKey == "" {
 		return nil, fmt.Errorf("deepseek: APIKey is required")
 	}
 	if cfg.Model == "" {
@@ -46,7 +48,7 @@ func NewDeepSeekChatModel(cfg DeepSeekConfig) (*DeepSeekChatModel, error) {
 		defHeaders = cfg.ClientOptions.DefaultHeaders
 	}
 	return &DeepSeekChatModel{
-		apiKey:         cfg.APIKey,
+		apiKey:         apiKey,
 		baseURL:        base,
 		model:          cfg.Model,
 		defaultHeaders: defHeaders,

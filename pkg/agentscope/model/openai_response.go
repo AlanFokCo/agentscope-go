@@ -19,6 +19,7 @@ import (
 // OpenAIResponseConfig configures the OpenAI Responses API model.
 type OpenAIResponseConfig struct {
 	APIKey          string
+	SecretAPIKey    SecretStr // Preferred over APIKey. Use model.NewSecretStr(key).
 	Model           string
 	BaseURL         string // default: https://api.openai.com
 	MaxOutputTokens int
@@ -35,6 +36,7 @@ type openaiResponseModel struct {
 
 // NewOpenAIResponseModel creates a ChatModel that uses the OpenAI Responses API.
 func NewOpenAIResponseModel(cfg *OpenAIResponseConfig) (ChatModel, error) {
+	cfg.APIKey = ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("openai response: api key is required")
 	}

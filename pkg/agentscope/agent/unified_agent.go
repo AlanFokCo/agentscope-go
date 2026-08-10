@@ -12,7 +12,7 @@ import (
 
 	agentscope "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/event"
-	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/exception"
+	agenterrors "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/errors"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/loop"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/middleware"
@@ -726,11 +726,11 @@ func (a *UnifiedAgent) executeTool(
 	var outputText string
 	switch {
 	case execErr != nil:
-		if _, ok := execErr.(exception.DeveloperError); ok {
+		if _, ok := execErr.(agenterrors.DeveloperError); ok {
 			logrus.WithError(execErr).Error("agent: developer error in tool execution")
 		}
 		resultState = message.ToolResultError
-		outputText = exception.GetAgentMessage(execErr)
+		outputText = agenterrors.GetAgentMessage(execErr)
 	case toolResp != nil:
 		resultState = toolResp.State
 		for _, b := range toolResp.Content {

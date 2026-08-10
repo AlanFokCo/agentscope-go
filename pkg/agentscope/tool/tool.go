@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/exception"
+	agenterrors "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/errors"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/internal/jsonx"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
@@ -245,9 +245,9 @@ func (tk *Toolkit) CallTool(ctx context.Context, name string, input map[string]a
 
 	if t == nil {
 		if groupName != "" {
-			return nil, &exception.ToolGroupInactiveError{ToolName: name, GroupName: groupName}
+			return nil, &agenterrors.ToolGroupInactiveError{ToolName: name, GroupName: groupName}
 		}
-		return nil, &exception.ToolNotFoundError{ToolName: name}
+		return nil, &agenterrors.ToolNotFoundError{ToolName: name}
 	}
 
 	// Validate input against schema before execution
@@ -300,7 +300,7 @@ func (tk *Toolkit) CallToolFromBlock(ctx context.Context, block *message.ToolCal
 		if repairErr := jsonx.RepairAndUnmarshal([]byte(block.Input), &repaired); repairErr == nil {
 			input = repaired
 		} else {
-			return NewErrorResponse(&exception.ToolJSONDecodeError{
+			return NewErrorResponse(&agenterrors.ToolJSONDecodeError{
 				ToolName: block.Name,
 				Input:    block.Input,
 				Err:      err,

@@ -45,6 +45,16 @@ func (s SecretStr) IsEmpty() bool {
 	return s.value == ""
 }
 
+// ResolveAPIKey returns the API key from a dual-field config: if secretKey
+// is non-empty it takes precedence over the deprecated plaintext key.
+// This enables the migration pattern where configs can carry either field.
+func ResolveAPIKey(plainKey string, secretKey SecretStr) string {
+	if !secretKey.IsEmpty() {
+		return secretKey.Value()
+	}
+	return plainKey
+}
+
 // UnmarshalJSON deserializes a JSON string into the SecretStr, storing the
 // plaintext value internally. This allows SecretStr fields to be populated
 // from JSON configuration files. The value is never re-exposed via

@@ -109,16 +109,25 @@ Recently landed (since initial hardening):
 - ~~`SecretStr.UnmarshalJSON`~~ **Done:** `SecretStr` can now be populated from
   JSON config files; value is stored internally, never re-exposed via Marshal.
 
+- ~~`RedisFullStorage`~~ **Done:** full `FullStorage` implementation over Redis,
+  using the existing `RedisClient` interface (no hard dependency on go-redis).
+  All 17 methods implemented: credentials, agents, sessions, schedules, messages,
+  teams. Message ordering preserved via per-session index key.
+- ~~`SecretStr` dual-field (Phase 2)~~ **Done:** all 8 model provider configs
+  now carry `SecretAPIKey SecretStr` alongside deprecated `APIKey string`.
+  Constructors use `ResolveAPIKey()` to prefer the secret field. TTS/embedding/
+  workspace configs deferred to v3 (lower sensitivity).
+- ~~`exception` package removal (Phase 2)~~ **Done:** all 4 importing packages
+  (`agent`, `tool`, `tool/orchestrator`, `tool/orchestrator_test`) migrated to
+  `errors/`. Zero imports of `exception` remain outside the alias package itself.
+  The `exception` package still exists as a backward-compatible alias layer and
+  will be removed after the next minor version.
+- ~~OTLP setup helper~~ **Done:** shipped as `examples/tracing_otlp/` with a
+  documented wiring pattern. No OTel SDK dependency added to the library.
+
 Planned (tracked):
 
-- Durable `FullStorage`: `RedisFullStorage` reference implementation of the
-  existing `FullStorage` interface. (Schema versioning deferred — only v1 exists.)
-- `SecretStr` adoption (Phase 2): dual-field pattern (`APIKeySecret SecretStr`
-  alongside deprecated `APIKey string`) across all 9 model providers + TTS +
-  embedding + workspace configs. Full removal of `APIKey string` deferred to v3.
-- `exception` package removal (Phase 2): complete the migration by removing the
-  `exception` package after deprecation cycle (target: 2 minor versions).
-- OTLP setup helper: optional `tracing/otlphelper.SetupOTLP(endpoint)` convenience
-  function (not a full exporter package — avoids OTel SDK dependency bloat).
-  Alternatively ship as `examples/tracing_otlp/`.
+- `exception` package deletion (final): remove the alias package entirely after
+  one more minor version.
+- `SecretStr` adoption in TTS/embedding/workspace/hub configs (v3, lower priority).
 - Output guardrails (content filtering / safety checks on model responses).

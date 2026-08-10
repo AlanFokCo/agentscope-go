@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/audit"
-	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/exception"
+	agenterrors "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/errors"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/permission"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/sandbox"
@@ -90,7 +90,7 @@ func (o *Orchestrator) Execute(ctx context.Context, call message.ToolCallBlock) 
 	// 1. Look up tool
 	t := o.toolkit.Get(call.Name)
 	if t == nil {
-		return nil, &exception.ToolNotFoundError{ToolName: call.Name}
+		return nil, &agenterrors.ToolNotFoundError{ToolName: call.Name}
 	}
 
 	// 2. Parse input

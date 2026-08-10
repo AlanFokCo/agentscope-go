@@ -34,6 +34,7 @@ type AnthropicChatModel struct {
 // AnthropicConfig configures AnthropicChatModel.
 type AnthropicConfig struct {
 	APIKey          string
+	SecretAPIKey    SecretStr // Preferred over APIKey. Use model.NewSecretStr(key).
 	BaseURL         string
 	Model           string
 	Version         string
@@ -49,7 +50,8 @@ type AnthropicConfig struct {
 
 // NewAnthropicChatModel creates a ChatModel backed by Anthropic.
 func NewAnthropicChatModel(cfg *AnthropicConfig) (*AnthropicChatModel, error) {
-	if cfg.APIKey == "" {
+	apiKey := ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
+	if apiKey == "" {
 		return nil, fmt.Errorf("anthropic: APIKey is required")
 	}
 	if cfg.Model == "" {
@@ -72,7 +74,7 @@ func NewAnthropicChatModel(cfg *AnthropicConfig) (*AnthropicChatModel, error) {
 		defHeaders = cfg.ClientOptions.DefaultHeaders
 	}
 	return &AnthropicChatModel{
-		apiKey:         cfg.APIKey,
+		apiKey:         apiKey,
 		baseURL:        base,
 		model:          cfg.Model,
 		version:        ver,

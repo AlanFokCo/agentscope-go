@@ -25,8 +25,9 @@ type OpenAIChatModel struct {
 
 // OpenAIConfig configures OpenAIChatModel.
 type OpenAIConfig struct {
-	APIKey  string
-	BaseURL string
+	APIKey       string
+	SecretAPIKey SecretStr // Preferred over APIKey. Use model.NewSecretStr(key).
+	BaseURL      string
 	Model   string
 
 	HTTPClient    *http.Client
@@ -35,7 +36,8 @@ type OpenAIConfig struct {
 
 // NewOpenAIChatModel creates a ChatModel backed by OpenAI.
 func NewOpenAIChatModel(cfg OpenAIConfig) (*OpenAIChatModel, error) {
-	if cfg.APIKey == "" {
+	apiKey := ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
+	if apiKey == "" {
 		return nil, fmt.Errorf("openai: APIKey is required")
 	}
 	if cfg.Model == "" {
@@ -50,7 +52,7 @@ func NewOpenAIChatModel(cfg OpenAIConfig) (*OpenAIChatModel, error) {
 		defHeaders = cfg.ClientOptions.DefaultHeaders
 	}
 	return &OpenAIChatModel{
-		apiKey:         cfg.APIKey,
+		apiKey:         apiKey,
 		baseURL:        base,
 		model:          cfg.Model,
 		defaultHeaders: defHeaders,

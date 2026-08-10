@@ -23,6 +23,7 @@ type MoonshotChatModel struct {
 // MoonshotConfig configures MoonshotChatModel.
 type MoonshotConfig struct {
 	APIKey        string
+	SecretAPIKey  SecretStr // Preferred over APIKey. Use model.NewSecretStr(key).
 	BaseURL       string
 	Model         string
 	HTTPClient    *http.Client
@@ -31,7 +32,8 @@ type MoonshotConfig struct {
 
 // NewMoonshotChatModel creates a ChatModel backed by Moonshot/Kimi.
 func NewMoonshotChatModel(cfg MoonshotConfig) (*MoonshotChatModel, error) {
-	if cfg.APIKey == "" {
+	apiKey := ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
+	if apiKey == "" {
 		return nil, fmt.Errorf("moonshot: APIKey is required")
 	}
 	if cfg.Model == "" {
@@ -46,7 +48,7 @@ func NewMoonshotChatModel(cfg MoonshotConfig) (*MoonshotChatModel, error) {
 		defHeaders = cfg.ClientOptions.DefaultHeaders
 	}
 	return &MoonshotChatModel{
-		apiKey:         cfg.APIKey,
+		apiKey:         apiKey,
 		baseURL:        base,
 		model:          cfg.Model,
 		defaultHeaders: defHeaders,

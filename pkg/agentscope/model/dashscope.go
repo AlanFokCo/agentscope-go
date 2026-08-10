@@ -27,8 +27,9 @@ type DashScopeChatModel struct {
 
 // DashScopeConfig configures DashScopeChatModel.
 type DashScopeConfig struct {
-	APIKey  string
-	BaseURL string // Optional, defaults to DashScope compatible endpoint
+	APIKey       string
+	SecretAPIKey SecretStr // Preferred over APIKey. Use model.NewSecretStr(key).
+	BaseURL      string    // Optional, defaults to DashScope compatible endpoint
 	Model   string
 
 	HTTPClient    *http.Client
@@ -37,7 +38,8 @@ type DashScopeConfig struct {
 
 // NewDashScopeChatModel creates a ChatModel using the DashScope backend.
 func NewDashScopeChatModel(cfg DashScopeConfig) (*DashScopeChatModel, error) {
-	if cfg.APIKey == "" {
+	apiKey := ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
+	if apiKey == "" {
 		return nil, fmt.Errorf("dashscope: APIKey is required")
 	}
 	if cfg.Model == "" {
@@ -52,7 +54,7 @@ func NewDashScopeChatModel(cfg DashScopeConfig) (*DashScopeChatModel, error) {
 		defHeaders = cfg.ClientOptions.DefaultHeaders
 	}
 	return &DashScopeChatModel{
-		apiKey:         cfg.APIKey,
+		apiKey:         apiKey,
 		baseURL:        base,
 		model:          cfg.Model,
 		defaultHeaders: defHeaders,

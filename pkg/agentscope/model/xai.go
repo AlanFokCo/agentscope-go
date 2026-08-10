@@ -23,6 +23,7 @@ type XAIChatModel struct {
 // XAIConfig configures XAIChatModel.
 type XAIConfig struct {
 	APIKey        string
+	SecretAPIKey  SecretStr // Preferred over APIKey. Use model.NewSecretStr(key).
 	BaseURL       string
 	Model         string
 	HTTPClient    *http.Client
@@ -31,7 +32,8 @@ type XAIConfig struct {
 
 // NewXAIChatModel creates a ChatModel backed by xAI/Grok.
 func NewXAIChatModel(cfg XAIConfig) (*XAIChatModel, error) {
-	if cfg.APIKey == "" {
+	apiKey := ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
+	if apiKey == "" {
 		return nil, fmt.Errorf("xai: APIKey is required")
 	}
 	if cfg.Model == "" {
@@ -46,7 +48,7 @@ func NewXAIChatModel(cfg XAIConfig) (*XAIChatModel, error) {
 		defHeaders = cfg.ClientOptions.DefaultHeaders
 	}
 	return &XAIChatModel{
-		apiKey:         cfg.APIKey,
+		apiKey:         apiKey,
 		baseURL:        base,
 		model:          cfg.Model,
 		defaultHeaders: defHeaders,

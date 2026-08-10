@@ -25,6 +25,7 @@ type GeminiChatModel struct {
 // GeminiConfig configures GeminiChatModel.
 type GeminiConfig struct {
 	APIKey        string
+	SecretAPIKey  SecretStr // Preferred over APIKey. Use model.NewSecretStr(key).
 	BaseURL       string
 	Model         string
 	HTTPClient    *http.Client
@@ -33,7 +34,8 @@ type GeminiConfig struct {
 
 // NewGeminiChatModel creates a ChatModel backed by Google Gemini.
 func NewGeminiChatModel(cfg GeminiConfig) (*GeminiChatModel, error) {
-	if cfg.APIKey == "" {
+	apiKey := ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
+	if apiKey == "" {
 		return nil, fmt.Errorf("gemini: APIKey is required")
 	}
 	if cfg.Model == "" {
@@ -48,7 +50,7 @@ func NewGeminiChatModel(cfg GeminiConfig) (*GeminiChatModel, error) {
 		defHeaders = cfg.ClientOptions.DefaultHeaders
 	}
 	return &GeminiChatModel{
-		apiKey:         cfg.APIKey,
+		apiKey:         apiKey,
 		baseURL:        base,
 		model:          cfg.Model,
 		defaultHeaders: defHeaders,

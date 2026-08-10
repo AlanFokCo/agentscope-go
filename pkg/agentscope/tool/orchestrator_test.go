@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/exception"
+	agenterrors "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/errors"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/permission"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/sandbox"
@@ -129,7 +129,7 @@ func TestOrchestratorExecuteToolNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing tool")
 	}
-	if _, ok := err.(*exception.ToolNotFoundError); !ok {
+	if _, ok := err.(*agenterrors.ToolNotFoundError); !ok {
 		t.Fatalf("expected ToolNotFoundError, got %T: %v", err, err)
 	}
 }
