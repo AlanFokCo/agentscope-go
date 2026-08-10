@@ -92,12 +92,33 @@ Recently landed (since initial hardening):
 - ~~JSON-Schema input validation~~ **Done:** `tool.ValidateInput` with fuzz target.
 - ~~Module `/v2` decision~~ **Done:** module path is now `/v2`.
 
+- ~~USD/CNY spend cap~~ **Done:** `CostTrackerMiddleware` now supports
+  `WithMaxCostUSD` hard cap (pre-flight budget check, returns `ErrBudgetExceeded`)
+  and `WithExchangeRate("CNY", 7.2)` for display-currency conversion.
+- ~~Record/replay eval harness~~ **Done:** `replay.Scorer` interface with 5
+  built-in scorers (ExactMatch, Contains, JSONField, TextContains, Composite),
+  `EvalTape()` runner producing `EvalReport`, and `AssertTape(t, ...)` go-test
+  helper for regression testing agent behavior against recorded tapes.
+- ~~Anthropic prompt-caching write path~~ **Done:** `AnthropicConfig.PromptCaching`
+  + `applyPromptCaching()` + cache token tracking in both streaming and
+  non-streaming paths. (Needs live-API integration test.)
+- ~~`exception`→`errors` migration (Phase 1)~~ **Done:** Tool error types
+  (`ToolNotFoundError`, `ToolJSONDecodeError`, etc.) moved to `errors/`;
+  `errors.AgentError` gained `AgentMsg`/`AgentMessage()` for LLM-facing messages;
+  `exception` package is now type aliases with deprecation notices.
+- ~~`SecretStr.UnmarshalJSON`~~ **Done:** `SecretStr` can now be populated from
+  JSON config files; value is stored internally, never re-exposed via Marshal.
+
 Planned (tracked):
 
-- Dedicated OTLP exporter package (currently uses OTel API; no built-in OTLP
-  export — bring your own `otelgrpc`/`otelhttp` exporter).
-- Durable `FullStorage` (credentials/agents/schedules), session-history persistence
-  and resume, schema versioning, reference Redis adapter.
-- USD spend cap (model-card pricing), output guardrails.
-- Anthropic prompt-caching write path; record/replay + eval harness.
-- Full `SecretStr` adoption; `exception`→`errors` migration.
+- Durable `FullStorage`: `RedisFullStorage` reference implementation of the
+  existing `FullStorage` interface. (Schema versioning deferred — only v1 exists.)
+- `SecretStr` adoption (Phase 2): dual-field pattern (`APIKeySecret SecretStr`
+  alongside deprecated `APIKey string`) across all 9 model providers + TTS +
+  embedding + workspace configs. Full removal of `APIKey string` deferred to v3.
+- `exception` package removal (Phase 2): complete the migration by removing the
+  `exception` package after deprecation cycle (target: 2 minor versions).
+- OTLP setup helper: optional `tracing/otlphelper.SetupOTLP(endpoint)` convenience
+  function (not a full exporter package — avoids OTel SDK dependency bloat).
+  Alternatively ship as `examples/tracing_otlp/`.
+- Output guardrails (content filtering / safety checks on model responses).

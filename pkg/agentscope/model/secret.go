@@ -44,3 +44,16 @@ func (s SecretStr) MarshalText() ([]byte, error) {
 func (s SecretStr) IsEmpty() bool {
 	return s.value == ""
 }
+
+// UnmarshalJSON deserializes a JSON string into the SecretStr, storing the
+// plaintext value internally. This allows SecretStr fields to be populated
+// from JSON configuration files. The value is never re-exposed via
+// MarshalJSON (which always emits "***").
+func (s *SecretStr) UnmarshalJSON(data []byte) error {
+	var v string
+	if err := json.Unmarshal(data, &v); err != nil {
+		return err
+	}
+	s.value = v
+	return nil
+}

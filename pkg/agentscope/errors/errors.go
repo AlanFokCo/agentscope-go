@@ -56,10 +56,27 @@ type AgentError struct {
 	// RetryAfter, when > 0, is the minimum delay a caller should wait before
 	// retrying (populated from a provider 429/503 Retry-After header).
 	RetryAfter time.Duration
+
+	// AgentMsg is an optional LLM-facing message. When non-empty, it is
+	// returned by AgentMessage() instead of Message. This allows the same
+	// error to carry both an operator-facing description and a model-facing
+	// hint that the LLM can use to recover.
+	AgentMsg string
 }
 
 func (e *AgentError) Error() string { return e.Message }
 func (e *AgentError) Unwrap() error { return e.Cause }
+
+// AgentMessage returns a message suitable for showing to the LLM in a tool
+// result. If AgentMsg is set it is preferred; otherwise the human-readable
+// Message is returned. This bridges the gap between operator-facing errors
+// (Message) and LLM-facing errors previously served by the exception package.
+func (e *AgentError) AgentMessage() string {
+	if e.AgentMsg != "" {
+		return e.AgentMsg
+	}
+	return e.Message
+}
 
 // NewThrottled creates a retryable rate-limit error carrying a Retry-After delay.
 func NewThrottled(retryAfter time.Duration, format string, args ...any) *AgentError {
