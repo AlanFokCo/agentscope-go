@@ -75,9 +75,9 @@ func (t *connTransport) Close() error {
 // Server accepts incoming agent connections.
 type Server struct {
 	addr      string
-	listener  net.Listener
 	handler   func(msg *Message) *Message
 	mu        sync.Mutex
+	listener  net.Listener // guarded by mu for Addr(); Accept/Close are goroutine-safe
 	conns     []net.Conn
 	done      chan struct{}
 	closeOnce sync.Once
@@ -108,11 +108,20 @@ func (s *Server) OnMessage(handler func(msg *Message) *Message) {
 
 // Addr returns the actual listener address (useful when using ":0").
 func (s *Server) Addr() string {
-	return s.listener.Addr().String()
+	s.mu.Lock()
+	ln := s.listener
+	s.mu.Unlock()
+	return ln.Addr().String()
 }
 
 // Listen starts accepting connections. Blocks until the context is canceled or Close is called.
 func (s *Server) Listen(ctx context.Context) error {
+	// Snapshot listener under the lock so concurrent Close doesn't race on
+	// the struct field. net.Listener.Accept and Close are goroutine-safe.
+	s.mu.Lock()
+	ln := s.listener
+	s.mu.Unlock()
+
 	go func() {
 		select {
 		case <-ctx.Done():
@@ -122,7 +131,7 @@ func (s *Server) Listen(ctx context.Context) error {
 	}()
 
 	for {
-		conn, err := s.listener.Accept()
+		conn, err := ln.Accept()
 		if err != nil {
 			select {
 			case <-s.done:
@@ -133,9 +142,9 @@ func (s *Server) Listen(ctx context.Context) error {
 		}
 		s.mu.Lock()
 		s.conns = append(s.conns, conn)
+		s.wg.Add(1) // must be inside the lock to avoid racing with Close's wg.Wait
 		s.mu.Unlock()
 
-		s.wg.Add(1)
 		go s.handleConn(conn)
 	}
 }
@@ -171,7 +180,25 @@ func (s *Server) handleConn(conn net.Conn) {
 func (s *Server) Close() error {
 	s.closeOnce.Do(func() {
 		close(s.done)
-		s.closeErr = s.listener.Close()
+
+		// Close listener — unblocks Accept in Listen.
+		s.mu.Lock()
+		ln := s.listener
+		s.mu.Unlock()
+		s.closeErr = ln.Close()
+
+		// After ln.Close(), Accept will fail and the for-loop exits.
+		// However, a conn may have been accepted just before ln.Close().
+		// Its wg.Add(1) is under s.mu. Acquire+release the lock to
+		// ensure any in-flight wg.Add(1) completes before we Wait.
+		s.mu.Lock() //nolint:gocritic // sync barrier
+		//nolint:staticcheck // intentional lock-unlock to synchronize
+		s.mu.Unlock() //nolint:gocritic // intentional: sync barrier for wg.Add
+
+		// Now safe: no new wg.Add(1) can happen.
+		s.wg.Wait()
+
+		// Close all tracked connections.
 		s.mu.Lock()
 		for _, c := range s.conns {
 			_ = c.Close()
@@ -179,7 +206,6 @@ func (s *Server) Close() error {
 		s.conns = nil
 		s.mu.Unlock()
 	})
-	s.wg.Wait()
 	return s.closeErr
 }
 
