@@ -1,6 +1,6 @@
 # Examples
 
-41 runnable examples in `examples/`. Run any with:
+46 runnable examples in `examples/`. Run any with:
 
 ```bash
 export DASHSCOPE_API_KEY=sk-...  # or ANTHROPIC_API_KEY / OPENAI_API_KEY
@@ -55,8 +55,18 @@ go run ./examples/<name>
 | Example | Description | API Key Required |
 |---------|-------------|------------------|
 | `agent_service` | HTTP Agent Service with REST + SSE streaming endpoints | Yes |
+| `webui` | Web UI Studio with streaming chat, tool visualization, HITL | Yes |
 | `scheduled_task` | One-shot and recurring task scheduling | No |
 | `realtime_echo` | Realtime streaming interface with echo client | No |
+
+## Edge & IoT
+
+| Example | Description | API Key Required |
+|---------|-------------|------------------|
+| `edge_offline` | ConnectivityAwareModel — automatic cloud/local fallback | Yes |
+| `edge_sensor` | SensorMiddleware + Watchdog for physical sensors | Yes |
+| `edge_serial_robot` | DeviceTool with serial robot arm control | Yes |
+| `edge_fleet` | Multi-agent PubSub coordination across devices | Yes |
 
 ## Go-Exclusive Features
 
@@ -71,6 +81,12 @@ go run ./examples/<name>
 | `hub_install` | Browse and install MCP tools / skills from a remote hub | No |
 | `access_control` | Multi-tenant RBAC: grant, check, and revoke permissions | No |
 | `document_parser` | Parse PDF, Word, Excel, PPT files into RAG-ready document chunks | No |
+| `guardrail` | Output content filtering with block/redact/warn actions | No |
+| `eval_harness` | Replay-based agent evaluation with scorers | No |
+| `spend_cap` | USD/CNY spend cap with CostTrackerMiddleware | No |
+| `audit_logging` | Sandbox policy enforcement + structured audit trail | No |
+| `werewolves` | Multi-agent Werewolves game with role-based behavior | Yes |
+| `tracing_otlp` | OTLP tracing setup pattern (no OTel SDK dependency) | Yes |
 
 ## Running All Tests
 

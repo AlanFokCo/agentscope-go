@@ -46,11 +46,17 @@ type EvalReport struct {
 // in expected using the given scorer. The two tapes must have the same number
 // of entries. The threshold (0–1) determines pass/fail per entry.
 func EvalTape(ctx context.Context, expected, recorded *Tape, scorer Scorer, threshold float64) (*EvalReport, error) {
+	if expected == nil || recorded == nil {
+		return nil, fmt.Errorf("eval: expected and recorded tapes must not be nil")
+	}
+	if scorer == nil {
+		return nil, fmt.Errorf("eval: scorer must not be nil")
+	}
 	if len(expected.Entries) != len(recorded.Entries) {
 		return nil, fmt.Errorf("eval: entry count mismatch: expected %d, recorded %d",
 			len(expected.Entries), len(recorded.Entries))
 	}
-	if threshold <= 0 {
+	if threshold < 0 {
 		threshold = 1.0
 	}
 
@@ -84,7 +90,7 @@ func EvalTape(ctx context.Context, expected, recorded *Tape, scorer Scorer, thre
 		report.Results = append(report.Results, er)
 	}
 
-	if report.Total > 0 {
+	if report.Total > report.Errors {
 		report.MeanScore = scoreSum / float64(report.Total-report.Errors)
 	}
 	return report, nil

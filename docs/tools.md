@@ -184,6 +184,15 @@ index, _ := rag.NewQdrantTextIndex(rag.QdrantTextConfig{
 index.AddDocuments(ctx, docs)
 ```
 
+### Reranked Retrieval
+
+Improve retrieval precision by wrapping an Index with a Reranker:
+
+```go
+rerankedIdx := rag.NewRerankedIndex(baseIndex, myReranker, 3)
+results, _ := rerankedIdx.Query(ctx, "search query", 5)
+```
+
 ## WASM Sandbox
 
 Execute untrusted code as WebAssembly modules. The `wasm` package provides a `Sandbox` that enforces memory, time, and instruction-count limits.

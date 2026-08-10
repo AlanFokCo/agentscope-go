@@ -62,7 +62,7 @@ type ExchangeRate struct {
 // to ReplyBudgetControlMiddleware which resets per reply. It is safe for
 // concurrent model calls.
 //
-// When MaxCostUSD > 0, the middleware returns errors.ErrBudgetExceeded and
+// When maxCostUSD > 0, the middleware returns errors.ErrBudgetExceeded and
 // stops all further model calls once the accumulated cost reaches the limit.
 type CostTrackerMiddleware struct {
 	BaseMiddleware
@@ -77,13 +77,13 @@ type CostTrackerMiddleware struct {
 	byTurn      []*TurnCost
 	currentTurn *TurnCost
 
-	// MaxCostUSD is the hard spend cap. When > 0, model calls that would
+	// maxCostUSD is the hard spend cap. When > 0, model calls that would
 	// push the total past this limit are rejected with ErrBudgetExceeded.
-	MaxCostUSD float64
+	maxCostUSD float64
 
-	// ExchangeRates provides optional currency conversion for display via
+	// exchangeRates provides optional currency conversion for display via
 	// GetSessionCost(). Internally all cost is tracked in USD.
-	ExchangeRates []ExchangeRate
+	exchangeRates []ExchangeRate
 }
 
 // CostTrackerOption configures a CostTrackerMiddleware.
@@ -92,7 +92,7 @@ type CostTrackerOption func(*CostTrackerMiddleware)
 // WithMaxCostUSD sets a hard spend cap in US dollars. When the accumulated
 // cost reaches this limit, subsequent model calls return ErrBudgetExceeded.
 func WithMaxCostUSD(maxUSD float64) CostTrackerOption {
-	return func(m *CostTrackerMiddleware) { m.MaxCostUSD = maxUSD }
+	return func(m *CostTrackerMiddleware) { m.maxCostUSD = maxUSD }
 }
 
 // WithExchangeRate adds a currency conversion rate for display purposes.
@@ -100,7 +100,7 @@ func WithMaxCostUSD(maxUSD float64) CostTrackerOption {
 // For example: WithExchangeRate("CNY", 7.2) means 1 USD = 7.2 CNY.
 func WithExchangeRate(currency string, rate float64) CostTrackerOption {
 	return func(m *CostTrackerMiddleware) {
-		m.ExchangeRates = append(m.ExchangeRates, ExchangeRate{Currency: currency, Rate: rate})
+		m.exchangeRates = append(m.exchangeRates, ExchangeRate{Currency: currency, Rate: rate})
 	}
 }
 
@@ -134,7 +134,7 @@ func (m *CostTrackerMiddleware) NewTurn() {
 }
 
 // OnModelCall records the token usage of each model call and accumulates cost.
-// If MaxCostUSD > 0 and the accumulated cost has already reached the limit,
+// If maxCostUSD > 0 and the accumulated cost has already reached the limit,
 // the call is rejected immediately with ErrBudgetExceeded.
 func (m *CostTrackerMiddleware) OnModelCall(
 	ctx context.Context,
@@ -142,16 +142,19 @@ func (m *CostTrackerMiddleware) OnModelCall(
 	next ModelCallHandler,
 ) (*model.ChatResponse, error) {
 	// Pre-flight budget check: reject before calling the model.
-	if m.MaxCostUSD > 0 {
+	m.mu.Lock()
+	maxCost := m.maxCostUSD
+	m.mu.Unlock()
+	if maxCost > 0 {
 		m.mu.Lock()
-		exceeded := m.totalCost >= m.MaxCostUSD
+		exceeded := m.totalCost >= maxCost
 		current := m.totalCost
 		m.mu.Unlock()
 		if exceeded {
 			return nil, &agenterrors.AgentError{
 				Category:  agenterrors.CategoryResource,
 				Code:      "budget.exceeded",
-				Message:   fmt.Sprintf("spend cap reached: $%.4f >= $%.4f", current, m.MaxCostUSD),
+				Message:   fmt.Sprintf("spend cap reached: $%.4f >= $%.4f", current, maxCost),
 				Retryable: false,
 			}
 		}
@@ -233,9 +236,9 @@ func (m *CostTrackerMiddleware) GetSessionCost() SessionCost {
 		ByTurn:            byTurn,
 	}
 
-	if len(m.ExchangeRates) > 0 {
-		sc.ConvertedCosts = make(map[string]float64, len(m.ExchangeRates))
-		for _, er := range m.ExchangeRates {
+	if len(m.exchangeRates) > 0 {
+		sc.ConvertedCosts = make(map[string]float64, len(m.exchangeRates))
+		for _, er := range m.exchangeRates {
 			sc.ConvertedCosts[er.Currency] = m.totalCost * er.Rate
 		}
 	}

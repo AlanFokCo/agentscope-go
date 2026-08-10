@@ -273,6 +273,108 @@ func TestRedisFullStorage_Teams(t *testing.T) {
 	}
 }
 
+func TestRedisFullStorage_ConcurrentAppendMessage(t *testing.T) {
+	ctx := context.Background()
+	s := newTestRedisFullStorage(t)
+
+	const goroutines = 10
+	const msgsPerGoroutine = 10
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	for g := 0; g < goroutines; g++ {
+		g := g
+		go func() {
+			defer wg.Done()
+			for i := 0; i < msgsPerGoroutine; i++ {
+				m := &MessageRecord{
+					ID:        fmt.Sprintf("m-%d-%d", g, i),
+					SessionID: "concurrent-session",
+					Role:      "user",
+					Content:   fmt.Sprintf("msg from goroutine %d, index %d", g, i),
+				}
+				if err := s.AppendMessage(ctx, m); err != nil {
+					t.Errorf("AppendMessage: %v", err)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	msgs, err := s.ListMessages(ctx, "concurrent-session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != goroutines*msgsPerGoroutine {
+		t.Errorf("expected %d messages, got %d", goroutines*msgsPerGoroutine, len(msgs))
+	}
+
+	// Verify all unique IDs are present.
+	seen := make(map[string]bool, len(msgs))
+	for _, m := range msgs {
+		seen[m.ID] = true
+	}
+	for g := 0; g < goroutines; g++ {
+		for i := 0; i < msgsPerGoroutine; i++ {
+			id := fmt.Sprintf("m-%d-%d", g, i)
+			if !seen[id] {
+				t.Errorf("missing message ID %s", id)
+			}
+		}
+	}
+}
+
+func TestRedisFullStorage_SetSessionTeamID_NotFound(t *testing.T) {
+	ctx := context.Background()
+	s := newTestRedisFullStorage(t)
+
+	err := s.SetSessionTeamID(ctx, "nonexistent-session", "t1")
+	if err == nil {
+		t.Fatal("expected error for nonexistent session")
+	}
+}
+
+func TestRedisFullStorage_LoadMessage_Reverse(t *testing.T) {
+	ctx := context.Background()
+	s := newTestRedisFullStorage(t)
+
+	m := &MessageRecord{
+		ID:        "rev-msg-1",
+		SessionID: "rev-session",
+		Role:      "user",
+		Content:   "reverse lookup test",
+	}
+	if err := s.AppendMessage(ctx, m); err != nil {
+		t.Fatal(err)
+	}
+
+	// LoadMessage should use the reverse index (O(1) lookup).
+	loaded, err := s.LoadMessage(ctx, "rev-msg-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Content != "reverse lookup test" {
+		t.Errorf("expected 'reverse lookup test', got %q", loaded.Content)
+	}
+}
+
+func TestRedisFullStorage_EmptyList(t *testing.T) {
+	ctx := context.Background()
+	s := newTestRedisFullStorage(t)
+
+	msgs, err := s.ListMessages(ctx, "nonexistent-session")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if msgs == nil {
+		// nil is acceptable — but let's ensure length is 0.
+		msgs = []*MessageRecord{}
+	}
+	if len(msgs) != 0 {
+		t.Errorf("expected 0 messages, got %d", len(msgs))
+	}
+}
+
 func TestRedisFullStorage_Sessions(t *testing.T) {
 	ctx := context.Background()
 	s := newTestRedisFullStorage(t)

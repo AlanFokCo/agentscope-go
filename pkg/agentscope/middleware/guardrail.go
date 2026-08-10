@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	agenterrors "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/errors"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
@@ -155,14 +156,15 @@ func KeywordRedactRule(name string, replacement string, keywords ...string) Guar
 	return r
 }
 
-// MaxLengthRule blocks or redacts responses exceeding a character limit.
+// MaxLengthRule blocks or redacts responses exceeding a characters (runes) limit.
 func MaxLengthRule(name string, maxChars int, action GuardrailAction) GuardrailRule {
 	return GuardrailRule{
 		Name:   name,
 		Action: action,
 		Check: func(text string) (bool, string) {
-			if len(text) > maxChars {
-				return true, fmt.Sprintf("response length %d exceeds limit %d", len(text), maxChars)
+			n := utf8.RuneCountInString(text)
+			if n > maxChars {
+				return true, fmt.Sprintf("response length %d exceeds limit %d", n, maxChars)
 			}
 			return false, ""
 		},

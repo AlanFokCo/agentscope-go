@@ -82,3 +82,73 @@ func TestSecretStr_Sprintf(t *testing.T) {
 		t.Errorf("Sprintf = %q, should not contain real value", got)
 	}
 }
+
+func TestSecretStr_UnmarshalJSON(t *testing.T) {
+	var s SecretStr
+	if err := json.Unmarshal([]byte(`"my-secret-key"`), &s); err != nil {
+		t.Fatal(err)
+	}
+	if s.Value() != "my-secret-key" {
+		t.Errorf("Value() = %q, want %q", s.Value(), "my-secret-key")
+	}
+	// String() should still be redacted.
+	if s.String() != "***" {
+		t.Errorf("String() = %q, want %q", s.String(), "***")
+	}
+}
+
+func TestSecretStr_UnmarshalJSON_Null(t *testing.T) {
+	var s SecretStr
+	err := json.Unmarshal([]byte(`null`), &s)
+	// json.Unmarshal of null into a string returns an error in strict mode,
+	// but the Go standard library silently sets it to the zero value.
+	// Either an error or an empty value is acceptable.
+	if err != nil {
+		// Null cannot be unmarshalled into a string — this is fine.
+		return
+	}
+	if s.Value() != "" {
+		t.Errorf("Value() = %q, want empty string after null unmarshal", s.Value())
+	}
+}
+
+func TestSecretStr_RoundTrip(t *testing.T) {
+	original := NewSecretStr("supersecret")
+
+	// Marshal → always produces "***".
+	b, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Unmarshal the marshalled value.
+	var restored SecretStr
+	if err := json.Unmarshal(b, &restored); err != nil {
+		t.Fatal(err)
+	}
+
+	// The restored value should be "***" (the redacted string), not the original.
+	if restored.Value() != "***" {
+		t.Errorf("round-trip Value() = %q, want %q", restored.Value(), "***")
+	}
+}
+
+func TestResolveAPIKey(t *testing.T) {
+	// When secret is non-empty, it takes precedence.
+	got := ResolveAPIKey("plain-key", NewSecretStr("secret-key"))
+	if got != "secret-key" {
+		t.Errorf("ResolveAPIKey = %q, want %q", got, "secret-key")
+	}
+
+	// When secret is empty, fall back to plain key.
+	got = ResolveAPIKey("plain-key", NewSecretStr(""))
+	if got != "plain-key" {
+		t.Errorf("ResolveAPIKey = %q, want %q", got, "plain-key")
+	}
+
+	// Both empty.
+	got = ResolveAPIKey("", NewSecretStr(""))
+	if got != "" {
+		t.Errorf("ResolveAPIKey = %q, want empty", got)
+	}
+}

@@ -107,7 +107,7 @@ Optional: `DASHSCOPE_BASE_URL` to override the DashScope endpoint.
 
 ## Running Examples
 
-The project includes 41 examples. Run any of them:
+The project includes 46 examples. Run any of them:
 
 ```bash
 export DASHSCOPE_API_KEY=sk-...

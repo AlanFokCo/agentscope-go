@@ -110,12 +110,19 @@ type DeveloperError interface {
 
 // IsAgentError returns true if err carries an LLM-facing message.
 func IsAgentError(err error) bool {
+	if err == nil {
+		return false
+	}
 	_, ok := err.(AgentErrorI)
 	return ok
 }
 
 // GetAgentMessage returns the LLM-facing message if available, or err.Error().
+// Returns "" if err is nil.
 func GetAgentMessage(err error) string {
+	if err == nil {
+		return ""
+	}
 	if ae, ok := err.(AgentErrorI); ok {
 		return ae.AgentMessage()
 	}

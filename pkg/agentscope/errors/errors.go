@@ -67,6 +67,16 @@ type AgentError struct {
 func (e *AgentError) Error() string { return e.Message }
 func (e *AgentError) Unwrap() error { return e.Cause }
 
+// Is supports errors.Is matching by Code. Two AgentErrors are considered
+// equal if they share the same Code, enabling sentinel-based matching
+// (e.g. errors.Is(err, ErrBudgetExceeded)).
+func (e *AgentError) Is(target error) bool {
+	if t, ok := target.(*AgentError); ok {
+		return e.Code == t.Code
+	}
+	return false
+}
+
 // AgentMessage returns a message suitable for showing to the LLM in a tool
 // result. If AgentMsg is set it is preferred; otherwise the human-readable
 // Message is returned. This bridges the gap between operator-facing errors
@@ -139,4 +149,5 @@ var (
 	ErrLoopInterrupted   = &AgentError{Category: CategoryContext, Code: "loop.interrupted", Message: "loop was interrupted", Retryable: false}
 	ErrLoopMaxIters      = &AgentError{Category: CategoryContext, Code: "loop.max_iters", Message: "maximum iterations reached", Retryable: false}
 	ErrBudgetExceeded    = &AgentError{Category: CategoryResource, Code: "budget.exceeded", Message: "budget exceeded", Retryable: false}
+	ErrGuardrailBlocked  = &AgentError{Category: CategoryPermission, Code: "guardrail.blocked", Message: "response blocked by guardrail", Retryable: false}
 )

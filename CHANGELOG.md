@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Reranker interface + RerankedIndex** (`rag/`): `Reranker` interface and `RerankedIndex` wrapper that re-scores retrieval results for improved precision
+- **Eval harness** (`replay/`): `Scorer` interface, `EvalTape`, and `AssertTape` for replay-based agent evaluation with pluggable scoring functions
+- **CostTrackerMiddleware**: hard USD spend cap via `WithMaxCostUSD`; built-in CNY exchange rate support for DashScope/Moonshot providers
+- **GuardrailMiddleware** (`middleware/`): output content safety filtering with three actions — `Block` (rejects with `ErrGuardrailBlocked`), `Redact` (replaces with placeholder), `Warn` (allows with metadata flags); built-in rules: `KeywordBlockRule`, `KeywordRedactRule`, `MaxLengthRule`, `CustomRule`
+- **RedisFullStorage** (`storage/`): 17-method `FullStorage` implementation backed by Redis with TTL, prefix isolation, and atomic operations
+- **SecretStr**: `UnmarshalJSON` support + dual-field (`APIKey`/`APIKeyStr`) across all 22 model/TTS/embedding configs for safe key handling
+- **`errors.AgentError.Is()` method**: sentinel matching via `errors.Is`; `AgentMessage()` for LLM-facing error descriptions
+
+### Changed
+- **`exception` package removed**: all types consolidated into `errors/`; no more split hierarchy
 
 ### Added — Edge & Embedded Intelligence
 - **ConnectivityAwareModel** (`model/connectivity.go`): wraps local + cloud ChatModel with internal circuit breaker; routes to cloud when online, falls back to local (Ollama) when offline, auto-recovers via single-probe half-open

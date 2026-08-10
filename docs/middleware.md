@@ -191,6 +191,28 @@ a := agent.NewUnifiedAgent("bot", "...", cm,
 
 Backends: `InMemoryStore` (substring search), `VectorMemoryStore` (cosine similarity with embedding model), `Mem0Store` (mem0 REST API with LLM-based extraction).
 
+### GuardrailMiddleware
+
+Content safety filtering on model responses. Three actions:
+
+| Action | Behavior |
+|--------|----------|
+| `Block` | Rejects the response with `ErrGuardrailBlocked` |
+| `Redact` | Replaces content with a safe placeholder |
+| `Warn` | Allows the response but sets metadata flags |
+
+```go
+gm := middleware.NewGuardrailMiddleware(
+    middleware.KeywordBlockRule("profanity", "badword1", "badword2"),
+    middleware.KeywordRedactRule("pii", "[REDACTED]", "ssn", "password"),
+    middleware.MaxLengthRule("max_output", 10000, middleware.GuardrailWarn),
+    middleware.CustomRule("custom_check", middleware.GuardrailBlock, myCheckFunc),
+)
+a := agent.NewUnifiedAgent("bot", "...", cm,
+    agent.WithMiddlewares(gm),
+)
+```
+
 ### Replay Middleware
 
 Records or replays model calls for deterministic testing. See the `replay` package for details.

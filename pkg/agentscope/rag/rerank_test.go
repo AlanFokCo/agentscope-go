@@ -2,6 +2,7 @@ package rag
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"testing"
@@ -53,6 +54,81 @@ func TestRerankedIndex(t *testing.T) {
 	// Doc "2" has 6 occurrences of "go", should be first
 	if results[0].ID != "2" {
 		t.Errorf("expected doc 2 first (most 'Go' occurrences), got %s", results[0].ID)
+	}
+}
+
+// errorReranker always returns an error.
+type errorReranker struct{}
+
+func (r *errorReranker) Rerank(_ context.Context, _ string, _ []Document, _ int) ([]ScoredDocument, error) {
+	return nil, fmt.Errorf("reranker failed")
+}
+
+func TestRerankedIndex_TopKZero(t *testing.T) {
+	ctx := context.Background()
+	base := NewInMemoryIndex()
+	_ = base.AddDocuments(ctx, []Document{
+		{ID: "1", Content: "hello"},
+		{ID: "2", Content: "world"},
+	})
+
+	idx := NewRerankedIndex(base, &substringReranker{}, 0)
+	results, err := idx.Query(ctx, "hello", 0)
+	if err != nil {
+		t.Fatalf("Query with topK=0: %v", err)
+	}
+	// topK=0 → base.Query returns all docs, reranker returns all.
+	// Should not panic.
+	_ = results
+}
+
+func TestRerankedIndex_FewCandidates(t *testing.T) {
+	ctx := context.Background()
+	base := NewInMemoryIndex()
+	_ = base.AddDocuments(ctx, []Document{
+		{ID: "1", Content: "Go Go Go"},
+		{ID: "2", Content: "Go"},
+	})
+
+	idx := NewRerankedIndex(base, &substringReranker{}, 3)
+	results, err := idx.Query(ctx, "Go", 5) // ask for 5, only 2 exist
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(results) != 2 {
+		t.Errorf("expected 2 results (all available), got %d", len(results))
+	}
+}
+
+func TestRerankedIndex_RerankerError(t *testing.T) {
+	ctx := context.Background()
+	base := NewInMemoryIndex()
+	_ = base.AddDocuments(ctx, []Document{{ID: "1", Content: "x"}})
+
+	idx := NewRerankedIndex(base, &errorReranker{}, 3)
+	_, err := idx.Query(ctx, "x", 1)
+	if err == nil {
+		t.Fatal("expected error from reranker")
+	}
+}
+
+func TestRerankedIndex_AddDocuments(t *testing.T) {
+	ctx := context.Background()
+	base := NewInMemoryIndex()
+	idx := NewRerankedIndex(base, &substringReranker{}, 3)
+
+	err := idx.AddDocuments(ctx, []Document{{ID: "1", Content: "test"}})
+	if err != nil {
+		t.Fatalf("AddDocuments: %v", err)
+	}
+
+	// Verify it was delegated to base by querying.
+	results, err := idx.Query(ctx, "test", 10)
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != "1" {
+		t.Errorf("expected 1 doc with ID '1', got %v", results)
 	}
 }
 

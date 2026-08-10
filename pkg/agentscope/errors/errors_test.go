@@ -112,3 +112,63 @@ func TestWrap(t *testing.T) {
 		t.Error("should unwrap to cause")
 	}
 }
+
+func TestAgentError_Is(t *testing.T) {
+	err := &AgentError{
+		Category: CategoryResource,
+		Code:     "budget.exceeded",
+		Message:  "spend cap reached: $1.00 >= $0.50",
+	}
+	if !errors.Is(err, ErrBudgetExceeded) {
+		t.Error("errors.Is should match sentinel by Code")
+	}
+	if errors.Is(err, ErrToolDenied) {
+		t.Error("errors.Is should not match a different sentinel Code")
+	}
+}
+
+func TestAgentError_Is_Wrapped(t *testing.T) {
+	inner := &AgentError{
+		Category: CategoryModel,
+		Code:     "model.rate_limited",
+		Message:  "throttled",
+	}
+	wrapped := fmt.Errorf("outer: %w", inner)
+	if !errors.Is(wrapped, ErrModelRateLimited) {
+		t.Error("errors.Is should find AgentError through fmt.Errorf(%%w)")
+	}
+}
+
+func TestAgentMessage(t *testing.T) {
+	// When AgentMsg is set, prefer it.
+	err := &AgentError{
+		Code:     "guardrail.blocked",
+		Message:  "operator message",
+		AgentMsg: "LLM-facing message",
+	}
+	if got := err.AgentMessage(); got != "LLM-facing message" {
+		t.Errorf("AgentMessage() = %q, want LLM-facing message", got)
+	}
+
+	// When AgentMsg is empty, fall back to Message.
+	err2 := &AgentError{
+		Code:    "tool.timeout",
+		Message: "tool timed out",
+	}
+	if got := err2.AgentMessage(); got != "tool timed out" {
+		t.Errorf("AgentMessage() = %q, want %q", got, "tool timed out")
+	}
+}
+
+func TestGetAgentMessage_Nil(t *testing.T) {
+	got := GetAgentMessage(nil)
+	if got != "" {
+		t.Errorf("GetAgentMessage(nil) = %q, want empty string", got)
+	}
+}
+
+func TestIsAgentError_Nil(t *testing.T) {
+	if IsAgentError(nil) {
+		t.Error("IsAgentError(nil) should return false")
+	}
+}

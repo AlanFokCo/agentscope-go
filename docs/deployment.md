@@ -292,13 +292,14 @@ scheduler.Schedule(ctx, &schedule.Task{
 - [ ] Use `DockerWorkspace`, `K8sWorkspace`, or `E2BWorkspace` for tool execution
 - [ ] Configure `ClientOptions.Timeout` for your expected response times
 - [ ] Set up `TracingMiddleware` with OpenTelemetry exporter
-- [ ] Use `ReplyBudgetControlMiddleware` to cap token spending
+- [ ] Use `ReplyBudgetControlMiddleware` to cap token spending; use `CostTrackerMiddleware` with `WithMaxCostUSD` for hard USD spend caps
 - [ ] Rotate API keys and use `model.SecretStr` to prevent key leakage in logs
 - [ ] Put the Agent Service behind authentication (it has no built-in auth)
 - [ ] Use Redis-backed storage and message bus for multi-instance deployments
 - [ ] Configure `access` policies for multi-tenant resource sharing
 - [ ] Enable `hotreload` to update agent configs without downtime
 - [ ] Use `replay` tapes in CI to test agent behavior deterministically
+- [ ] Configure `GuardrailMiddleware` for output content filtering
 - [ ] Use `AgentPool` with appropriate worker counts for batch workloads
 
 ## See Also

@@ -306,6 +306,7 @@ Production-ready coding agent toolkit:
 - **SSRF Guard** — Dial-time IP resolution blocks loopback/private/link-local addresses (covers DNS rebinding + redirects)
 - **Workspace Jail** — Symlink-aware path confinement to workspace root
 - **Credential Protection** — 40+ dangerous file paths protected (.kube/config, .aws/credentials, .docker/config.json, SSH keys, .gnupg/*)
+- **Output Guardrails** — `GuardrailMiddleware` with Block/Redact/Warn actions for content safety filtering on model responses
 - **Audit Logging** — Structured `audit.Logger` records every tool execution, permission decision, and policy denial (InMemory/File/Multi/Nop backends)
 
 ### Integration Protocols
@@ -452,13 +453,13 @@ pkg/agentscope/
 ├── tool/                   # Tool interface + FunctionTool + 17 built-in tools + safety analysis
 ├── message/                # Msg + ContentBlock (text, thinking, tool_call, tool_result, data, hint)
 ├── event/                  # 30 event types for streaming lifecycle
-├── middleware/             # 7-hook onion chain + tracing, TTS, budget, memory, metrics, cost
+├── middleware/             # 7-hook onion chain + tracing, TTS, budget, memory, metrics, cost, guardrail
 ├── formatter/              # Per-provider message formatting (9 formatters)
 ├── permission/             # 5 modes + Engine + Checker + Rule matching
 ├── pipeline/               # Pipeline (Then/If) + MsgHub (multi-agent routing)
 ├── credential/             # 9 provider credential types + auto-detect from env
 │
-├── replay/                 # Deterministic record/replay of LLM calls
+├── replay/                 # Deterministic record/replay of LLM calls + eval harness
 ├── runtime/                # AgentPool, SessionEngine, AgentManager, BudgetTracker, Harness
 ├── hotreload/              # Typed generic config reloader with file watching
 ├── wasm/                   # WASM sandbox (wasmtime/wasmer/wasm3 backends)
@@ -511,7 +512,7 @@ pkg/agentscope/
 
 ## Examples
 
-41 examples in `examples/`. Run any with `go run ./examples/<name>`.
+46 examples in `examples/`. Run any with `go run ./examples/<name>`.
 
 | Example | Description |
 |---------|-------------|
@@ -553,6 +554,9 @@ pkg/agentscope/
 | `access_control` | Resource sharing across users/groups/orgs |
 | `document_parser` | Parse PDF/Word/Excel/PPT into RAG chunks |
 | `audit_logging` | Sandbox policy enforcement + structured audit trail |
+| `guardrail` | Output content filtering with block/redact/warn actions |
+| `eval_harness` | Replay-based agent evaluation with scorers |
+| `spend_cap` | USD/CNY spend cap with CostTrackerMiddleware |
 | **Deployment** | |
 | `agent_service` | HTTP Agent Service (REST + SSE streaming) |
 | `webui` | Web UI Studio with streaming chat, tool visualization, HITL |
@@ -563,6 +567,10 @@ pkg/agentscope/
 | `edge_sensor` | SensorMiddleware + Watchdog for physical sensors |
 | `edge_serial_robot` | DeviceTool with serial robot arm control |
 | `edge_fleet` | Multi-agent PubSub coordination across devices |
+| **Multi-Agent Games** | |
+| `werewolves` | Multi-agent Werewolves game with role-based behavior |
+| **Tracing** | |
+| `tracing_otlp` | OTLP tracing setup pattern (no OTel SDK dependency) |
 
 ---
 
@@ -600,6 +608,7 @@ Factual comparison of features available in each implementation:
 | **Agent teams** | Yes | Yes |
 | **Pipeline / MsgHub** | Yes | Yes |
 | **Edge/IoT device support** | Yes (`device/` + MQTT PubSub) | No |
+| **Output guardrails** | Yes (`GuardrailMiddleware`) | No |
 
 ---
 
@@ -612,7 +621,7 @@ Detailed documentation is available in the [`docs/`](docs/) directory:
 - [Model Providers](docs/model-providers.md) — Configure 9 LLM providers with examples
 - [Tools](docs/tools.md) — Built-in tools, custom functions, permissions
 - [Middleware](docs/middleware.md) — 7-hook system, tracing, budget, memory
-- [Examples](docs/examples.md) — Full catalog of 36+ runnable examples
+- [Examples](docs/examples.md) — Full catalog of 46 runnable examples
 - [Deployment](docs/deployment.md) — HTTP service, sandboxing, production checklist
 - [Edge Deployment](docs/edge-deployment.md) — Cross-compile, Jetson/RPi quickstart, offline operation
 - [Device Tools](docs/device-tools.md) — Serial/GPIO/CAN/I2C connectors, DeviceTool, Watchdog

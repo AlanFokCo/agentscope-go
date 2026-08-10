@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/agent"
@@ -25,6 +26,7 @@ type RedisFullStorage struct {
 	client    RedisClient
 	keyPrefix string
 	ttl       time.Duration
+	mu        sync.Mutex
 }
 
 // NewRedisFullStorage creates a RedisFullStorage using the same RedisConfig and
@@ -195,6 +197,8 @@ func (s *RedisFullStorage) LoadSession(ctx context.Context, id string) (*Session
 }
 
 func (s *RedisFullStorage) SetSessionTeamID(ctx context.Context, sessionID, teamID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	r, err := s.LoadSession(ctx, sessionID)
 	if err != nil {
 		return err
@@ -268,7 +272,15 @@ func (s *RedisFullStorage) AppendMessage(ctx context.Context, r *MessageRecord) 
 	if err := s.putJSON(ctx, s.key("msg", r.SessionID, r.ID), r); err != nil {
 		return err
 	}
-	// Maintain ordered ID index per session
+	// Store reverse-lookup key for O(1) LoadMessage by ID
+	revKey := s.key("msgrev", r.ID)
+	fullKey := s.key("msg", r.SessionID, r.ID)
+	if err := s.client.Set(ctx, revKey, []byte(fullKey), s.ttl); err != nil {
+		return err
+	}
+	// Maintain ordered ID index per session (lock to prevent race on read-modify-write)
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	idxKey := s.key("msgidx", r.SessionID)
 	var ids []string
 	data, err := s.client.Get(ctx, idxKey)
@@ -280,9 +292,13 @@ func (s *RedisFullStorage) AppendMessage(ctx context.Context, r *MessageRecord) 
 }
 
 func (s *RedisFullStorage) LoadMessage(ctx context.Context, id string) (*MessageRecord, error) {
-	// Scan all message keys (excluding index keys) and find the one with
-	// matching ID suffix. This is O(N) over messages — acceptable because
-	// LoadMessage-by-ID is rare; ListMessages-by-session is the hot path.
+	// Use reverse-lookup key for O(1) access by message ID.
+	revKey := s.key("msgrev", id)
+	fullKeyData, err := s.client.Get(ctx, revKey)
+	if err == nil && len(fullKeyData) > 0 {
+		return getJSON[MessageRecord](ctx, s.client, string(fullKeyData))
+	}
+	// Fallback: scan all message keys (for messages stored before the reverse index).
 	keys, err := s.client.Scan(ctx, s.key("msg", "*"))
 	if err != nil {
 		return nil, fmt.Errorf("redis: scan message: %w", err)

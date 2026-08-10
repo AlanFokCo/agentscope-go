@@ -480,7 +480,7 @@ pkg/agentscope/
 
 ## Ejemplos
 
-41 ejemplos en `examples/`. Ejecuta cualquiera con `go run ./examples/<nombre>`.
+46 ejemplos en `examples/`. Ejecuta cualquiera con `go run ./examples/<nombre>`.
 
 | Ejemplo | Descripción |
 |---------|-------------|
@@ -574,7 +574,7 @@ La documentación detallada está disponible en el directorio [`docs/`](docs/):
 - [Proveedores de Modelos](docs/model-providers.md) — Configura 9 proveedores de LLM con ejemplos
 - [Herramientas](docs/tools.md) — Herramientas integradas, funciones personalizadas, permisos
 - [Middleware](docs/middleware.md) — Sistema de 7 ganchos, tracing, presupuesto, memoria
-- [Ejemplos](docs/examples.md) — Catálogo completo de 41 ejemplos ejecutables
+- [Ejemplos](docs/examples.md) — Catálogo completo de 46 ejemplos ejecutables
 - [Despliegue](docs/deployment.md) — Servicio HTTP, sandboxing, checklist de producción
 
 ## Contribuir

@@ -126,6 +126,107 @@ func TestGuardrail_MultipleRules(t *testing.T) {
 	}
 }
 
+func TestGuardrail_MaxLength_Unicode(t *testing.T) {
+	// MaxLengthRule counts runes, not bytes. "你好世界" is 4 runes, 12 bytes.
+	gm := NewGuardrailMiddleware(
+		MaxLengthRule("max_len", 5, GuardrailBlock),
+	)
+
+	// 4 CJK characters → 4 runes ≤ 5 → should pass.
+	resp, err := gm.OnModelCall(context.Background(), &ModelCallInput{},
+		passThroughHandler(makeResp("你好世界")))
+	if err != nil {
+		t.Fatalf("unexpected error for 4-rune string: %v", err)
+	}
+	if resp == nil {
+		t.Fatal("expected response")
+	}
+
+	// 6 CJK characters → 6 runes > 5 → should block.
+	_, err = gm.OnModelCall(context.Background(), &ModelCallInput{},
+		passThroughHandler(makeResp("你好世界再见")))
+	if err == nil {
+		t.Fatal("expected error for 6-rune string exceeding limit of 5")
+	}
+}
+
+func TestGuardrail_NilResponse(t *testing.T) {
+	gm := NewGuardrailMiddleware(
+		KeywordBlockRule("test", "forbidden"),
+	)
+
+	nilHandler := func(_ context.Context, _ *ModelCallInput) (*model.ChatResponse, error) {
+		return nil, nil
+	}
+
+	resp, err := gm.OnModelCall(context.Background(), &ModelCallInput{}, nilHandler)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp != nil {
+		t.Error("expected nil response")
+	}
+}
+
+func TestGuardrail_ErrorPassThrough(t *testing.T) {
+	gm := NewGuardrailMiddleware(
+		KeywordBlockRule("test", "forbidden"),
+	)
+
+	errHandler := func(_ context.Context, _ *ModelCallInput) (*model.ChatResponse, error) {
+		return nil, errors.New("upstream error")
+	}
+
+	resp, err := gm.OnModelCall(context.Background(), &ModelCallInput{}, errHandler)
+	if err == nil || err.Error() != "upstream error" {
+		t.Fatalf("expected upstream error, got %v", err)
+	}
+	if resp != nil {
+		t.Error("expected nil response on error")
+	}
+}
+
+func TestGuardrail_EmptyRules(t *testing.T) {
+	gm := NewGuardrailMiddleware() // no rules
+
+	resp, err := gm.OnModelCall(context.Background(), &ModelCallInput{},
+		passThroughHandler(makeResp("anything goes")))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if extractResponseText(resp) != "anything goes" {
+		t.Error("response should pass through unchanged with no rules")
+	}
+}
+
+func TestGuardrail_NonTextContent(t *testing.T) {
+	gm := NewGuardrailMiddleware(
+		KeywordBlockRule("test", "forbidden"),
+	)
+
+	// Response with only a ToolResultBlock (no text blocks).
+	resp := &model.ChatResponse{
+		Content: []message.ContentBlock{
+			message.ToolResultBlock{
+				Type:   "tool_result",
+				ID:     "t1",
+				Name:   "bash",
+				Output: "forbidden content here",
+			},
+		},
+		IsLast: true,
+	}
+
+	got, err := gm.OnModelCall(context.Background(), &ModelCallInput{},
+		passThroughHandler(resp))
+	if err != nil {
+		t.Fatalf("unexpected error: non-text content should bypass guardrails, got %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected response")
+	}
+}
+
 func TestGuardrail_CleanPassThrough(t *testing.T) {
 	gm := NewGuardrailMiddleware(
 		KeywordBlockRule("test", "forbidden"),
