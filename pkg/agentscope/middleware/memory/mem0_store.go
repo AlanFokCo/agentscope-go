@@ -8,15 +8,17 @@ import (
 	"time"
 
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/internal/httpx"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 )
 
 const defaultMem0BaseURL = "https://api.mem0.ai/v1"
 
 // Mem0Config holds the configuration for connecting to the mem0 REST API.
 type Mem0Config struct {
-	APIKey     string       // Required. API key for authentication.
-	BaseURL    string       // Base URL of the mem0 API. Default: https://api.mem0.ai/v1
-	HTTPClient *http.Client // Optional custom HTTP client.
+	APIKey       string          // Required. API key for authentication.
+	SecretAPIKey model.SecretStr // Preferred over APIKey. Use model.NewSecretStr(key).
+	BaseURL      string          // Base URL of the mem0 API. Default: https://api.mem0.ai/v1
+	HTTPClient   *http.Client    // Optional custom HTTP client.
 }
 
 // Mem0Store implements MemoryStore by calling the mem0 REST API.
@@ -29,7 +31,8 @@ type Mem0Store struct {
 
 // NewMem0Store creates a new mem0-backed memory store.
 func NewMem0Store(cfg Mem0Config) (*Mem0Store, error) {
-	if cfg.APIKey == "" {
+	apiKey := model.ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
+	if apiKey == "" {
 		return nil, fmt.Errorf("mem0: API key is required")
 	}
 	base := cfg.BaseURL
@@ -41,11 +44,11 @@ func NewMem0Store(cfg Mem0Config) (*Mem0Store, error) {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
 	return &Mem0Store{
-		apiKey:  cfg.APIKey,
+		apiKey:  apiKey,
 		baseURL: base,
 		client:  client,
 		hdrs: map[string]string{
-			"Authorization": "Token " + cfg.APIKey,
+			"Authorization": "Token " + apiKey,
 			"Content-Type":  "application/json",
 		},
 	}, nil

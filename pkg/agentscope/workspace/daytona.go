@@ -10,12 +10,15 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 )
 
 // DaytonaConfig configures a DaytonaWorkspace.
 type DaytonaConfig struct {
 	BaseURL        string
 	APIKey         string
+	SecretAPIKey   model.SecretStr // Preferred over APIKey. Use model.NewSecretStr(key).
 	WorkspaceID    string
 	CommandTimeout time.Duration // default: 30s
 }
@@ -37,7 +40,8 @@ func NewDaytonaWorkspace(cfg DaytonaConfig) (*DaytonaWorkspace, error) {
 	if cfg.BaseURL == "" {
 		return nil, fmt.Errorf("workspace: daytona base URL is required")
 	}
-	if cfg.APIKey == "" {
+	apiKey := model.ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
+	if apiKey == "" {
 		return nil, fmt.Errorf("workspace: daytona API key is required")
 	}
 	if cfg.WorkspaceID == "" {
@@ -51,7 +55,7 @@ func NewDaytonaWorkspace(cfg DaytonaConfig) (*DaytonaWorkspace, error) {
 
 	w := &DaytonaWorkspace{
 		baseURL:     strings.TrimRight(cfg.BaseURL, "/"),
-		apiKey:      cfg.APIKey,
+		apiKey:      apiKey,
 		workspaceID: cfg.WorkspaceID,
 		httpClient:  &http.Client{Timeout: timeout},
 	}

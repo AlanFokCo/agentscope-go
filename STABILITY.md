@@ -125,9 +125,13 @@ Recently landed (since initial hardening):
 - ~~OTLP setup helper~~ **Done:** shipped as `examples/tracing_otlp/` with a
   documented wiring pattern. No OTel SDK dependency added to the library.
 
-Planned (tracked):
+- ~~`exception` package deletion (final)~~ **Done:** package removed entirely.
+  All code uses `errors/` directly.
+- ~~`SecretStr` adoption in TTS/embedding/workspace/hub configs~~ **Done:** all 14
+  remaining config structs gained `SecretAPIKey model.SecretStr` with
+  `ResolveAPIKey()` in constructors. Full coverage across the entire framework.
+- ~~Output guardrails~~ **Done:** `GuardrailMiddleware` with 3 actions
+  (Block/Redact/Warn), rule-based content filtering on model responses. Built-in
+  rules: KeywordBlock, KeywordRedact, MaxLength, Custom. Hooks into `OnModelCall`.
 
-- `exception` package deletion (final): remove the alias package entirely after
-  one more minor version.
-- `SecretStr` adoption in TTS/embedding/workspace/hub configs (v3, lower priority).
-- Output guardrails (content filtering / safety checks on model responses).
+All originally-planned production hardening items are now complete.

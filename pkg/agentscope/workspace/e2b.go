@@ -9,15 +9,18 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 )
 
 const e2bBaseURL = "https://api.e2b.dev"
 
 // E2BConfig configures an E2B cloud sandbox workspace.
 type E2BConfig struct {
-	APIKey   string
-	Template string // sandbox template ID (default: "base")
-	Timeout  time.Duration
+	APIKey       string
+	SecretAPIKey model.SecretStr // Preferred over APIKey. Use model.NewSecretStr(key).
+	Template     string          // sandbox template ID (default: "base")
+	Timeout      time.Duration
 }
 
 // E2BWorkspace provides file and command operations in an E2B cloud sandbox.
@@ -29,7 +32,8 @@ type E2BWorkspace struct {
 
 // NewE2BWorkspace creates a new E2B sandbox.
 func NewE2BWorkspace(ctx context.Context, cfg E2BConfig) (*E2BWorkspace, error) {
-	if cfg.APIKey == "" {
+	apiKey := model.ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
+	if apiKey == "" {
 		return nil, fmt.Errorf("e2b: api key is required")
 	}
 	template := cfg.Template
@@ -42,7 +46,7 @@ func NewE2BWorkspace(ctx context.Context, cfg E2BConfig) (*E2BWorkspace, error) 
 	}
 
 	w := &E2BWorkspace{
-		apiKey: cfg.APIKey,
+		apiKey: apiKey,
 		client: &http.Client{Timeout: timeout},
 	}
 

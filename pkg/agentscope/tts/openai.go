@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 )
 
 // OpenAITTSModel calls OpenAI Audio Speech API (/v1/audio/speech).
@@ -25,6 +27,7 @@ type OpenAITTSModel struct {
 // OpenAITTSConfig configures OpenAITTSModel.
 type OpenAITTSConfig struct {
 	APIKey         string
+	SecretAPIKey   model.SecretStr // Preferred over APIKey. Use model.NewSecretStr(key).
 	BaseURL        string
 	Model          string
 	Voice          string
@@ -36,7 +39,8 @@ type OpenAITTSConfig struct {
 
 // NewOpenAITTSModel creates a TTS model backed by OpenAI Audio Speech API.
 func NewOpenAITTSModel(cfg *OpenAITTSConfig) (*OpenAITTSModel, error) {
-	if cfg.APIKey == "" {
+	apiKey := model.ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
+	if apiKey == "" {
 		return nil, fmt.Errorf("openai-tts: APIKey is required")
 	}
 	if cfg.Model == "" {
@@ -59,7 +63,7 @@ func NewOpenAITTSModel(cfg *OpenAITTSConfig) (*OpenAITTSModel, error) {
 		hc = &http.Client{Timeout: 60 * time.Second}
 	}
 	return &OpenAITTSModel{
-		apiKey:         cfg.APIKey,
+		apiKey:         apiKey,
 		baseURL:        base,
 		model:          cfg.Model,
 		voice:          voice,

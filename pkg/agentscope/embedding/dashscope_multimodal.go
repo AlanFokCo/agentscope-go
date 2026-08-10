@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 )
 
 var multimodalPrefixes = []string{
@@ -60,10 +61,11 @@ type MultimodalInput struct {
 
 // DashScopeMultimodalConfig configures a DashScope multimodal embedding model.
 type DashScopeMultimodalConfig struct {
-	APIKey     string
-	BaseURL    string
-	Model      string
-	HTTPClient *http.Client
+	APIKey       string
+	SecretAPIKey model.SecretStr // Preferred over APIKey. Use model.NewSecretStr(key).
+	BaseURL      string
+	Model        string
+	HTTPClient   *http.Client
 }
 
 // DashScopeMultimodalEmbeddingModel embeds text and DataBlock (images/video)
@@ -78,7 +80,8 @@ type DashScopeMultimodalEmbeddingModel struct {
 
 // NewDashScopeMultimodalEmbeddingModel creates a multimodal embedding model.
 func NewDashScopeMultimodalEmbeddingModel(cfg DashScopeMultimodalConfig) (*DashScopeMultimodalEmbeddingModel, error) {
-	if cfg.APIKey == "" {
+	apiKey := model.ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
+	if apiKey == "" {
 		return nil, fmt.Errorf("embedding: DashScope API key is required")
 	}
 	if cfg.Model == "" {
@@ -92,7 +95,7 @@ func NewDashScopeMultimodalEmbeddingModel(cfg DashScopeMultimodalConfig) (*DashS
 		client = &http.Client{Timeout: 60 * time.Second}
 	}
 	return &DashScopeMultimodalEmbeddingModel{
-		apiKey:  cfg.APIKey,
+		apiKey:  apiKey,
 		baseURL: cfg.BaseURL,
 		model:   cfg.Model,
 		client:  client,

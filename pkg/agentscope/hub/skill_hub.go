@@ -13,14 +13,17 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 )
 
 // SkillHubConfig holds configuration for a skill hub instance.
 type SkillHubConfig struct {
-	BaseURL     string `json:"base_url"`
-	APIKey      string `json:"api_key,omitempty"`
-	HubID       string `json:"hub_id"`
-	DisplayName string `json:"display_name"`
+	BaseURL      string          `json:"base_url"`
+	APIKey       string          `json:"api_key,omitempty"`
+	SecretAPIKey model.SecretStr `json:"secret_api_key,omitempty"` // Preferred over APIKey. Use model.NewSecretStr(key).
+	HubID        string          `json:"hub_id"`
+	DisplayName  string          `json:"display_name"`
 }
 
 // SkillHub implements Hub for skill registries.
@@ -157,8 +160,9 @@ func (h *SkillHub) Close() error {
 }
 
 func (h *SkillHub) setAuth(req *http.Request) {
-	if h.cfg.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+h.cfg.APIKey)
+	apiKey := model.ResolveAPIKey(h.cfg.APIKey, h.cfg.SecretAPIKey)
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 }
 

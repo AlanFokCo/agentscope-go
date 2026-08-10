@@ -10,15 +10,18 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 )
 
 // OpenSandboxConfig configures an OpenSandbox workspace.
 type OpenSandboxConfig struct {
 	BaseURL        string
 	APIKey         string
-	SandboxID      string        // if empty, a new sandbox is created
-	Template       string        // sandbox template (e.g. "default")
-	CommandTimeout time.Duration // default: 60s
+	SecretAPIKey   model.SecretStr // Preferred over APIKey. Use model.NewSecretStr(key).
+	SandboxID      string          // if empty, a new sandbox is created
+	Template       string          // sandbox template (e.g. "default")
+	CommandTimeout time.Duration   // default: 60s
 }
 
 // OpenSandboxWorkspace provides file and command operations via an OpenSandbox REST API.
@@ -38,7 +41,8 @@ func NewOpenSandboxWorkspace(cfg OpenSandboxConfig) (*OpenSandboxWorkspace, erro
 	if cfg.BaseURL == "" {
 		return nil, fmt.Errorf("opensandbox: base URL is required")
 	}
-	if cfg.APIKey == "" {
+	apiKey := model.ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
+	if apiKey == "" {
 		return nil, fmt.Errorf("opensandbox: API key is required")
 	}
 
@@ -49,7 +53,7 @@ func NewOpenSandboxWorkspace(cfg OpenSandboxConfig) (*OpenSandboxWorkspace, erro
 
 	w := &OpenSandboxWorkspace{
 		baseURL:        strings.TrimRight(cfg.BaseURL, "/"),
-		apiKey:         cfg.APIKey,
+		apiKey:         apiKey,
 		commandTimeout: timeout,
 		client:         &http.Client{Timeout: 5 * time.Minute},
 	}

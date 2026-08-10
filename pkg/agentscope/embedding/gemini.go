@@ -6,17 +6,19 @@ import (
 	"net/http"
 
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/internal/httpx"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 )
 
 // GeminiConfig holds configuration for the Gemini embedding model.
 type GeminiConfig struct {
-	APIKey     string
-	BaseURL    string
-	Model      string
-	Dimensions int // 0 = provider default
-	BatchSize  int // 0 = 100
-	HTTPClient *http.Client
-	Cache      EmbeddingCache // optional
+	APIKey       string
+	SecretAPIKey model.SecretStr // Preferred over APIKey. Use model.NewSecretStr(key).
+	BaseURL      string
+	Model        string
+	Dimensions   int // 0 = provider default
+	BatchSize    int // 0 = 100
+	HTTPClient   *http.Client
+	Cache        EmbeddingCache // optional
 }
 
 // GeminiEmbeddingModel implements EmbeddingModel using Google's
@@ -33,7 +35,8 @@ type GeminiEmbeddingModel struct {
 
 // NewGeminiEmbeddingModel creates an embedding model using Google Gemini's API.
 func NewGeminiEmbeddingModel(cfg *GeminiConfig) (*GeminiEmbeddingModel, error) {
-	if cfg.APIKey == "" {
+	apiKey := model.ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
+	if apiKey == "" {
 		return nil, fmt.Errorf("embedding: Gemini API key is required")
 	}
 	if cfg.Model == "" {
@@ -50,7 +53,7 @@ func NewGeminiEmbeddingModel(cfg *GeminiConfig) (*GeminiEmbeddingModel, error) {
 		client = &http.Client{Timeout: defaultEmbeddingTimeout}
 	}
 	return &GeminiEmbeddingModel{
-		apiKey:     cfg.APIKey,
+		apiKey:     apiKey,
 		baseURL:    cfg.BaseURL,
 		model:      cfg.Model,
 		dimensions: cfg.Dimensions,

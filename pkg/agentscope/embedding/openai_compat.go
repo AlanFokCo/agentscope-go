@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/internal/httpx"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 )
 
 const (
@@ -19,6 +20,7 @@ const (
 // Works with OpenAI, DashScope, Ollama, and other compatible providers.
 type OpenAICompatConfig struct {
 	APIKey         string
+	SecretAPIKey   model.SecretStr // Preferred over APIKey. Use model.NewSecretStr(key).
 	BaseURL        string
 	Model          string
 	Dimensions     int  // 0 = provider default
@@ -56,8 +58,9 @@ func newOpenAICompat(cfg *OpenAICompatConfig) (*OpenAICompatEmbeddingModel, erro
 	if batchSize <= 0 {
 		batchSize = defaultBatchSize
 	}
+	apiKey := model.ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
 	return &OpenAICompatEmbeddingModel{
-		apiKey:         cfg.APIKey,
+		apiKey:         apiKey,
 		baseURL:        cfg.BaseURL,
 		model:          cfg.Model,
 		dimensions:     cfg.Dimensions,
@@ -70,7 +73,7 @@ func newOpenAICompat(cfg *OpenAICompatConfig) (*OpenAICompatEmbeddingModel, erro
 
 // NewOpenAIEmbeddingModel creates an embedding model using OpenAI's API.
 func NewOpenAIEmbeddingModel(cfg *OpenAICompatConfig) (*OpenAICompatEmbeddingModel, error) {
-	if cfg.APIKey == "" {
+	if model.ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey) == "" {
 		return nil, fmt.Errorf("embedding: OpenAI API key is required")
 	}
 	if cfg.BaseURL == "" {
@@ -85,7 +88,7 @@ func NewOpenAIEmbeddingModel(cfg *OpenAICompatConfig) (*OpenAICompatEmbeddingMod
 // NewDashScopeEmbeddingModel creates an embedding model using DashScope's
 // OpenAI-compatible API.
 func NewDashScopeEmbeddingModel(cfg *OpenAICompatConfig) (*OpenAICompatEmbeddingModel, error) {
-	if cfg.APIKey == "" {
+	if model.ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey) == "" {
 		return nil, fmt.Errorf("embedding: DashScope API key is required")
 	}
 	if cfg.BaseURL == "" {

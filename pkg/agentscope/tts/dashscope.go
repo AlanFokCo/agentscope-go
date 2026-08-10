@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/internal/httpx"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 )
 
 const (
@@ -20,11 +21,12 @@ const (
 
 // DashScopeConfig holds configuration for the DashScope TTS model.
 type DashScopeConfig struct {
-	APIKey     string
-	BaseURL    string // default: https://dashscope.aliyuncs.com
-	Model      string // e.g. "qwen3-tts-flash"
-	Voice      string // e.g. "Cherry"
-	HTTPClient *http.Client
+	APIKey       string
+	SecretAPIKey model.SecretStr // Preferred over APIKey. Use model.NewSecretStr(key).
+	BaseURL      string          // default: https://dashscope.aliyuncs.com
+	Model        string          // e.g. "qwen3-tts-flash"
+	Voice        string          // e.g. "Cherry"
+	HTTPClient   *http.Client
 }
 
 // DashScopeTTSModel implements the Model interface using DashScope's
@@ -39,7 +41,8 @@ type DashScopeTTSModel struct {
 
 // NewDashScopeTTSModel creates a DashScope TTS model.
 func NewDashScopeTTSModel(cfg DashScopeConfig) (*DashScopeTTSModel, error) {
-	if cfg.APIKey == "" {
+	apiKey := model.ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
+	if apiKey == "" {
 		return nil, fmt.Errorf("tts: DashScope API key is required")
 	}
 	if cfg.Model == "" {
@@ -56,7 +59,7 @@ func NewDashScopeTTSModel(cfg DashScopeConfig) (*DashScopeTTSModel, error) {
 		client = &http.Client{Timeout: defaultTTSTimeout}
 	}
 	return &DashScopeTTSModel{
-		apiKey:  cfg.APIKey,
+		apiKey:  apiKey,
 		baseURL: cfg.BaseURL,
 		model:   cfg.Model,
 		voice:   cfg.Voice,

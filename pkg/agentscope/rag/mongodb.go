@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 )
 
 // Compile-time interface check.
@@ -15,13 +17,14 @@ var _ Index = (*MongoDBIndex)(nil)
 
 // MongoDBConfig configures a MongoDB Atlas vector store backend via the Data API.
 type MongoDBConfig struct {
-	URI        string // unused for Data API, kept for future driver-based impl
-	Database   string
-	Collection string
-	IndexName  string // vector search index name
-	Dims       int
-	BaseURL    string // Atlas Data API base URL (e.g. "https://data.mongodb-api.com/app/<appID>/endpoint/data/v1")
-	APIKey     string // Atlas Data API key
+	URI          string // unused for Data API, kept for future driver-based impl
+	Database     string
+	Collection   string
+	IndexName    string // vector search index name
+	Dims         int
+	BaseURL      string          // Atlas Data API base URL (e.g. "https://data.mongodb-api.com/app/<appID>/endpoint/data/v1")
+	APIKey       string          // Atlas Data API key
+	SecretAPIKey model.SecretStr // Preferred over APIKey. Use model.NewSecretStr(key).
 }
 
 // MongoDBIndex implements the Index interface using MongoDB Atlas Data API
@@ -46,6 +49,7 @@ func NewMongoDBIndex(cfg *MongoDBConfig, embedder Embedder) (*MongoDBIndex, erro
 	if cfg.IndexName == "" {
 		cfg.IndexName = "vector_index"
 	}
+	cfg.APIKey = model.ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("mongodb: APIKey is required")
 	}

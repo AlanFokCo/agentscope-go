@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 )
 
 // GeminiTTSModel calls the Google Gemini generateContent API with audio
@@ -24,6 +26,7 @@ type GeminiTTSModel struct {
 // GeminiTTSConfig configures GeminiTTSModel.
 type GeminiTTSConfig struct {
 	APIKey       string
+	SecretAPIKey model.SecretStr // Preferred over APIKey. Use model.NewSecretStr(key).
 	Model        string
 	Voice        string
 	SpeakingRate float64
@@ -32,7 +35,8 @@ type GeminiTTSConfig struct {
 
 // NewGeminiTTSModel creates a TTS model backed by the Gemini generateContent API.
 func NewGeminiTTSModel(cfg GeminiTTSConfig) (*GeminiTTSModel, error) {
-	if cfg.APIKey == "" {
+	apiKey := model.ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
+	if apiKey == "" {
 		return nil, fmt.Errorf("gemini-tts: APIKey is required")
 	}
 	model := cfg.Model
@@ -52,7 +56,7 @@ func NewGeminiTTSModel(cfg GeminiTTSConfig) (*GeminiTTSModel, error) {
 		hc = &http.Client{Timeout: 120 * time.Second}
 	}
 	return &GeminiTTSModel{
-		apiKey:       cfg.APIKey,
+		apiKey:       apiKey,
 		model:        model,
 		voice:        voice,
 		speakingRate: rate,

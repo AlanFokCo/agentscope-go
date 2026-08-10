@@ -10,14 +10,17 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 )
 
 // MCPHubConfig holds configuration for an MCP hub instance.
 type MCPHubConfig struct {
-	BaseURL     string `json:"base_url"`
-	APIKey      string `json:"api_key,omitempty"`
-	HubID       string `json:"hub_id"`
-	DisplayName string `json:"display_name"`
+	BaseURL      string          `json:"base_url"`
+	APIKey       string          `json:"api_key,omitempty"`
+	SecretAPIKey model.SecretStr `json:"secret_api_key,omitempty"` // Preferred over APIKey. Use model.NewSecretStr(key).
+	HubID        string          `json:"hub_id"`
+	DisplayName  string          `json:"display_name"`
 }
 
 // MCPHub implements Hub for MCP server registries.
@@ -160,7 +163,8 @@ func (h *MCPHub) Close() error {
 }
 
 func (h *MCPHub) setAuth(req *http.Request) {
-	if h.cfg.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+h.cfg.APIKey)
+	apiKey := model.ResolveAPIKey(h.cfg.APIKey, h.cfg.SecretAPIKey)
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 }

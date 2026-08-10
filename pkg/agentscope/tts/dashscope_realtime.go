@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 	"github.com/sirupsen/logrus"
 )
 
@@ -17,11 +18,12 @@ const dashScopeRealtimeTTSURL = "https://dashscope.aliyuncs.com/api/v1/services/
 
 // DashScopeRealtimeConfig configures a DashScope realtime TTS model.
 type DashScopeRealtimeConfig struct {
-	APIKey  string
-	Model   string // e.g. "cosyvoice-v2"
-	Voice   string // e.g. "longxiaochun"
-	Format  string // e.g. "pcm", "mp3"
-	BaseURL string
+	APIKey       string
+	SecretAPIKey model.SecretStr // Preferred over APIKey. Use model.NewSecretStr(key).
+	Model        string          // e.g. "cosyvoice-v2"
+	Voice        string          // e.g. "longxiaochun"
+	Format       string          // e.g. "pcm", "mp3"
+	BaseURL      string
 }
 
 // DashScopeRealtimeTTS implements RealtimeModel using DashScope's streaming API.
@@ -36,6 +38,7 @@ type DashScopeRealtimeTTS struct {
 
 // NewDashScopeRealtimeTTS creates a realtime TTS model.
 func NewDashScopeRealtimeTTS(cfg *DashScopeRealtimeConfig) *DashScopeRealtimeTTS {
+	cfg.APIKey = model.ResolveAPIKey(cfg.APIKey, cfg.SecretAPIKey)
 	if cfg.Model == "" {
 		cfg.Model = "cosyvoice-v2"
 	}
