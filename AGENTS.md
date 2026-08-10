@@ -8,7 +8,7 @@ A Go port of the Python [AgentScope](https://github.com/agentscope-ai/agentscope
 
 - **Module path: `github.com/alanfokco/agentscope-go/v2`** (v2+ line). Imports use `github.com/alanfokco/agentscope-go/v2/pkg/agentscope/...`. Latest tag: **`v2.1.0`**.
 - Library under `pkg/agentscope/`; runnable demos under `examples/`.
-- `go.mod` says `go 1.26.0` — keep code **Go 1.26+ compatible** (the minimum version declared in `go.mod`).
+- `go.mod` says `go 1.25.0` — keep code **Go 1.25+ compatible** (the minimum version declared in `go.mod`).
 - Python reference (for design parity) at `/Users/alanfokco/Github/agentscope/`.
 
 ## Build / test / lint

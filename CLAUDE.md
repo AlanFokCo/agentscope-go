@@ -10,7 +10,7 @@ See `STABILITY.md` for the API-stability policy, stability tiers, and the produc
 
 Python reference code is at `/Users/alanfokco/Github/agentscope/` (main branch). When adding features, check the Python implementation first for design consistency.
 
-`go.mod` declares `go 1.26.0`. Keep code compatible with Go 1.26+ (the minimum version in `go.mod`).
+`go.mod` declares `go 1.25.0`. Keep code compatible with Go 1.25+ (the minimum version in `go.mod`).
 
 ## Common commands
 

@@ -1,6 +1,6 @@
 module github.com/alanfokco/agentscope-go/v2
 
-go 1.26.0
+go 1.25.0
 
 require (
 	github.com/eclipse/paho.mqtt.golang v1.5.1
