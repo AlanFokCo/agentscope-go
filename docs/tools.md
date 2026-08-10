@@ -96,7 +96,7 @@ The `rag/parser` package converts common file formats into `rag.Document` slices
 ### Usage
 
 ```go
-import "github.com/alanfokco/agentscope-go/pkg/agentscope/rag/parser"
+import "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/rag/parser"
 
 // Parse a PDF into document chunks
 p := &parser.PDFParser{Cfg: parser.DefaultChunkConfig()}
@@ -160,9 +160,11 @@ results, _ := index.Query(ctx, "search query", 10)
 ### QdrantIndex
 
 ```go
+// Requires a *qdrant.Client from github.com/qdrant/go-client/qdrant
+qdrantClient, _ := qdrant.NewClient(&qdrant.Config{Host: "localhost", Port: 6334})
 index, _ := rag.NewQdrantIndex(rag.QdrantConfig{
-    URL:            "http://localhost:6333",
-    CollectionName: "my-docs",
+    Client:     qdrantClient,
+    Collection: "my-docs",
 })
 ```
 
@@ -171,11 +173,12 @@ index, _ := rag.NewQdrantIndex(rag.QdrantConfig{
 Combines embedding generation with Qdrant storage — no need to pre-compute vectors:
 
 ```go
+qdrantClient, _ := qdrant.NewClient(&qdrant.Config{Host: "localhost", Port: 6334})
 embedder, _ := embedding.NewOpenAIEmbeddingModel(...)
 index, _ := rag.NewQdrantTextIndex(rag.QdrantTextConfig{
-    URL:            "http://localhost:6333",
-    CollectionName: "my-docs",
-    Embedder:       embedder,
+    Client:     qdrantClient,
+    Collection: "my-docs",
+    Embedder:   embedder,
 })
 // AddDocuments automatically embeds text before storing
 index.AddDocuments(ctx, docs)
@@ -225,7 +228,7 @@ Attach middleware to individual tools:
 ```go
 type AuditMiddleware struct{}
 
-func (m *AuditMiddleware) Wrap(ctx context.Context, name string, input map[string]any, next tool.ToolHandler) (*tool.ToolResponse, error) {
+func (m *AuditMiddleware) Wrap(ctx context.Context, name string, input map[string]any, next tool.ToolHandler) (any, error) {
     log.Printf("tool %s called with %v", name, input)
     return next(ctx, name, input)
 }

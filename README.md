@@ -13,12 +13,12 @@
   &nbsp;|&nbsp;
   <a href="https://github.com/agentscope-ai/agentscope-java">☕ Java</a>
   &nbsp;|&nbsp;
-  <a href="README_zh.md">中文</a>
+  <a href="README.es-ES.md">Español</a>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License" />
-  <img src="https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go" alt="Go 1.22+" />
+  <img src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go" alt="Go 1.25+" />
   <a href="https://pkg.go.dev/github.com/alanfokco/agentscope-go/v2/pkg/agentscope"><img src="https://pkg.go.dev/badge/github.com/alanfokco/agentscope-go/v2/pkg/agentscope.svg" alt="Go Reference" /></a>
 </p>
 
@@ -87,7 +87,8 @@ pool := runtime.NewAgentPool(
 )
 defer pool.Close()
 
-result := pool.Submit(ctx, "Summarize this document...")
+resultCh, _ := pool.Submit(ctx, "Summarize this document...")
+result := <-resultCh
 fmt.Println(result.Output.GetTextContent("\n"))
 ```
 
@@ -186,7 +187,7 @@ All providers support `Chat`, `ChatStream` (SSE), `CountTokens`, and native tool
 | **Moonshot** | `model.NewMoonshotChatModel` | kimi-k2.6, moonshot-v1-128k |
 | **xAI** | `model.NewXAIChatModel` | grok-3, grok-4.3 |
 
-51 model cards with context sizes, capabilities, and status are bundled via `//go:embed`.
+54 model cards with context sizes, capabilities, and status are bundled via `//go:embed`.
 
 Additional model features: `FallbackChatModel` (automatic primary→fallback failover), `ClientOptions` (custom HTTP timeout/headers/transport), extended thinking with budget tokens, audio caption streaming (PCM→WAV).
 
@@ -349,7 +350,7 @@ Cross-compiles to arm64/arm/mips64le/riscv64. Stripped binary ~6MB.
 
 ## Quick Start
 
-**Requirements:** Go 1.22+
+**Requirements:** Go 1.25+
 
 ```bash
 go get github.com/alanfokco/agentscope-go/v2/pkg/agentscope
@@ -447,10 +448,10 @@ a := agent.NewUnifiedAgent("bot", "...", cm,
 ```
 pkg/agentscope/
 ├── agent/                  # Agent interface + UnifiedAgent, UserAgent, A2AAgent
-├── model/                  # ChatModel interface + 9 providers + 51 model cards
-├── tool/                   # Tool interface + FunctionTool + 10 built-in tools + safety analysis
+├── model/                  # ChatModel interface + 9 providers + 54 model cards
+├── tool/                   # Tool interface + FunctionTool + 17 built-in tools + safety analysis
 ├── message/                # Msg + ContentBlock (text, thinking, tool_call, tool_result, data, hint)
-├── event/                  # 28 event types for streaming lifecycle
+├── event/                  # 30 event types for streaming lifecycle
 ├── middleware/             # 7-hook onion chain + tracing, TTS, budget, memory, metrics, cost
 ├── formatter/              # Per-provider message formatting (9 formatters)
 ├── permission/             # 5 modes + Engine + Checker + Rule matching
@@ -474,6 +475,7 @@ pkg/agentscope/
 ├── tts/                    # 3 providers: DashScope, OpenAI, Gemini
 ├── embedding/              # 4 providers + batch + cache + multimodal
 │
+├── audit/                  # Structured audit logging (InMemory/File/Multi/Nop)
 ├── mcp/                    # MCP client (Stdio + HTTP) + MCP server
 ├── team/                   # Agent teams with leader/worker coordination
 ├── service/                # HTTP agent service + SSE + AG-UI protocol
@@ -502,14 +504,14 @@ pkg/agentscope/
 ├── types/                  # Shared type definitions
 ├── agenttest/              # Test helpers and mocks
 ├── exception/              # Exception handling
-└── internal/               # httpx (HTTP+SSE helper), jsonx (repair)
+└── internal/               # fsutil (atomic writes), httpsec (SSRF guard), httpx (HTTP+SSE), jsonx (repair)
 ```
 
 ---
 
 ## Examples
 
-36+ examples in `examples/`. Run any with `go run ./examples/<name>`.
+41 examples in `examples/`. Run any with `go run ./examples/<name>`.
 
 | Example | Description |
 |---------|-------------|
@@ -542,7 +544,7 @@ pkg/agentscope/
 | `a2a_http` | Agent-to-Agent over HTTP |
 | **Go-Exclusive** | |
 | `replay` | Record LLM calls, replay in CI without API costs |
-| `pool` | Fan-out agent pool with backpressure |
+| `agent_pool` | Fan-out agent pool with backpressure |
 | `hotreload` | Zero-downtime config updates with typed `Reloader[T]` |
 | `wasm_sandbox` | WASM tool sandbox with memory/time limits |
 | `grpc_a2a` | TCP agent mesh with bidirectional streaming |

@@ -19,4 +19,3 @@ If this feature exists in the Python AgentScope project, link the relevant code 
 
 **Additional context**
 Any other context or screenshots.
-FEATEOF'

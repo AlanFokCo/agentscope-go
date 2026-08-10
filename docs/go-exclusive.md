@@ -24,13 +24,13 @@ import (
     "encoding/json"
     "os"
 
-    "github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
-    "github.com/alanfokco/agentscope-go/pkg/agentscope/model"
-    "github.com/alanfokco/agentscope-go/pkg/agentscope/replay"
+    "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/agent"
+    "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
+    "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/replay"
 )
 
 func main() {
-    cm, _ := model.NewDashScopeChatModel(&model.DashScopeConfig{
+    cm, _ := model.NewDashScopeChatModel(model.DashScopeConfig{
         APIKey: os.Getenv("DASHSCOPE_API_KEY"),
         Model:  "qwen-plus",
     })
@@ -100,13 +100,13 @@ import (
     "fmt"
     "sync"
 
-    "github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
-    "github.com/alanfokco/agentscope-go/pkg/agentscope/model"
-    "github.com/alanfokco/agentscope-go/pkg/agentscope/runtime"
+    "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/agent"
+    "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
+    "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/runtime"
 )
 
 func main() {
-    cm, _ := model.NewDashScopeChatModel(&model.DashScopeConfig{
+    cm, _ := model.NewDashScopeChatModel(model.DashScopeConfig{
         APIKey: "sk-...",
         Model:  "qwen-plus",
     })
@@ -121,7 +121,6 @@ func main() {
     )
 
     ctx := context.Background()
-    pool.Start(ctx)
     defer pool.Close()
 
     // Fan out 100 classification tasks
@@ -130,7 +129,7 @@ func main() {
     var wg sync.WaitGroup
     for _, input := range inputs {
         wg.Add(1)
-        resultCh := pool.Submit(ctx, input)
+        resultCh, _ := pool.Submit(ctx, input)
         go func(ch <-chan runtime.PoolResult) {
             defer wg.Done()
             res := <-ch
@@ -169,7 +168,7 @@ import (
     "fmt"
     "time"
 
-    "github.com/alanfokco/agentscope-go/pkg/agentscope/hotreload"
+    "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/hotreload"
 )
 
 type AgentConfig struct {
@@ -188,7 +187,7 @@ func main() {
     })
 
     // Create a typed config reloader
-    reloader, _ := hotreload.NewReloader[AgentConfig]("config/agent.json", w,
+    reloader, _ := hotreload.NewReloader[AgentConfig](w, "config/agent.json",
         hotreload.WithOnChange(func(old, new_ *AgentConfig) {
             fmt.Printf("Config updated: model %s → %s\n", old.Model, new_.Model)
         }),
@@ -232,7 +231,7 @@ import (
     "fmt"
     "time"
 
-    "github.com/alanfokco/agentscope-go/pkg/agentscope/wasm"
+    "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/wasm"
 )
 
 func main() {
@@ -289,7 +288,7 @@ import (
     "fmt"
     "time"
 
-    mesh "github.com/alanfokco/agentscope-go/pkg/agentscope/a2a/grpc"
+    mesh "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/a2a/grpc"
 )
 
 func main() {
@@ -315,17 +314,14 @@ func main() {
     client, _ := mesh.NewClient(server.Addr())
     defer client.Close()
 
-    // Send a message
-    client.Send(ctx, &mesh.Message{
+    // Send a message and receive the response
+    resp, _ := client.Send(ctx, &mesh.Message{
         ID:      "req-1",
         From:    "client-agent",
         To:      "server-agent",
         Method:  "ask",
         Payload: json.RawMessage(`{"question": "meaning of life"}`),
     })
-
-    // Receive the response
-    resp, _ := client.Receive(ctx)
     fmt.Printf("Response: %s\n", string(resp.Payload))
 }
 ```
@@ -357,13 +353,13 @@ import (
     "fmt"
     "time"
 
-    "github.com/alanfokco/agentscope-go/pkg/agentscope/agent"
-    "github.com/alanfokco/agentscope-go/pkg/agentscope/bench"
-    "github.com/alanfokco/agentscope-go/pkg/agentscope/model"
+    "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/agent"
+    "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/bench"
+    "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 )
 
 func main() {
-    cm, _ := model.NewDashScopeChatModel(&model.DashScopeConfig{
+    cm, _ := model.NewDashScopeChatModel(model.DashScopeConfig{
         APIKey: "sk-...",
         Model:  "qwen-plus",
     })

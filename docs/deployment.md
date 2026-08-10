@@ -7,7 +7,7 @@ agentscope-go includes a built-in HTTP Agent Service for deploying agents as web
 ### Basic Setup
 
 ```go
-svc := service.New(&service.Config{
+svc := service.New(service.Config{
     Addr:           ":8080",
     AllowedOrigins: []string{"*"},
 }, chatModel, func(name, prompt string, _ model.ChatModel) *agent.UnifiedAgent {
@@ -60,12 +60,12 @@ For untrusted tool execution, use isolated workspaces:
 ### Docker Workspace
 
 ```go
-ws, _ := workspace.NewDockerWorkspace(&workspace.DockerConfig{
-    Image:      "python:3.11-slim",
-    WorkingDir: "/workspace",
+ws, _ := workspace.NewDockerWorkspace(ctx, &workspace.DockerWorkspaceConfig{
+    Image:   "python:3.11-slim",
+    WorkDir: "/workspace",
 })
-backend := workspace.NewDockerBackend(ws)
-bashTool := tool.BashToolWithBackend(backend)
+backend := workspace.NewToolBackend(ws)
+// Use backend with tool context routing
 ```
 
 ### Kubernetes Workspace
@@ -74,12 +74,14 @@ Run agent tool execution inside ephemeral Kubernetes Pods:
 
 ```go
 ws, _ := workspace.NewK8sWorkspace(&workspace.K8sConfig{
-    Namespace:  "agent-sandbox",
-    Image:      "python:3.11-slim",
-    KubeConfig: "/path/to/kubeconfig",
+    Namespace: "agent-sandbox",
+    PodName:   "agent-sandbox-pod",
+    Image:     "python:3.11-slim",
+    APIServer: "https://kubernetes.default.svc",
+    Token:     os.Getenv("K8S_TOKEN"),
 })
-backend := workspace.NewK8sBackend(ws)
-bashTool := tool.BashToolWithBackend(backend)
+backend := workspace.NewToolBackend(ws)
+// Use backend with tool context routing
 ```
 
 ### OpenSandbox Workspace
@@ -87,10 +89,10 @@ bashTool := tool.BashToolWithBackend(backend)
 Use the OpenSandbox API for fully managed cloud sandboxes:
 
 ```go
-ws, _ := workspace.NewOpenSandboxWorkspace(&workspace.OpenSandboxConfig{
-    APIKey:  os.Getenv("OPENSANDBOX_API_KEY"),
-    BaseURL: "https://api.opensandbox.dev",
-    Image:   "python:3.11",
+ws, _ := workspace.NewOpenSandboxWorkspace(workspace.OpenSandboxConfig{
+    APIKey:   os.Getenv("OPENSANDBOX_API_KEY"),
+    BaseURL:  "https://api.opensandbox.dev",
+    Template: "python:3.11",
 })
 ```
 
@@ -99,10 +101,10 @@ ws, _ := workspace.NewOpenSandboxWorkspace(&workspace.OpenSandboxConfig{
 Leverage Daytona for development-oriented sandbox environments:
 
 ```go
-ws, _ := workspace.NewDaytonaWorkspace(&workspace.DaytonaConfig{
-    ServerURL: "https://daytona.example.com",
-    APIKey:    os.Getenv("DAYTONA_API_KEY"),
-    Image:     "ubuntu:22.04",
+ws, _ := workspace.NewDaytonaWorkspace(workspace.DaytonaConfig{
+    BaseURL:     "https://daytona.example.com",
+    APIKey:      os.Getenv("DAYTONA_API_KEY"),
+    WorkspaceID: "my-workspace",
 })
 ```
 
@@ -111,9 +113,9 @@ ws, _ := workspace.NewDaytonaWorkspace(&workspace.DaytonaConfig{
 On macOS, use Apple's Container framework for lightweight native isolation:
 
 ```go
-ws, _ := workspace.NewAppleContainerWorkspace(&workspace.AppleContainerConfig{
-    Image:      "swift:latest",
-    WorkingDir: "/workspace",
+ws, _ := workspace.NewAppleContainerWorkspace(workspace.AppleContainerConfig{
+    Image: "swift:latest",
+    Name:  "agent-sandbox",
 })
 ```
 
@@ -122,10 +124,9 @@ ws, _ := workspace.NewAppleContainerWorkspace(&workspace.AppleContainerConfig{
 Minimal Linux sandboxing via `bwrap` without needing Docker:
 
 ```go
-ws, _ := workspace.NewBubblewrapWorkspace(&workspace.BubblewrapConfig{
-    AllowedPaths: []string{"/usr", "/lib", "/tmp"},
-    ReadOnlyRoot: true,
-    UnshareNet:   true,
+ws, _ := workspace.NewBubblewrapWorkspace(workspace.BubblewrapConfig{
+    RootDir:      "/tmp/agent-sandbox",
+    AllowNetwork: false,
 })
 ```
 
@@ -186,7 +187,7 @@ type AgentConfig struct {
     Tools        []string `json:"tools"`
 }
 
-reloader, _ := hotreload.NewReloader[AgentConfig]("config/agent.json", w,
+reloader, _ := hotreload.NewReloader[AgentConfig](w, "config/agent.json",
     hotreload.WithOnChange(func(old, new_ *AgentConfig) {
         log.Printf("Prompt changed: %q -> %q", old.SystemPrompt, new_.SystemPrompt)
     }),
@@ -210,12 +211,11 @@ pool := runtime.NewAgentPool(
     runtime.Workers(8),
     runtime.QueueSize(100),
 )
-pool.Start(ctx)
 defer pool.Close()
 
 // Submit work items
 for _, item := range workItems {
-    result := pool.Submit(ctx, item)
+    result, _ := pool.Submit(ctx, item)
     go func(r <-chan runtime.PoolResult) {
         res := <-r
         if res.Err != nil {

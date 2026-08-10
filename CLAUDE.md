@@ -10,7 +10,7 @@ See `STABILITY.md` for the API-stability policy, stability tiers, and the produc
 
 Python reference code is at `/Users/alanfokco/Github/agentscope/` (main branch). When adding features, check the Python implementation first for design consistency.
 
-`go.mod` declares `go 1.25.0`, but `CONTRIBUTING.md` asks contributors to keep the code compatible with **Go 1.22+**. Don't reach for `>=1.23` standard-library features without checking.
+`go.mod` declares `go 1.25.0`. Keep code compatible with Go 1.25+ (the minimum version in `go.mod`).
 
 ## Common commands
 
@@ -68,7 +68,7 @@ Git lives on **builder** (`root@builder:/opt/Projects/agentscope-go`), not local
 
 ## Architecture
 
-The package layout intentionally mirrors the Python project (see `docs/migration_from_python.md` for the full mapping). Each subpackage exposes a small interface plus one or more concrete implementations:
+The package layout intentionally mirrors the Python project. Each subpackage exposes a small interface plus one or more concrete implementations:
 
 ### Core
 
@@ -147,7 +147,7 @@ The package layout intentionally mirrors the Python project (see `docs/migration
 - **`embedding`** — `Embedder` interface, `FileEmbeddingCache`, model cards via `//go:embed` YAML.
 - **`tts`** — `TTSModel` + `RealtimeTTSModel` interfaces. DashScope + CosyVoice implementations. Model cards via `//go:embed` YAML.
 - **`mcp`** — MCP client (Stdio + HTTP). Name validation (`^[a-zA-Z0-9_-]+$`), execution timeout wiring.
-- **`workspace`** — `Workspace` interface + `LocalWorkspace`, `DockerWorkspace`, `E2BWorkspace`. `ManagedWorkspace` extends with MCP/Skill management (`.mcp.json` persistence, `skills/` directory). `Offloader` interface.
+- **`workspace`** — `Workspace` interface + 8 backends: `LocalWorkspace`, `DockerWorkspace`, `E2BWorkspace`, `K8sWorkspace`, `OpenSandboxWorkspace`, `DaytonaWorkspace`, `AppleContainerWorkspace`, `BubblewrapWorkspace`. `ManagedWorkspace` extends with MCP/Skill management (`.mcp.json` persistence, `skills/` directory). `ToolBackend` adapts any Workspace into a `tool.Backend`.
 - **`permission`** — `Engine` with 5 modes (default, accept_edits, explore, bypass, dont_ask). `Checker` interface embedded by `Tool`. `Decision` with bypass-immune safety checks.
 - **`storage`** — `InMemoryStorage`, `FileStorage`, `RedisStorage` for agent state persistence. All file-backed writes go through **`internal/fsutil.WriteFileAtomic`** (temp + fsync + rename) so a crash mid-write cannot corrupt state.
 - **`internal/fsutil`** — `WriteFileAtomic`. **`internal/httpsec`** — `Harden(*http.Server)` (ReadHeaderTimeout/IdleTimeout/MaxHeaderBytes) + `LimitBody` (MaxBytesReader) for the HTTP servers.

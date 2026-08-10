@@ -16,9 +16,8 @@ consistent.
    - Create a feature branch from `main` (for example: `feat/rag-qdrant`, `fix/react-agent-loop`).
 
 2. **Go version**
-   - The module currently targets **Go 1.25** in `go.mod`.
-   - In practice, Go **1.22+** should work for most users; please keep code compatible with
-     the minimum version stated in `go.mod`.
+   - The module requires **Go 1.25+** as declared in `go.mod`.
+   - Please keep code compatible with Go 1.25 (the minimum version in `go.mod`).
 
 3. **Dependencies**
    - Use the standard Go module tooling:
@@ -111,7 +110,7 @@ consistent.
   - Prefer to add a **small, focused example** under `examples/` that demonstrates how to
     use the new capability in a realistic way.
   - If the feature maps to a Python AgentScope capability, briefly mention the mapping in
-    `docs/migration_from_python.md`.
+    the relevant `docs/` guide or in the PR description.
 
 ### Commit & PR guidelines
 

@@ -90,7 +90,7 @@ pkg/agentscope/
 │   └── append_event.go    # Event-to-message accumulation
 │
 ├── event/                 # Streaming event system
-│   └── event.go           # 28 event types (reply, model, text, thinking, data, tool, HITL)
+│   └── event.go           # 30 event types (reply, model, text, thinking, data, tool, HITL, sandbox)
 │
 ├── middleware/             # Agent middleware
 │   ├── middleware.go       # Middleware interface (7 hooks), chain builders

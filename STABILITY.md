@@ -5,19 +5,12 @@ production-hardening status of the library.
 
 ## Versioning
 
-The module path is `github.com/alanfokco/agentscope-go` (a v0/v1 path).
+The module path is `github.com/alanfokco/agentscope-go/v2`. The latest release
+tag is `v2.1.0`. Consumers import as:
 
-> **Action required (maintainer decision):** git tags `v2.x` exist, but because the
-> module path lacks a `/v2` suffix, `go get ...@latest` resolves to the highest
-> valid v0/v1 tag (currently `v1.1.0`) and **ignores** the v2 tags. Additionally
-> `v2.0.3.1` is not valid semver. Pick one:
->
-> 1. **Commit to v2:** change the module path to `github.com/alanfokco/agentscope-go/v2`,
->    update all internal import paths, and re-tag `v2.x.y`. Consumers then
->    `import ".../v2/pkg/agentscope"`.
-> 2. **Stay on v1:** delete the malformed `v2.*` tags and continue tagging `v1.x.y`.
->
-> Until this is resolved, pin an explicit version rather than relying on `@latest`.
+```go
+import "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
+```
 
 ## Stability tiers
 
@@ -86,19 +79,25 @@ Landed:
   via circuit breaker), PubSub interface + MQTT adapter (build tag: mqtt),
   Device framework (Serial/GPIO/CAN/I2C pure-Go drivers + DeviceTool + Watchdog +
   SensorMiddleware), cross-arch CI (arm64/arm/mips64le/riscv64), binary ~6MB.
-Planned (tracked):
+Recently landed (since initial hardening):
 
 - ~~Full tool-in-sandbox execution.~~ **Done:** `workspace.ToolBackend` adapter
   (Workspace → `tool.Backend`); Bash, read, write, and edit all route through a
   configured backend using workspace-relative paths. Wire with
   `tool.WithBackend(ctx, workspace.NewToolBackend(ws))` for real Docker/E2B
   isolation; the rich local path (streaming/cwd/read-cache) is the default.
-- Shipped Prometheus/OTLP exporter + `/metrics` + trace-context propagation;
-  `ctx` threaded through `loop.Hook` so spans nest under the caller.
+- ~~Prometheus exporter + `/metrics` + trace-context propagation~~ **Done:**
+  `metrics/prometheus` provider; `ctx` threaded through `loop.Hook` so spans
+  nest under the caller.
+- ~~JSON-Schema input validation~~ **Done:** `tool.ValidateInput` with fuzz target.
+- ~~Module `/v2` decision~~ **Done:** module path is now `/v2`.
+
+Planned (tracked):
+
+- Dedicated OTLP exporter package (currently uses OTel API; no built-in OTLP
+  export — bring your own `otelgrpc`/`otelhttp` exporter).
 - Durable `FullStorage` (credentials/agents/schedules), session-history persistence
   and resume, schema versioning, reference Redis adapter.
-- USD spend cap (model-card pricing), JSON-Schema input validation, output
-  guardrails.
-- Anthropic prompt-caching write path; record/replay + eval harness. (MultiEdit
-  and ApplyPatch tools landed; more built-in tools TBD.)
-- Full `SecretStr` adoption; `exception`→`errors` migration; module `/v2` decision.
+- USD spend cap (model-card pricing), output guardrails.
+- Anthropic prompt-caching write path; record/replay + eval harness.
+- Full `SecretStr` adoption; `exception`→`errors` migration.

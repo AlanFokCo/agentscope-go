@@ -8,7 +8,7 @@ A Go port of the Python [AgentScope](https://github.com/agentscope-ai/agentscope
 
 - **Module path: `github.com/alanfokco/agentscope-go/v2`** (v2+ line). Imports use `github.com/alanfokco/agentscope-go/v2/pkg/agentscope/...`. Latest tag: **`v2.1.0`**.
 - Library under `pkg/agentscope/`; runnable demos under `examples/`.
-- `go.mod` says `go 1.25.0`, but keep code **Go 1.22+ compatible** (per `CONTRIBUTING.md`) — don't reach for ≥1.23 stdlib features without checking.
+- `go.mod` says `go 1.25.0` — keep code **Go 1.25+ compatible** (the minimum version declared in `go.mod`).
 - Python reference (for design parity) at `/Users/alanfokco/Github/agentscope/`.
 
 ## Build / test / lint
@@ -58,7 +58,7 @@ Recent additions (2026-08):
 - **Audit logging** (`audit/`): structured `audit.Logger` interface with InMemory/File/Multi/Nop implementations; orchestrator records every tool execution, permission denial, and policy decision.
 - **Sandbox execution events** (`event/`): `tool_exec_start`, `tool_exec_end`, `tool_policy_denied` — visibility into what happens inside the execution layer.
 
-**Open / decision-gated** (tracked in `STABILITY.md` "Planned"): USD cost cap (needs model-card pricing), OTLP exporter + `loop.Hook` ctx-threading (API break, needs sign-off), durable `FullStorage` + session-history resume, Anthropic prompt-caching write path (needs live-API validation), record/replay eval harness, WebSearch/generic-HTTP tools (dependency decision).
+**Open / decision-gated** (tracked in `STABILITY.md` "Planned"): USD cost cap (needs model-card pricing), dedicated OTLP exporter package (Prometheus provider + ctx-threaded `loop.Hook` already shipped), durable `FullStorage` + session-history resume, Anthropic prompt-caching write path (needs live-API validation), record/replay eval harness, WebSearch/generic-HTTP tools (dependency decision).
 
 ## Conventions (summary; full list in CLAUDE.md)
 

@@ -150,7 +150,7 @@ Enforces a per-reply token budget. When exceeded, injects a "wrap up" hint and f
 
 ```go
 a := agent.NewUnifiedAgent("bot", "...", cm,
-    agent.WithMiddlewares(middleware.NewReplyBudgetControlMiddleware(5000)),
+    agent.WithMiddlewares(middleware.NewReplyBudgetControl(5000)),
 )
 ```
 
@@ -176,7 +176,7 @@ Cross-session memory with 3 modes:
 | `both` | Both automatic injection and tools |
 
 ```go
-store := memory.NewInMemoryMemoryStore()
+store := memory.NewInMemoryStore()
 memMW := memory.New(&memory.Config{
     UserID:  "user-123",
     AgentID: "bot",
@@ -189,7 +189,7 @@ a := agent.NewUnifiedAgent("bot", "...", cm,
 )
 ```
 
-Backends: `InMemoryMemoryStore` (substring search), `VectorMemoryStore` (cosine similarity with embedding model), `Mem0Store` (mem0 REST API with LLM-based extraction).
+Backends: `InMemoryStore` (substring search), `VectorMemoryStore` (cosine similarity with embedding model), `Mem0Store` (mem0 REST API with LLM-based extraction).
 
 ### Replay Middleware
 

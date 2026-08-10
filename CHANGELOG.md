@@ -81,10 +81,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - 9 model provider adapters (OpenAI, Anthropic, DashScope, DeepSeek, Gemini, Ollama, Moonshot, xAI, OpenAI Responses API)
-- 51 bundled model cards with context sizes, capabilities, and status
+- 54 bundled model cards with context sizes, capabilities, and status
 - UnifiedAgent (v2) with native API-level tool calling and streaming
 - ReActAgent (v1) with text-based tool calling protocol
-- 10 built-in tools: Bash, Read, Write, Edit, Glob, Grep, ResetTools, TaskCreate/Get/List/Update
+- 17 built-in tools: Bash, Read, Write, Edit, MultiEdit, ApplyPatch, Glob, Grep, WebFetch, ResetTools, Spawn, LSP, Notebook, TaskCreate/Get/List/Update, Schedule (Create/Delete/List/View)
 - Bash safety analysis with AST-level injection detection
 - 5-hook middleware system (OnReply, OnModelCall, OnActing, OnSystemPrompt, OnCompressContext)
 - Per-tool middleware support

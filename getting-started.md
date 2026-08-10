@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Go 1.22+**
+- **Go 1.25+**
 - An API key from at least one supported model provider
 
 ## Installation
@@ -28,7 +28,7 @@ import (
 func main() {
     as.Init()
 
-    cm, err := model.NewDashScopeChatModel(&model.DashScopeConfig{
+    cm, err := model.NewDashScopeChatModel(model.DashScopeConfig{
         APIKey: "sk-...",
         Model:  "qwen-plus",
     })
@@ -107,7 +107,7 @@ Optional: `DASHSCOPE_BASE_URL` to override the DashScope endpoint.
 
 ## Running Examples
 
-The project includes 35 examples. Run any of them:
+The project includes 41 examples. Run any of them:
 
 ```bash
 export DASHSCOPE_API_KEY=sk-...
@@ -116,7 +116,7 @@ go run ./examples/streaming         # Streaming events
 go run ./examples/multimodal        # Image input
 go run ./examples/model_call        # Raw model API
 go run ./examples/replay            # Deterministic replay
-go run ./examples/pool              # Agent pool fan-out
+go run ./examples/agent_pool        # Agent pool fan-out
 ```
 
 See [docs/examples.md](docs/examples.md) for the full list.

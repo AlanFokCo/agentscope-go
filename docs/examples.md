@@ -1,6 +1,6 @@
 # Examples
 
-35 runnable examples in `examples/`. Run any with:
+41 runnable examples in `examples/`. Run any with:
 
 ```bash
 export DASHSCOPE_API_KEY=sk-...  # or ANTHROPIC_API_KEY / OPENAI_API_KEY
@@ -63,7 +63,7 @@ go run ./examples/<name>
 | Example | Description | API Key Required |
 |---------|-------------|------------------|
 | `replay` | Record agent interactions to tape, then replay deterministically | Yes (record) / No (replay) |
-| `pool` | Fan-out agent pool with 8 workers processing batch inputs | Yes |
+| `agent_pool` | Fan-out agent pool with 8 workers processing batch inputs | Yes |
 | `hotreload` | Watch config file for changes and update agent at runtime | Yes |
 | `wasm_sandbox` | Execute WASM modules in a sandboxed environment | No |
 | `grpc_a2a` | TCP Agent Mesh: server + client communicating via newline-delimited JSON | Yes |

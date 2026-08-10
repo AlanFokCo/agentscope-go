@@ -15,12 +15,12 @@
   &nbsp;|&nbsp;
   <a href="https://github.com/agentscope-ai/agentscope-java">☕ Java</a>
   &nbsp;|&nbsp;
-  <a href="README_zh.md">中文</a>
+  <a href="README.md">English</a>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License" />
-  <img src="https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go" alt="Go 1.22+" />
+  <img src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go" alt="Go 1.25+" />
   <a href="https://pkg.go.dev/github.com/alanfokco/agentscope-go/v2/pkg/agentscope"><img src="https://pkg.go.dev/badge/github.com/alanfokco/agentscope-go/v2/pkg/agentscope.svg" alt="Go Reference" /></a>
 </p>
 
@@ -89,7 +89,8 @@ pool := runtime.NewAgentPool(
 )
 defer pool.Close()
 
-result := pool.Submit(ctx, "Summarize this document...")
+resultCh, _ := pool.Submit(ctx, "Summarize this document...")
+result := <-resultCh
 fmt.Println(result.Output.GetTextContent("\n"))
 ```
 
@@ -188,7 +189,7 @@ Todos los proveedores soportan `Chat`, `ChatStream` (SSE), `CountTokens` y llama
 | **Moonshot** | `model.NewMoonshotChatModel` | kimi-k2.6, moonshot-v1-128k |
 | **xAI** | `model.NewXAIChatModel` | grok-3, grok-4.3 |
 
-51 fichas de modelo con tamaños de contexto, capacidades y estado se incluyen mediante `//go:embed`.
+54 fichas de modelo con tamaños de contexto, capacidades y estado se incluyen mediante `//go:embed`.
 
 Características adicionales de modelos: `FallbackChatModel` (conmutación automática primario→respaldo), `ClientOptions` (timeout/headers/transporte HTTP personalizados), pensamiento extendido con tokens de presupuesto, streaming de subtítulos de audio (PCM→WAV).
 
@@ -321,7 +322,7 @@ Kit de herramientas de agente de código listo para producción:
 
 ## Inicio Rápido
 
-**Requisitos:** Go 1.22+
+**Requisitos:** Go 1.25+
 
 ```bash
 go get github.com/alanfokco/agentscope-go/v2/pkg/agentscope
@@ -419,10 +420,10 @@ a := agent.NewUnifiedAgent("bot", "...", cm,
 ```
 pkg/agentscope/
 ├── agent/                  # Interfaz de Agente + UnifiedAgent, UserAgent, A2AAgent
-├── model/                  # Interfaz ChatModel + 9 proveedores + 51 fichas de modelo
-├── tool/                   # Interfaz de Herramienta + FunctionTool + 10 herramientas integradas + análisis de seguridad
+├── model/                  # Interfaz ChatModel + 9 proveedores + 54 fichas de modelo
+├── tool/                   # Interfaz de Herramienta + FunctionTool + 17 herramientas integradas + análisis de seguridad
 ├── message/                # Msg + ContentBlock (texto, pensamiento, tool_call, tool_result, datos, pista)
-├── event/                  # 28 tipos de evento para el ciclo de vida en streaming
+├── event/                  # 30 tipos de evento para el ciclo de vida en streaming
 ├── middleware/             # Cadena de cebolla de 7 ganchos + tracing, TTS, presupuesto, memoria, métricas, costo
 ├── formatter/              # Formateo de mensajes por proveedor (9 formateadores)
 ├── permission/             # 5 modos + Motor + Verificador + coincidencia de reglas
@@ -472,14 +473,14 @@ pkg/agentscope/
 ├── types/                  # Definiciones de tipos compartidos
 ├── agenttest/              # Ayudas de prueba y mocks
 ├── exception/              # Manejo de excepciones
-└── internal/               # httpx (ayuda HTTP+SSE), jsonx (reparación)
+└── internal/               # fsutil (escrituras atómicas), httpsec (protección SSRF), httpx (HTTP+SSE), jsonx (reparación)
 ```
 
 ---
 
 ## Ejemplos
 
-Más de 32 ejemplos en `examples/`. Ejecuta cualquiera con `go run ./examples/<nombre>`.
+41 ejemplos en `examples/`. Ejecuta cualquiera con `go run ./examples/<nombre>`.
 
 | Ejemplo | Descripción |
 |---------|-------------|
@@ -512,7 +513,7 @@ Más de 32 ejemplos en `examples/`. Ejecuta cualquiera con `go run ./examples/<n
 | `a2a_http` | Agente-a-Agente sobre HTTP |
 | **Go-Exclusive** | |
 | `replay` | Graba llamadas a LLM, reproduce en CI sin costos de API |
-| `pool` | Piscina de agentes con fan-out y backpressure |
+| `agent_pool` | Piscina de agentes con fan-out y backpressure |
 | `hotreload` | Actualizaciones de configuración sin downtime con `Reloader[T]` tipado |
 | `wasm_sandbox` | Sandbox de herramientas WASM con límites de memoria/tiempo |
 | `grpc_a2a` | Malla de agentes TCP con streaming bidireccional |
@@ -573,7 +574,7 @@ La documentación detallada está disponible en el directorio [`docs/`](docs/):
 - [Proveedores de Modelos](docs/model-providers.md) — Configura 9 proveedores de LLM con ejemplos
 - [Herramientas](docs/tools.md) — Herramientas integradas, funciones personalizadas, permisos
 - [Middleware](docs/middleware.md) — Sistema de 7 ganchos, tracing, presupuesto, memoria
-- [Ejemplos](docs/examples.md) — Catálogo completo de más de 32 ejemplos ejecutables
+- [Ejemplos](docs/examples.md) — Catálogo completo de 41 ejemplos ejecutables
 - [Despliegue](docs/deployment.md) — Servicio HTTP, sandboxing, checklist de producción
 
 ## Contribuir

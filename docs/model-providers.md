@@ -7,7 +7,7 @@ agentscope-go supports 9 LLM providers, all implementing the `ChatModel` interfa
 Every provider follows the same pattern:
 
 ```go
-cm, err := model.NewXxxChatModel(&model.XxxConfig{
+cm, err := model.NewXxxChatModel(model.XxxConfig{
     APIKey: "...",
     Model:  "model-name",
     // Optional:
@@ -17,6 +17,7 @@ cm, err := model.NewXxxChatModel(&model.XxxConfig{
         Transport:      customTransport, // for proxy
     },
 })
+// Note: Anthropic and OpenAI Response take pointer configs (*AnthropicConfig, *OpenAIResponseConfig)
 ```
 
 ## Providers
@@ -24,7 +25,7 @@ cm, err := model.NewXxxChatModel(&model.XxxConfig{
 ### OpenAI
 
 ```go
-cm, _ := model.NewOpenAIChatModel(&model.OpenAIConfig{
+cm, _ := model.NewOpenAIChatModel(model.OpenAIConfig{
     APIKey: os.Getenv("OPENAI_API_KEY"),
     Model:  "gpt-4o",
 })
@@ -61,7 +62,7 @@ Extended thinking: `model.WithThinking(true, 10000)` enables thinking with a 10K
 ### DashScope (Alibaba Qwen)
 
 ```go
-cm, _ := model.NewDashScopeChatModel(&model.DashScopeConfig{
+cm, _ := model.NewDashScopeChatModel(model.DashScopeConfig{
     APIKey:  os.Getenv("DASHSCOPE_API_KEY"),
     BaseURL: os.Getenv("DASHSCOPE_BASE_URL"), // optional override
     Model:   "qwen-plus",
@@ -75,7 +76,7 @@ GLM models via DashScope: `glm-5.2` (131K context, 8K output)
 ### DeepSeek
 
 ```go
-cm, _ := model.NewDeepSeekChatModel(&model.DeepSeekConfig{
+cm, _ := model.NewDeepSeekChatModel(model.DeepSeekConfig{
     APIKey: os.Getenv("DEEPSEEK_API_KEY"),
     Model:  "deepseek-chat",
 })
@@ -86,7 +87,7 @@ Models: `deepseek-chat`, `deepseek-reasoner`, `deepseek-v4-flash`, `deepseek-v4-
 ### Google Gemini
 
 ```go
-cm, _ := model.NewGeminiChatModel(&model.GeminiConfig{
+cm, _ := model.NewGeminiChatModel(model.GeminiConfig{
     APIKey: os.Getenv("GEMINI_API_KEY"),
     Model:  "gemini-2.5-flash",
 })
@@ -97,7 +98,7 @@ Models: `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-3-flash-preview`, `gemini-
 ### Ollama (Local)
 
 ```go
-cm, _ := model.NewOllamaChatModel(&model.OllamaConfig{
+cm, _ := model.NewOllamaChatModel(model.OllamaConfig{
     BaseURL: "http://localhost:11434", // default
     Model:   "llama4",
 })
@@ -108,7 +109,7 @@ No API key required. Models: `deepseek-r1-14b`, `llama4`, `qwen3-14b`, `qwen3.5-
 ### Moonshot (Kimi)
 
 ```go
-cm, _ := model.NewMoonshotChatModel(&model.MoonshotConfig{
+cm, _ := model.NewMoonshotChatModel(model.MoonshotConfig{
     APIKey: os.Getenv("MOONSHOT_API_KEY"),
     Model:  "kimi-k2.6",
 })
@@ -121,7 +122,7 @@ Models: `kimi-k2.5`, `kimi-k2.6`, `kimi-k3`, `moonshot-v1-8k`, `moonshot-v1-32k`
 ### xAI (Grok)
 
 ```go
-cm, _ := model.NewXAIChatModel(&model.XAIConfig{
+cm, _ := model.NewXAIChatModel(model.XAIConfig{
     APIKey: os.Getenv("XAI_API_KEY"),
     Model:  "grok-3",
 })
@@ -138,7 +139,7 @@ agentscope-go includes TTS models for audio synthesis, usable standalone or via 
 Standard and realtime (CosyVoice) TTS:
 
 ```go
-ttsModel, _ := tts.NewDashScopeTTSModel(&tts.DashScopeConfig{
+ttsModel, _ := tts.NewDashScopeTTSModel(tts.DashScopeConfig{
     APIKey: os.Getenv("DASHSCOPE_API_KEY"),
     Model:  "cosyvoice-v3-flash",
     Voice:  "longxiaochun",
@@ -218,8 +219,8 @@ Query bundled model metadata:
 card, _ := model.GetModelCard("claude-sonnet-4-6")
 // card.Name, card.Provider, card.ContextSize, card.OutputSize
 
-models := model.ListModels()                          // all 54 chat model cards
-models = model.ListModels(model.WithProvider("openai")) // filter by provider
+models := model.ListModels()          // all 54 chat model cards
+models = model.ListModels("openai")   // filter by provider
 ```
 
 54 chat/embedding model cards + 9 TTS model cards are bundled and accessible at runtime via `//go:embed`.

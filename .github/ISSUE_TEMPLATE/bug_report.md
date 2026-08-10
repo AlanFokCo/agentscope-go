@@ -29,4 +29,3 @@ Paste relevant logs here (remove API keys).
 
 **Additional context**
 Any other context about the problem.
-BUGEOF'
