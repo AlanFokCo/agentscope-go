@@ -105,7 +105,7 @@ func (m *mockModel) Chat(_ context.Context, msgs []*message.Msg, _ ...model.Call
 	}
 
 	return &model.ChatResponse{
-		Content: []message.ContentBlock{message.TextBlock{Text: response}},
+		Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: response}},
 		IsLast:  true,
 	}, nil
 }
