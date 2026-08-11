@@ -480,7 +480,7 @@ pkg/agentscope/
 
 ## Ejemplos
 
-46 ejemplos en `examples/`. Ejecuta cualquiera con `go run ./examples/<nombre>`.
+47 ejemplos en `examples/`. Ejecuta cualquiera con `go run ./examples/<nombre>`.
 
 | Ejemplo | Descripción |
 |---------|-------------|
@@ -526,6 +526,22 @@ pkg/agentscope/
 | `webui` | Estudio Web UI con chat en streaming, visualización de herramientas, HITL |
 | `scheduled_task` | Programación de tareas únicas y recurrentes |
 | `realtime_echo` | Demo de interfaz de streaming en tiempo real |
+| **Edge & IoT** | |
+| `edge_offline` | Modelo local+nube con detección de conectividad |
+| `edge_sensor` | Middleware de sensor con filtrado de lecturas |
+| `edge_serial_robot` | Control de robot vía puerto serie |
+| `edge_fleet` | Flota de agentes edge con MQTT PubSub |
+| **Evaluación y Seguridad** | |
+| `audit_logging` | Política de sandbox + registro de auditoría estructurado |
+| `eval_harness` | Evaluación de agentes basada en replay con scorers |
+| `guardrail` | Filtrado de contenido de salida con block/redact/warn |
+| `spend_cap` | Límite de gasto USD/CNY con CostTrackerMiddleware |
+| **Multi-Agent** | |
+| `werewolves` | Juego Hombres Lobo multi-agente con roles |
+| **Tracing** | |
+| `tracing_otlp` | Patrón de configuración OTLP (sin dependencia OTel SDK) |
+| **Kubernetes** | |
+| `k8s_workspace` | Sandbox K8s + herramientas de cluster solo lectura |
 
 ---
 
@@ -574,7 +590,7 @@ La documentación detallada está disponible en el directorio [`docs/`](docs/):
 - [Proveedores de Modelos](docs/model-providers.md) — Configura 9 proveedores de LLM con ejemplos
 - [Herramientas](docs/tools.md) — Herramientas integradas, funciones personalizadas, permisos
 - [Middleware](docs/middleware.md) — Sistema de 7 ganchos, tracing, presupuesto, memoria
-- [Ejemplos](docs/examples.md) — Catálogo completo de 46 ejemplos ejecutables
+- [Ejemplos](docs/examples.md) — Catálogo completo de 47 ejemplos ejecutables
 - [Despliegue](docs/deployment.md) — Servicio HTTP, sandboxing, checklist de producción
 
 ## Contribuir

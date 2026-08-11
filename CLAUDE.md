@@ -148,6 +148,8 @@ The package layout intentionally mirrors the Python project. Each subpackage exp
 - **`tts`** — `TTSModel` + `RealtimeTTSModel` interfaces. DashScope + CosyVoice implementations. Model cards via `//go:embed` YAML.
 - **`mcp`** — MCP client (Stdio + HTTP). Name validation (`^[a-zA-Z0-9_-]+$`), execution timeout wiring.
 - **`workspace`** — `Workspace` interface + 8 backends: `LocalWorkspace`, `DockerWorkspace`, `E2BWorkspace`, `K8sWorkspace`, `OpenSandboxWorkspace`, `DaytonaWorkspace`, `AppleContainerWorkspace`, `BubblewrapWorkspace`. `ManagedWorkspace` extends with MCP/Skill management (`.mcp.json` persistence, `skills/` directory). `ToolBackend` adapts any Workspace into a `tool.Backend`.
+  - **K8s workspace hardening** (`workspace/k8s.go`): `PodSecurityContext` (RunAsNonRoot, RunAsUser, RunAsGroup, FSGroup), `ResourceRequirements` (CPU/Memory limits+requests), `ServiceAccountName`, Labels/Annotations for discovery, `PodTTLSeconds` (anti-leak via `activeDeadlineSeconds`), `ImagePullPolicy` (default `IfNotPresent`), `DisableServiceAccount` (`automountServiceAccountToken: false`), `SecretToken` (SecretStr). `buildPodManifest()` extracted for testability. Timeout fix: respects parent ctx deadline.
+  - **K8s cluster tools** (`workspace/k8s_tools.go`): `NewKubectlGetTool(kubeconfig)` — read-only query for 15 resource types (secrets explicitly BLOCKED); `NewKubectlLogTool(kubeconfig)` — pod log retrieval with tail/since/container. Both: 30s timeout, no cluster mutation, kubectl shell-out (no client-go dep).
 - **`permission`** — `Engine` with 5 modes (default, accept_edits, explore, bypass, dont_ask). `Checker` interface embedded by `Tool`. `Decision` with bypass-immune safety checks.
 - **`storage`** — `InMemoryStorage`, `FileStorage`, `RedisStorage` for agent state persistence; **`RedisFullStorage`** implements the 17-method `FullStorage` interface over Redis (credentials, agents, sessions, schedules, messages, teams) with reverse-index message lookup and mutex-protected append. All file-backed writes go through **`internal/fsutil.WriteFileAtomic`** (temp + fsync + rename) so a crash mid-write cannot corrupt state.
 - **`internal/fsutil`** — `WriteFileAtomic`. **`internal/httpsec`** — `Harden(*http.Server)` (ReadHeaderTimeout/IdleTimeout/MaxHeaderBytes) + `LimitBody` (MaxBytesReader) for the HTTP servers.
@@ -193,3 +195,19 @@ The package layout intentionally mirrors the Python project. Each subpackage exp
 - New vector backends should mirror the Qdrant pair: a low-level `Index` that takes pre-computed vectors plus a higher-level "text index" that takes an `Embedder`.
 - When adding a new example, give it its own `examples/<name>/main.go` and add it to the list in `README.md`. CI builds every example via `go build ./examples/...`, so an example that doesn't compile breaks the whole build.
 - When adding a new model provider, follow the pattern: embed `OpenAIFormatter` if OpenAI-compatible, create `XxxConfig` struct, implement `Chat`/`ChatStream`/`CountTokens`, add retry logic via `IsRetryableError`, extract cache tokens from usage response.
+
+## Quality Gate: Evaluator Review (MANDATORY)
+
+Every code change and documentation update MUST pass adversarial evaluator review before commit/push:
+
+1. **For code**: The evaluator checks correctness (bugs, races, panics), completeness (edge cases, error handling), security (injection, leakage), and maintainability (API design). Only PASS (no HIGH findings) allows commit.
+
+2. **For docs**: The evaluator cross-references every code example, API reference, function signature, and numeric claim against actual source code. Any inaccuracy is a blocking finding.
+
+3. **Build gates** (all must pass):
+   - `go build ./...`
+   - `go vet ./...`
+   - `go test -race -count=1 ./...` (or affected packages)
+   - `golangci-lint run ./...` — 0 issues
+
+This policy exists because documentation drift and untested code are the two largest sources of technical debt. The evaluator catches what automated tools cannot: semantic correctness, API contract violations, and design flaws that only manifest under adversarial conditions.

@@ -1,6 +1,6 @@
 # Examples
 
-46 runnable examples in `examples/`. Run any with:
+47 runnable examples in `examples/`. Run any with:
 
 ```bash
 export DASHSCOPE_API_KEY=sk-...  # or ANTHROPIC_API_KEY / OPENAI_API_KEY
@@ -87,6 +87,7 @@ go run ./examples/<name>
 | `audit_logging` | Sandbox policy enforcement + structured audit trail | No |
 | `werewolves` | Multi-agent Werewolves game with role-based behavior | Yes |
 | `tracing_otlp` | OTLP tracing setup pattern (no OTel SDK dependency) | Yes |
+| `k8s_workspace` | K8s workspace sandboxing + cluster read-only tools | No |
 
 ## Running All Tests
 

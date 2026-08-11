@@ -70,19 +70,46 @@ backend := workspace.NewToolBackend(ws)
 
 ### Kubernetes Workspace
 
-Run agent tool execution inside ephemeral Kubernetes Pods:
+Run agent tool execution inside hardened ephemeral Kubernetes Pods:
 
 ```go
 ws, _ := workspace.NewK8sWorkspace(&workspace.K8sConfig{
-    Namespace: "agent-sandbox",
-    PodName:   "agent-sandbox-pod",
-    Image:     "python:3.11-slim",
-    APIServer: "https://kubernetes.default.svc",
-    Token:     os.Getenv("K8S_TOKEN"),
+    Namespace:             "agent-sandbox",
+    PodName:               "agent-workspace",
+    Image:                 "ubuntu:22.04",
+    APIServer:             "https://kubernetes.default.svc",
+    SecretToken:           model.NewSecretStr(os.Getenv("K8S_TOKEN")),
+    PodTTLSeconds:         3600,  // auto-cleanup after 1h
+    DisableServiceAccount: true,  // no SA token inside pod
+    SecurityContext: &workspace.PodSecurityContext{
+        RunAsNonRoot: boolPtr(true),
+        RunAsUser:    int64Ptr(1000),
+    },
+    Resources: &workspace.ResourceRequirements{
+        CPULimit:      "2000m",
+        MemoryLimit:   "1Gi",
+        CPURequest:    "200m",
+        MemoryRequest: "256Mi",
+    },
+    Labels: map[string]string{
+        "app.kubernetes.io/managed-by": "agentscope",
+    },
 })
 backend := workspace.NewToolBackend(ws)
-// Use backend with tool context routing
+defer ws.Close()
 ```
+
+### Kubernetes Cluster Tools
+
+Read-only tools for querying existing clusters (no mutation, secrets blocked):
+
+```go
+getTool := workspace.NewKubectlGetTool("/path/to/kubeconfig")
+logTool := workspace.NewKubectlLogTool("/path/to/kubeconfig")
+tk := tool.NewToolkit(getTool, logTool)
+```
+
+`kubectl_get` supports: pods, deployments, services, configmaps, events, nodes, namespaces, ingresses, jobs, cronjobs, statefulsets, daemonsets, replicasets, pvc, hpa. Secrets are explicitly blocked.
 
 ### OpenSandbox Workspace
 

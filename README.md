@@ -512,7 +512,7 @@ pkg/agentscope/
 
 ## Examples
 
-46 examples in `examples/`. Run any with `go run ./examples/<name>`.
+47 examples in `examples/`. Run any with `go run ./examples/<name>`.
 
 | Example | Description |
 |---------|-------------|
@@ -571,6 +571,8 @@ pkg/agentscope/
 | `werewolves` | Multi-agent Werewolves game with role-based behavior |
 | **Tracing** | |
 | `tracing_otlp` | OTLP tracing setup pattern (no OTel SDK dependency) |
+| **Kubernetes** | |
+| `k8s_workspace` | K8s workspace sandboxing + cluster read-only tools |
 
 ---
 

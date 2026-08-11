@@ -42,9 +42,9 @@ func main() {
 			RunAsUser:    int64Ptr(1000),
 		},
 		Resources: &workspace.ResourceRequirements{
-			CPULimit:    "1000m",
-			MemoryLimit: "512Mi",
-			CPURequest:  "100m",
+			CPULimit:      "1000m",
+			MemoryLimit:   "512Mi",
+			CPURequest:    "100m",
 			MemoryRequest: "128Mi",
 		},
 		Labels: map[string]string{

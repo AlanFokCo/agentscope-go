@@ -65,7 +65,10 @@ Recent additions (2026-08):
 - **SecretStr adoption**: `UnmarshalJSON` + `ResolveAPIKey()` helper; `SecretAPIKey` dual-field across all 22 config structs.
 - **`exception` → `errors` migration**: tool error types moved to `errors/tool_errors.go`; `AgentError.Is()` matches sentinels by Code; `AgentError.AgentMessage()` bridges LLM-facing/operator-facing errors. `exception/` package removed.
 
-All originally-planned STABILITY.md items are now complete. Remaining: `exception` final deletion (one more minor), SecretStr v3 full adoption, output guardrails iteration.
+- **K8s workspace hardening** (`workspace/k8s.go`): `PodSecurityContext` (RunAsNonRoot/User/Group/FSGroup), `ResourceRequirements` (CPU/Memory limits+requests), `ServiceAccountName`, Labels/Annotations, `PodTTLSeconds` (activeDeadlineSeconds anti-leak), `ImagePullPolicy`, `DisableServiceAccount`, `SecretToken` (SecretStr). Bug fixes: duplicate timeout, GNU find portability, `buildPodManifest()` testability extraction.
+- **K8s cluster tools** (`workspace/k8s_tools.go`): `NewKubectlGetTool` (15 resource types, secrets BLOCKED), `NewKubectlLogTool` (tail/since/container). Read-only, 30s timeout, kubectl shell-out (no client-go dep).
+
+All originally-planned STABILITY.md items are now complete.
 
 ## Conventions (summary; full list in CLAUDE.md)
 
@@ -76,3 +79,28 @@ All originally-planned STABILITY.md items are now complete. Remaining: `exceptio
 - New example → own `examples/<name>/main.go` + add to `README.md` (CI builds all examples).
 - Errors: structured `errors.AgentError` + sentinels (`errors.Is`/`As` via `AgentError.Is()` matching by `Code`); `IsRetryableError` honors the typed retryable flag; `AgentMessage()` for LLM-facing messages.
 - `golangci-lint run ./...` must pass before every commit (CI gates on it).
+
+## Quality Gate: Evaluator Adversarial Review (MANDATORY)
+
+Before any commit and push, the following MUST be verified through an evaluator (adversarial reviewer):
+
+1. **Code changes**: Run evaluator to adversarially review all new/modified code for:
+   - Logic bugs, race conditions, nil panics
+   - Missing edge cases and error handling
+   - API misuse or design flaws
+   - Security vulnerabilities
+
+2. **Documentation changes**: Run evaluator to verify:
+   - All code examples compile correctly against actual source
+   - All API references (function names, signatures, struct fields) match reality
+   - All numeric claims (counts, versions) are accurate
+   - No broken links or stale references
+
+3. **Commit criteria** — a commit is allowed ONLY when:
+   - `go build ./...` passes
+   - `go vet ./...` passes
+   - `go test -race -count=1 ./...` passes (or affected packages)
+   - `golangci-lint run ./...` shows 0 issues
+   - Evaluator adversarial review returns PASS (no HIGH-severity findings)
+
+Skipping the evaluator review is NOT acceptable. If time is constrained, at minimum run the evaluator on the specific packages modified.
