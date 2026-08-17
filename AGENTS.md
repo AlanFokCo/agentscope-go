@@ -6,7 +6,7 @@ Handoff guide for coding agents (and humans) working on **agentscope-go**. Read 
 
 A Go port of the Python [AgentScope](https://github.com/agentscope-ai/agentscope) multi-agent LLM framework.
 
-- **Module path: `github.com/alanfokco/agentscope-go/v2`** (v2+ line). Imports use `github.com/alanfokco/agentscope-go/v2/pkg/agentscope/...`. Latest tag: **`v2.1.0`**.
+- **Module path: `github.com/alanfokco/agentscope-go/v2`** (v2+ line). Imports use `github.com/alanfokco/agentscope-go/v2/pkg/agentscope/...`. Latest tag: **`v2.0.7`**.
 - Library under `pkg/agentscope/`; runnable demos under `examples/`.
 - `go.mod` says `go 1.25.0` — keep code **Go 1.25+ compatible** (the minimum version declared in `go.mod`).
 - Python reference (for design parity) at `/Users/alanfokco/Github/agentscope/`.
@@ -61,7 +61,7 @@ Recent additions (2026-08):
 - **Hard spend cap** (`middleware/cost_tracker.go`): `WithMaxCostUSD(limit)` pre-flight budget enforcement + `WithExchangeRate("CNY", 7.2)` for multi-currency display.
 - **Output guardrails** (`middleware/guardrail.go`): `GuardrailMiddleware` with Block/Redact/Warn actions + 4 built-in rules (KeywordBlock, KeywordRedact, MaxLength, Custom).
 - **Reranker** (`rag/rerank.go`): `Reranker` interface + `RerankedIndex` wrapper for precision-improving two-stage retrieval.
-- **RedisFullStorage** (`storage/redis_full.go`): full `FullStorage` implementation over Redis (17 methods) with reverse-index message lookup.
+- **RedisFullStorage** (`storage/redis_full.go`): full `FullStorage` implementation over Redis (28 methods) with reverse-index message lookup.
 - **SecretStr adoption**: `UnmarshalJSON` + `ResolveAPIKey()` helper; `SecretAPIKey` dual-field across all 22 config structs.
 - **`exception` → `errors` migration**: tool error types moved to `errors/tool_errors.go`; `AgentError.Is()` matches sentinels by Code; `AgentError.AgentMessage()` bridges LLM-facing/operator-facing errors. `exception/` package removed.
 

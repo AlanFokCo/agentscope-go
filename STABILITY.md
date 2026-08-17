@@ -6,7 +6,7 @@ production-hardening status of the library.
 ## Versioning
 
 The module path is `github.com/alanfokco/agentscope-go/v2`. The latest release
-tag is `v2.1.0`. Consumers import as:
+tag is `v2.0.7`. Consumers import as:
 
 ```go
 import "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
@@ -111,7 +111,7 @@ Recently landed (since initial hardening):
 
 - ~~`RedisFullStorage`~~ **Done:** full `FullStorage` implementation over Redis,
   using the existing `RedisClient` interface (no hard dependency on go-redis).
-  All 17 methods implemented: credentials, agents, sessions, schedules, messages,
+  All 28 methods implemented: credentials, agents, sessions, schedules, messages,
   teams. Message ordering preserved via per-session index key.
 - ~~`SecretStr` dual-field (Phase 2)~~ **Done:** all 8 model provider configs
   now carry `SecretAPIKey SecretStr` alongside deprecated `APIKey string`.

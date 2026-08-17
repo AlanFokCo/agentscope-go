@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-`agentscope-go` is a Go port of the Python [AgentScope](https://github.com/agentscope-ai/agentscope) multi-agent LLM framework. The module path is **`github.com/alanfokco/agentscope-go/v2`** (v2+ line): internal and consumer imports use `github.com/alanfokco/agentscope-go/v2/pkg/agentscope/...`. Latest release tag: **`v2.1.0`**. All library code lives under `pkg/agentscope/`; runnable demos live under `examples/`.
+`agentscope-go` is a Go port of the Python [AgentScope](https://github.com/agentscope-ai/agentscope) multi-agent LLM framework. The module path is **`github.com/alanfokco/agentscope-go/v2`** (v2+ line): internal and consumer imports use `github.com/alanfokco/agentscope-go/v2/pkg/agentscope/...`. Latest release tag: **`v2.0.7`**. All library code lives under `pkg/agentscope/`; runnable demos live under `examples/`.
 
 See `STABILITY.md` for the API-stability policy, stability tiers, and the production-hardening status (what's done, what's open) — read it before large changes.
 
@@ -151,7 +151,7 @@ The package layout intentionally mirrors the Python project. Each subpackage exp
   - **K8s workspace hardening** (`workspace/k8s.go`): `PodSecurityContext` (RunAsNonRoot, RunAsUser, RunAsGroup, FSGroup), `ResourceRequirements` (CPU/Memory limits+requests), `ServiceAccountName`, Labels/Annotations for discovery, `PodTTLSeconds` (anti-leak via `activeDeadlineSeconds`), `ImagePullPolicy` (default `IfNotPresent`), `DisableServiceAccount` (`automountServiceAccountToken: false`), `SecretToken` (SecretStr). `buildPodManifest()` extracted for testability. Timeout fix: respects parent ctx deadline.
   - **K8s cluster tools** (`workspace/k8s_tools.go`): `NewKubectlGetTool(kubeconfig)` — read-only query for 15 resource types (secrets explicitly BLOCKED); `NewKubectlLogTool(kubeconfig)` — pod log retrieval with tail/since/container. Both: 30s timeout, no cluster mutation, kubectl shell-out (no client-go dep).
 - **`permission`** — `Engine` with 5 modes (default, accept_edits, explore, bypass, dont_ask). `Checker` interface embedded by `Tool`. `Decision` with bypass-immune safety checks.
-- **`storage`** — `InMemoryStorage`, `FileStorage`, `RedisStorage` for agent state persistence; **`RedisFullStorage`** implements the 17-method `FullStorage` interface over Redis (credentials, agents, sessions, schedules, messages, teams) with reverse-index message lookup and mutex-protected append. All file-backed writes go through **`internal/fsutil.WriteFileAtomic`** (temp + fsync + rename) so a crash mid-write cannot corrupt state.
+- **`storage`** — `InMemoryStorage`, `FileStorage`, `RedisStorage` for agent state persistence; **`RedisFullStorage`** implements the 28-method `FullStorage` interface over Redis (credentials, agents, sessions, schedules, messages, teams) with reverse-index message lookup and mutex-protected append. All file-backed writes go through **`internal/fsutil.WriteFileAtomic`** (temp + fsync + rename) so a crash mid-write cannot corrupt state.
 - **`internal/fsutil`** — `WriteFileAtomic`. **`internal/httpsec`** — `Harden(*http.Server)` (ReadHeaderTimeout/IdleTimeout/MaxHeaderBytes) + `LimitBody` (MaxBytesReader) for the HTTP servers.
 - **`pipeline`** — `Pipeline` with `Then`/`If` combinators. `MsgHub` for agent message routing.
 - **`tracing`** — `Tracer` interface + `AttributedTracer` optional extension with `SpanAttribute`. `NoopTracer`, `LoggerTracer`.

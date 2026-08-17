@@ -4,108 +4,259 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+Version sections below correspond to git tags (`v2.0.4` onward). Per-version
+details can be verified with `git log <prev-tag>..<tag> --oneline`.
+
 ## [Unreleased]
 
+## [v2.0.7] - 2026-08-11
+
 ### Added
-- **Reranker interface + RerankedIndex** (`rag/`): `Reranker` interface and `RerankedIndex` wrapper that re-scores retrieval results for improved precision
-- **Eval harness** (`replay/`): `Scorer` interface, `EvalTape`, and `AssertTape` for replay-based agent evaluation with pluggable scoring functions
-- **CostTrackerMiddleware**: hard USD spend cap via `WithMaxCostUSD`; built-in CNY exchange rate support for DashScope/Moonshot providers
-- **GuardrailMiddleware** (`middleware/`): output content safety filtering with three actions — `Block` (rejects with `ErrGuardrailBlocked`), `Redact` (replaces with placeholder), `Warn` (allows with metadata flags); built-in rules: `KeywordBlockRule`, `KeywordRedactRule`, `MaxLengthRule`, `CustomRule`
-- **RedisFullStorage** (`storage/`): 17-method `FullStorage` implementation backed by Redis with TTL, prefix isolation, and atomic operations
-- **SecretStr**: `UnmarshalJSON` support + dual-field (`APIKey`/`APIKeyStr`) across all 22 model/TTS/embedding configs for safe key handling
-- **`errors.AgentError.Is()` method**: sentinel matching via `errors.Is`; `AgentMessage()` for LLM-facing error descriptions
+- **K8s workspace hardening** (`workspace/k8s.go`): `PodSecurityContext`
+  (RunAsNonRoot, RunAsUser, RunAsGroup, FSGroup), `ResourceRequirements`
+  (CPU/Memory limits and requests), `ServiceAccountName`, Labels + Annotations
+  on created Pods, `PodTTLSeconds` (default 3600, anti-leak cleanup via
+  `activeDeadlineSeconds`), `ImagePullPolicy` (default `IfNotPresent`),
+  `DisableServiceAccount` (`automountServiceAccountToken: false`), and
+  `SecretToken` (`model.SecretStr`) alongside the plain `Token` field
+- **Read-only Kubernetes cluster tools** (`workspace/k8s_tools.go`):
+  `NewKubectlGetTool` (15 resource types; `secrets` BLOCKED) and
+  `NewKubectlLogTool` (tail/since/container) — 30s timeout, no cluster mutation
+- `examples/k8s_workspace` demonstrating the usage pattern
 
 ### Changed
-- **`exception` package removed**: all types consolidated into `errors/`; no more split hierarchy
-
-### Added — Edge & Embedded Intelligence
-- **ConnectivityAwareModel** (`model/connectivity.go`): wraps local + cloud ChatModel with internal circuit breaker; routes to cloud when online, falls back to local (Ollama) when offline, auto-recovers via single-probe half-open
-- **PubSub interface** (`messagebus/pubsub.go`): minimal pub/sub contract for IoT protocols with QoS (0/1/2), retain, configurable buffer size
-- **MQTT adapter** (`messagebus/mqtt/`): Eclipse Paho-based PubSub implementation with auto-reconnect, topic prefix, credentials; build tag `mqtt` to avoid bloating non-MQTT builds
-- **Device framework** (`device/`): `Connector` interface + 4 pure-Go hardware drivers (Serial via termios, GPIO via chardev, CAN via SocketCAN, I2C via i2c-dev) — all `//go:build linux`, zero CGO
-- **DeviceTool**: wraps any Connector as `tool.Tool`; sensors auto-allowed, actuators require bypass-immune ASK; integrated watchdog kick on success
-- **SensorTool**: read-only sensor tool with JSON output and auto-allow permissions
-- **SensorMiddleware**: injects live sensor readings into system prompt (`[SENSOR DATA]...[/SENSOR DATA]`) with configurable max-token budget to prevent context bloat
-- **Watchdog**: timer-based safety; if `Kick()` not called within timeout, triggers safe-state callback (motor off, valve close, etc.)
-- **CI cross-arch job**: build verification for linux/arm64, arm, mips64le, riscv64 with binary size check (< 18MB)
-- 4 edge examples: `edge_offline`, `edge_sensor`, `edge_serial_robot`, `edge_fleet`
-- 4 docs: edge-deployment.md, device-tools.md, offline-operation.md, multi-device.md
-### Added — Security & Audit
-- **Audit logging** (`audit/`): new package with structured `Logger` interface and 4 implementations (InMemory, File/JSON-Lines, Multi fan-out, Nop); 10 action types; context propagation via `WithLogger`/`GetLogger`
-- **Sandbox execution events**: 3 new event types — `tool_exec_start`, `tool_exec_end`, `tool_policy_denied` — providing visibility into the orchestrator execution layer
-- **Sandbox Policy enforcement**: `sandbox.Policy` now actually controls tool execution; `OrchestratorConfig.Policy` blocks tool calls that violate filesystem/network/process policies before execution
-- **Process-group isolation** (`proc_unix.go`/`proc_windows.go`): child processes killed as a group on timeout via `Setpgid` + `SIGKILL` to process group, preventing orphans and fork-bombs
-- **Interpreter attack detection** (`CheckInterpreterAttack`): detects dangerous API calls hidden inside interpreter inline-code flags (`python -c`, `node -e`, `perl -e`, `ruby -e`, `lua -e`, `php -r`); checks for `os.system`, `subprocess`, `child_process`, etc.
-- **Write hardening**: 10 MB size cap (`MaxWriteBytes`), atomic writes via `fsutil.WriteFileAtomic`, executable-extension detection triggers bypass-immune ASK for .sh/.py/.exe/.dll etc.
-- **Expanded dangerous paths**: added 20+ credential files (.kube/config, .aws/credentials, .docker/config.json, SSH private keys, .gnupg/*) and 4 directories (.kube, .aws, .docker, .gnupg) to the safety layer
-- **awk removed from read-only allowlist**: `awk` can execute arbitrary commands via `system()` and write files
-
-### Added — Go-Exclusive Features
-- **Web UI Studio** (`webui/`): Embedded single-page web interface for agent interaction; zero-dependency SPA served via `go:embed` with streaming chat, thinking block display, tool call visualization, human-in-the-loop confirmation, session management, and model browser; mount with `service.HandlerWithWebUI` or use `webui.Handler` directly
-- **Deterministic Replay** (`replay/`): Record/replay middleware that captures model call request/response pairs into JSON tapes; replay mode returns pre-recorded responses without calling the LLM, enabling fully offline deterministic CI/CD testing
-- **Fan-out Agent Pool** (`runtime.AgentPool`): Worker pool pattern for high-throughput batch processing; each worker owns a fresh agent instance created from a factory function with configurable worker count and queue size
-- **Hot-Reload Config** (`hotreload/`): Polling-based file watcher with `Watcher` and generic `Reloader[T]` for typed config with atomic pointer swap; supports custom parsers (JSON/YAML/TOML) and multi-file watching
-- **WASM Sandbox** (`wasm/`): Execute WebAssembly modules with strict resource limits (memory, time, instruction count/fuel); auto-discovers `wasmtime`, `wasmer`, or `wasm3` CLI runtimes
-- **TCP Agent Mesh** (`a2a/grpc/`): Bidirectional agent-to-agent communication over TCP using newline-delimited JSON; `Server` + `Client` types with streaming support via `IsStream`/`StreamEnd` flags
-- **Agent Load Testing** (`bench/`): Benchmark runner with `Scenario` definitions supporting configurable concurrency, duration, iterations, and ramp-up; produces `Report` with throughput, latency percentiles (p50/p95/p99), and error breakdowns
-
-### Added — Workspace Providers
-- **K8s Workspace** (`workspace/k8s.go`): Execute agent tools inside ephemeral Kubernetes Pods
-- **OpenSandbox Workspace** (`workspace/opensandbox.go`): Cloud sandbox via OpenSandbox API
-- **Daytona Workspace** (`workspace/daytona.go`): Daytona-managed development environment sandbox
-- **Apple Container Workspace** (`workspace/applecontainer.go`): macOS-native lightweight container isolation
-- **Bubblewrap Workspace** (`workspace/bubblewrap.go`): Minimal Linux `bwrap` sandboxing without Docker
-
-### Added — Model & TTS
-- **Kimi K3** model card: 256K context, 64K output, vision + video + thinking support
-- **qwen3.7-plus** model card: 131K context, 16K output, thinking support
-- **GLM-5.2** model card: 131K context, 8K output (via DashScope)
-- **Gemini TTS** (`tts/gemini.go`): Text-to-speech via Gemini generateContent API with audio response modality; default model `gemini-2.5-flash-preview-tts`
-- **OpenAI TTS** (`tts/openai.go`): OpenAI Audio Speech API (`/v1/audio/speech`) with streaming support
-
-### Added — RAG & Document Parsing
-- **Document parsers** (`rag/parser/`): Parser interface with 5 implementations — `TextParser`, `PDFParser`, `WordParser`, `ExcelParser`, `PPTParser` — all producing `rag.Document` slices with configurable text chunking and overlap
-- **QdrantTextIndex** (`rag/qdrant_text_index.go`): Higher-level index that auto-embeds text via an `Embedder` then persists to Qdrant
-
-### Added — Access Control & Hub
-- **Multi-tenant RBAC** (`access/`): Four permission levels (`none`/`read`/`write`/`admin`) across four resource kinds (`credential`/`agent`/`knowledge_base`/`session`); principals can be users, groups, or organizations; pluggable `Store` interface for policy persistence
-- **Component Hub** (`hub/`): `Hub` interface for browsing, searching, and installing MCP tools and skills from remote registries; `MCPHub`, `SkillHub` adapters; multi-hub `Registry` for unified search
-
-### Added — Middleware
-- **`OnCheckPermission` hook**: Wraps the permission check before tool execution; enables custom authorization, audit logging, or dynamic permission policies
-- **`OnReasoning` hook**: Wraps each reasoning step (ReAct iteration) for per-iteration observability, logging, or guardrails
-- Middleware hook count increased from 5 to 7
-
-### Added — Infrastructure
-- OpenAI TTS model calling `/v1/audio/speech` endpoint with streaming support
-- Gemini schema sanitizer: converts unsupported types, removes invalid fields, rewrites enums
-- JSON repair utility for truncated tool-call inputs (closes malformed JSON instead of crashing)
-- Ollama formatter: content field in tool result messages
-- Gemini synthetic call ID generation for tool result matching
+- Extracted `buildPodManifest()` for testability
 
 ### Fixed
-- OpenAI Chat Completions: deprecated `function_call` → `tool_choice` wire field
-- Anthropic formatter: drop empty text blocks and empty thinking blocks (Anthropic rejects with 400)
-- Gemini formatter: drop empty text blocks and empty thinking blocks (Gemini rejects with 400)
+- Duplicate timeout in `runKubectl` (now respects the parent context deadline)
+- Replaced GNU `find -printf` with a POSIX-compatible alternative
 
-## [v2.0.3] - 2025-06-25
+## [v2.0.6] - 2026-08-10
 
 ### Added
-- 9 model provider adapters (OpenAI, Anthropic, DashScope, DeepSeek, Gemini, Ollama, Moonshot, xAI, OpenAI Responses API)
+- **Web UI Studio** (`webui/`): embedded single-page web interface for agent
+  interaction; zero-dependency SPA served via `go:embed` with streaming chat,
+  thinking-block display, tool-call visualization, human-in-the-loop
+  confirmation, session management, and model browser; mount with
+  `service.HandlerWithWebUI` or use `webui.Handler` directly
+- **Reranker interface + RerankedIndex** (`rag/`): `Reranker` interface and
+  `RerankedIndex` wrapper that re-scores retrieval results for improved
+  precision
+- **Eval harness** (`replay/`): `Scorer` interface, `EvalTape`, and
+  `AssertTape` for replay-based agent evaluation with pluggable scoring
+  functions
+- **CostTrackerMiddleware**: hard USD spend cap via `WithMaxCostUSD`; currency-conversion
+  display support (`WithExchangeRate`, e.g. CNY)
+- **GuardrailMiddleware** (`middleware/`): output content safety filtering
+  with three actions — `Block` (rejects with `ErrGuardrailBlocked`), `Redact`
+  (replaces with placeholder), `Warn` (allows with metadata flags); built-in
+  rules: `KeywordBlockRule`, `KeywordRedactRule`, `MaxLengthRule`,
+  `CustomRule`
+- **RedisFullStorage** (`storage/`): 28-method `FullStorage` implementation
+  backed by Redis with TTL, prefix isolation, and atomic operations
+- **SecretStr**: `UnmarshalJSON` support + dual-field (`APIKey`/`SecretAPIKey`)
+  across all 22 API-key configs (model, TTS, embedding, workspace, hub, and storage adapters) for safe key handling
+- **`errors.AgentError.Is()` method**: sentinel matching via `errors.Is`;
+  `AgentMessage()` for LLM-facing error descriptions
+- Spanish README (`README.es-ES.md`) — first community PR from a human
+  contributor (@webbrain-one, #3)
+- Werewolves multi-agent game demo (`examples/werewolves`) plus 3 more
+  examples; 35 new tests from the adversarial-review pass
+
+### Added — Edge & Embedded Intelligence
+- **ConnectivityAwareModel** (`model/connectivity.go`): wraps local + cloud
+  ChatModel with internal circuit breaker; routes to cloud when online, falls
+  back to local (Ollama) when offline, auto-recovers via single-probe half-open
+- **PubSub interface** (`messagebus/pubsub.go`): minimal pub/sub contract for
+  IoT protocols with QoS (0/1/2), retain, configurable buffer size
+- **MQTT adapter** (`messagebus/mqtt/`): Eclipse Paho-based PubSub
+  implementation with auto-reconnect, topic prefix, credentials; build tag
+  `mqtt` to avoid bloating non-MQTT builds
+- **Device framework** (`device/`): `Connector` interface + 4 pure-Go hardware
+  drivers (Serial via termios, GPIO via chardev, CAN via SocketCAN, I2C via
+  i2c-dev) — all `//go:build linux`, zero CGO
+- **DeviceTool**: wraps any Connector as `tool.Tool`; sensors auto-allowed,
+  actuators require bypass-immune ASK; integrated watchdog kick on success
+- **SensorTool**: read-only sensor tool with JSON output and auto-allow
+  permissions
+- **SensorMiddleware**: injects live sensor readings into system prompt
+  (`[SENSOR DATA]...[/SENSOR DATA]`) with configurable max-token budget to
+  prevent context bloat
+- **Watchdog**: timer-based safety; if `Kick()` not called within timeout,
+  triggers safe-state callback (motor off, valve close, etc.)
+- **CI cross-arch job**: build verification for linux/arm64, arm, mips64le,
+  riscv64 with binary size check (< 18MB)
+- 4 edge examples: `edge_offline`, `edge_sensor`, `edge_serial_robot`,
+  `edge_fleet`
+- 4 docs: edge-deployment.md, device-tools.md, offline-operation.md,
+  multi-device.md
+
+### Added — Security & Audit
+- **Audit logging** (`audit/`): new package with structured `Logger` interface
+  and 4 implementations (InMemory, File/JSON-Lines, Multi fan-out, Nop); 10
+  action types; context propagation via `WithLogger`/`GetLogger`
+- **Sandbox execution events**: 3 new event types — `tool_exec_start`,
+  `tool_exec_end`, `tool_policy_denied` — providing visibility into the
+  orchestrator execution layer
+- **Sandbox Policy enforcement**: `sandbox.Policy` now actually controls tool
+  execution; `OrchestratorConfig.Policy` blocks tool calls that violate
+  filesystem/network/process policies before execution
+- **Process-group isolation** (`proc_unix.go`/`proc_windows.go`): child
+  processes killed as a group on timeout via `Setpgid` + `SIGKILL` to process
+  group, preventing orphans and fork-bombs
+- **Interpreter attack detection** (`CheckInterpreterAttack`): detects
+  dangerous API calls hidden inside interpreter inline-code flags
+  (`python -c`, `node -e`, `perl -e`, `ruby -e`, `lua -e`, `php -r`); checks
+  for `os.system`, `subprocess`, `child_process`, etc.
+- **Write hardening**: 10 MB size cap (`MaxWriteBytes`), atomic writes via
+  `fsutil.WriteFileAtomic`, executable-extension detection triggers
+  bypass-immune ASK for .sh/.py/.exe/.dll etc.
+- **Expanded dangerous paths**: added 20+ credential files (.kube/config,
+  .aws/credentials, .docker/config.json, SSH private keys, .gnupg/*) and 4
+  directories (.kube, .aws, .docker, .gnupg) to the safety layer
+- **awk removed from read-only allowlist**: `awk` can execute arbitrary
+  commands via `system()` and write files
+
+### Changed
+- **`exception` package removed**: all types consolidated into `errors/`; no
+  more split hierarchy
+
+### Fixed
+- Data race in `a2a/grpc` `Server.Close` vs the Listen accept loop
+- Watchdog timer race in device tests
+- `TextBlock` JSON serialization in the werewolves example
+- `/static/` prefix path resolution for CSS/JS assets in webui
+
+## [v2.0.5] - 2026-08-04
+
+### Added
+- **Ported 25 features from AgentScope Python**, including:
+  - **5 workspace backends**: Kubernetes (`workspace/k8s.go`), OpenSandbox,
+    Daytona, Apple Container, Bubblewrap
+  - **Gemini TTS** (`tts/gemini.go`): text-to-speech via the Gemini
+    generateContent API with audio response modality; default model
+    `gemini-2.5-flash-preview-tts`
+  - **Document parsers** (`rag/parser/`): Parser interface with 5
+    implementations — `TextParser`, `PDFParser`, `WordParser`, `ExcelParser`,
+    `PPTParser` — all producing `rag.Document` slices with configurable text
+    chunking and overlap
+  - **Multi-tenant RBAC** (`access/`): four permission levels
+    (`none`/`read`/`write`/`admin`) across four resource kinds
+    (`credential`/`agent`/`knowledge_base`/`session`); principals can be
+    users, groups, or organizations; pluggable `Store` interface
+  - **Component Hub** (`hub/`): `Hub` interface for browsing, searching, and
+    installing MCP tools and skills from remote registries; `MCPHub`,
+    `SkillHub` adapters; multi-hub `Registry` for unified search
+  - **More retrieval and storage backends**: Elasticsearch, Milvus, and
+    MongoDB indexes (`rag/`); SQL storage backend (`storage/sql.go`);
+    cursor-based pagination for `list_messages`
+  - **Model cards**: Kimi K3 (256K context, 64K output, vision + video +
+    thinking), qwen3.7-plus (131K context, thinking), GLM-5.2 (131K context)
+  - **`OnCheckPermission` middleware hook**: wraps the permission check before
+    tool execution; enables custom authorization, audit logging, or dynamic
+    permission policies (middleware hook count 6 → 7)
+- **Six Go-native capabilities**:
+  - **Deterministic Replay** (`replay/`): record/replay middleware capturing
+    model-call request/response pairs into JSON tapes; replay without calling
+    the LLM for offline CI/CD testing
+  - **Hot-reload Config** (`hotreload/`): polling-based file watcher with
+    generic `Reloader[T]` and atomic pointer swap; JSON/YAML/TOML parsers
+  - **WASM Sandbox** (`wasm/`): execute WebAssembly modules with strict
+    resource limits (memory, time, instruction count/fuel); auto-discovers
+    `wasmtime`, `wasmer`, or `wasm3` CLI runtimes
+  - **gRPC-style TCP A2A transport** (`a2a/grpc/`): bidirectional
+    agent-to-agent communication over newline-delimited JSON on TCP; `Server`
+    + `Client` with streaming support
+  - **Agent Load Testing** (`bench/`): scenario-based benchmarking with
+    configurable concurrency, duration, and ramp-up; throughput, latency
+    percentiles (p50/p95/p99), and error breakdowns
+  - **Generic Pool with backpressure**: bounded queue (`ErrPoolFull`) and
+    atomic `PoolStats`, building on the fan-out `AgentPool` introduced in
+    v2.0.4
+
+## [v2.0.4] - 2026-07-13
+
+### Added
+- **v3 production infrastructure layer**: `protocol`, `loop`, `runtime`,
+  `metrics`, `tracing`, `sandbox`, `platform` packages; universal agent loop
+  with state machine and event streaming
+- **Coding agent infrastructure**: fan-out `AgentPool`, `agenttest` mock-model
+  harness, project/settings config, MCP stdio server, CostTracker + metrics
+  middleware, prompt composer/providers, resilience primitives (circuit
+  breaker, rate limiter, model wrapper)
+- **6 new built-in tools (15 total)**: MultiEdit, ApplyPatch, WebFetch, Spawn,
+  LSP, Notebook
+- **Tool backend routing**: read/write/edit tools route through a configured
+  workspace backend (`tool.WithBackend`), closing sandbox isolation for file
+  tools
+- **AgentManager** for subagent lifecycle; **SkillManager**; Windows safety
+  checks; `InMemoryProvider`
+- **Anthropic prompt caching** (opt-in) + prompt-cache token accounting in
+  loop events and budget
+- **JSON-Schema tool input validation**
+- **Prometheus metrics provider** + optional `/metrics` endpoint
+- **OpenAI TTS** (`tts/openai.go`): OpenAI Audio Speech API
+  (`/v1/audio/speech`) with streaming support
+- **Streaming error propagation**: `ChatResponse` carries `Error` and
+  `StopReason`
+- **Production hardening (first pass)**: WebFetch SSRF guard (blocks
+  loopback/private/link-local incl. cloud metadata), MCP subprocess env
+  isolation, per-tool timeout + result cap, opt-in workspace-root jail for
+  file tools, token and duration budgets on the loop path, atomic file writes,
+  HTTP server hardening (`ReadHeaderTimeout`/`IdleTimeout`/body caps) +
+  `/healthz` + `/readyz` + graceful shutdown, credential redaction in URLs and
+  logs, OTEL span attributes and per-label metrics, fuzz targets + coverage
+  step in CI
+- Gemini schema sanitizer (const→enum, removes `$ref`/`$schema`/
+  `additionalProperties`), JSON repair utility for truncated tool-call inputs,
+  Ollama formatter `tool_name` field, Gemini synthetic tool-call ID generation
+- STABILITY.md documenting versioning and stability tiers
+
+### Changed
+- **BREAKING**: module path migrated to `/v2` — import
+  `github.com/alanfokco/agentscope-go/v2/pkg/agentscope/...`
+- Deprecated `ReActAgent`; examples migrated to `UnifiedAgent`
+
+### Fixed
+- OpenAI-compatible API: use `max_completion_tokens` instead of the deprecated
+  `max_tokens` wire field
+- Anthropic formatter: drop empty text/thinking blocks (fixes 400 responses)
+- Gemini formatter: drop empty text/thinking blocks (fixes 400 responses)
+- Event-forwarder goroutine leaks and torn reads in managers/schedulers
+- Kept HITL/external tools off the concurrent batch path
+- 10 code-review fixes (middleware bypass, HITL backfill, safety regex, races,
+  panics)
+- Credential leakage via URLs and logs
+
+### Security
+- Closed the bash read-only classification bypass (write redirects are no
+  longer auto-allowed) plus 8 further hardening fixes
+- Removed `curl`/`wget` from the read-only bash allowlist
+
+## [v2.0.3] - 2026-06-25
+
+### Added
+- 9 model provider adapters (OpenAI, Anthropic, DashScope, DeepSeek, Gemini,
+  Ollama, Moonshot, xAI, OpenAI Responses API)
 - 54 bundled model cards with context sizes, capabilities, and status
 - UnifiedAgent (v2) with native API-level tool calling and streaming
 - ReActAgent (v1) with text-based tool calling protocol
-- 17 built-in tools: Bash, Read, Write, Edit, MultiEdit, ApplyPatch, Glob, Grep, WebFetch, ResetTools, Spawn, LSP, Notebook, TaskCreate/Get/List/Update, Schedule (Create/Delete/List/View)
+- 9 built-in tools: Bash, Read, Write, Edit, Glob, Grep, ResetTools,
+  TaskCreate/Get/List/Update, Schedule (Create/Delete/List/View)
 - Bash safety analysis with AST-level injection detection
-- 5-hook middleware system (OnReply, OnModelCall, OnActing, OnSystemPrompt, OnCompressContext)
+- 6-hook middleware system (OnReply, OnReasoning, OnModelCall, OnActing,
+  OnSystemPrompt, OnCompressContext)
 - Per-tool middleware support
-- Built-in middleware: TracingMiddleware, TTSMiddleware, ReplyBudgetControlMiddleware, LongTermMemoryMiddleware
-- Permission engine with 5 modes (Default, AcceptEdits, Explore, Bypass, DontAsk)
+- Built-in middleware: TracingMiddleware, TTSMiddleware,
+  ReplyBudgetControlMiddleware, LongTermMemoryMiddleware
+- Permission engine with 5 modes (Default, AcceptEdits, Explore, Bypass,
+  DontAsk)
 - MCP client (Stdio + HTTP/SSE transport) with MCPTool adapter
 - A2A (Agent-to-Agent) HTTP protocol
 - Agent Teams with Leader/Worker coordination tools
 - Pipeline with Then/If combinators + MsgHub for multi-agent routing
-- Embedding models (OpenAI, DashScope, Gemini, Ollama) with batch processing and caching
+- Embedding models (OpenAI, DashScope, Gemini, Ollama) with batch processing
+  and caching
 - RAG with InMemoryIndex and Qdrant vector store
 - TTS (DashScope standard + CosyVoice realtime)
 - Audio caption streaming (PCM to WAV) for OpenAI/DashScope omni models
