@@ -6,7 +6,7 @@ Handoff guide for coding agents (and humans) working on **agentscope-go**. Read 
 
 A Go port of the Python [AgentScope](https://github.com/agentscope-ai/agentscope) multi-agent LLM framework.
 
-- **Module path: `github.com/alanfokco/agentscope-go/v2`** (v2+ line). Imports use `github.com/alanfokco/agentscope-go/v2/pkg/agentscope/...`. Latest tag: **`v2.0.7`**.
+- **Module path: `github.com/alanfokco/agentscope-go/v2`** (v2+ line). Imports use `github.com/alanfokco/agentscope-go/v2/pkg/agentscope/...`. Latest tag: **`v2.0.8`**.
 - Library under `pkg/agentscope/`; runnable demos under `examples/`.
 - `go.mod` says `go 1.25.0` — keep code **Go 1.25+ compatible** (the minimum version declared in `go.mod`).
 - Python reference (for design parity) at `/Users/alanfokco/Github/agentscope/`.

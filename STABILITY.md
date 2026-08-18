@@ -6,7 +6,7 @@ production-hardening status of the library.
 ## Versioning
 
 The module path is `github.com/alanfokco/agentscope-go/v2`. The latest release
-tag is `v2.0.7`. Consumers import as:
+tag is `v2.0.8`. Consumers import as:
 
 ```go
 import "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"

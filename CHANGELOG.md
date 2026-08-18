@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Version sections below correspond to git tags (`v2.0.4` onward). Per-version
 details can be verified with `git log <prev-tag>..<tag> --oneline`.
 
-## [Unreleased]
+## [v2.0.8] - 2026-08-18
 
 ### Added
 - **Model cards synced with the upstream AgentScope Python v2.0.6 refresh**:
