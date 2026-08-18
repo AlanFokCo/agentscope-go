@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -62,8 +63,12 @@ func DetectShellTypeFromPath(shellPath string) ShellType {
 
 func detect() Shell {
 	if shellEnv := os.Getenv("SHELL"); shellEnv != "" {
-		st := DetectShellTypeFromPath(shellEnv)
-		return Shell{Type: st, Path: shellEnv}
+		if sh, ok := unixShellFromPath(shellEnv); ok {
+			return sh
+		}
+		// $SHELL points to a non-POSIX shell (fish, tcsh, xonsh, ...).
+		// Invoking it as "<shell> -c <posix command>" would misbehave, so
+		// fall through to the known-good shell chain below instead.
 	}
 
 	if comspec := os.Getenv("COMSPEC"); comspec != "" {
@@ -88,4 +93,33 @@ func detect() Shell {
 	}
 
 	return Shell{Type: ShellSh, Path: "/bin/sh"}
+}
+
+// unixShellFromPath maps $SHELL to a Shell only when the executable is a
+// known POSIX-compatible Unix shell; anything else (fish, tcsh, ...) is
+// rejected so callers fall back to the bash/zsh/sh chain.
+func unixShellFromPath(p string) (Shell, bool) {
+	base := strings.ToLower(filepath.Base(p))
+	switch base {
+	case "bash":
+		return Shell{Type: ShellBash, Path: p}, true
+	case "zsh":
+		return Shell{Type: ShellZsh, Path: p}, true
+	case "sh", "dash", "ash":
+		return Shell{Type: ShellSh, Path: p}, true
+	}
+	if strings.Contains(base, "bash") {
+		return Shell{Type: ShellBash, Path: p}, true
+	}
+	return Shell{}, false
+}
+
+// Command builds an *exec.Cmd that runs the given command string through the
+// shell detected for this platform (bash/zsh/sh on Unix; pwsh, powershell.exe
+// or cmd.exe on Windows). Callers set Dir/Env on the returned Cmd as needed.
+// This is the single place workspace/tool execution should go through instead
+// of hardcoding "sh -c" (upstream feature #2132).
+func Command(ctx context.Context, command string) *exec.Cmd {
+	args := Detect().DeriveExecArgs(command)
+	return exec.CommandContext(ctx, args[0], args[1:]...)
 }

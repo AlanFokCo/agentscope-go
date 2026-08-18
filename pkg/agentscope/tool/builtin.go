@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
+
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/platform"
 )
 
 const (
@@ -65,12 +65,7 @@ func (t *shellCommandTool) Execute(ctx context.Context, args map[string]any) (*T
 	runCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
 	defer cancel()
 
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(runCtx, "cmd", "/c", cmdStr)
-	} else {
-		cmd = exec.CommandContext(runCtx, "/bin/sh", "-c", cmdStr)
-	}
+	cmd := platform.Command(runCtx, cmdStr)
 	out, err := cmd.CombinedOutput()
 	exitCode := 0
 	if cmd.ProcessState != nil {

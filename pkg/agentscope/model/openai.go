@@ -203,7 +203,10 @@ func (m *OpenAIChatModel) CountTokens(msgs []*message.Msg, tools []ToolSchema) i
 // convertMessagesToOpenAI maps internal Msg instances to OpenAI messages.
 // Uses the OpenAI formatter for full block-type support, then converts to typed structs.
 func convertMessagesToOpenAI(msgs []*message.Msg) []openAIChatMessage {
-	f := formatter.NewOpenAIFormatter()
+	return convertMessagesWithFormatter(msgs, formatter.NewOpenAIFormatter())
+}
+
+func convertMessagesWithFormatter(msgs []*message.Msg, f formatter.Formatter) []openAIChatMessage {
 	formatted, err := f.Format(msgs)
 	if err != nil {
 		return convertMessagesToOpenAIFallback(msgs)
@@ -217,6 +220,9 @@ func convertMessagesToOpenAI(msgs []*message.Msg) []openAIChatMessage {
 		}
 		if name, ok := m["name"].(string); ok {
 			msg.Name = name
+		}
+		if rc, ok := m["reasoning_content"].(string); ok && rc != "" {
+			msg.ReasoningContent = rc
 		}
 		if content, ok := m["content"].(string); ok {
 			msg.Content = content

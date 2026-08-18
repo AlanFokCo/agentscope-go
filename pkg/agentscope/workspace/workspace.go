@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/internal/fsutil"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/platform"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -167,7 +168,7 @@ func (w *LocalWorkspace) Execute(ctx context.Context, command string) (*ExecResu
 	ctx, cancel := context.WithTimeout(ctx, w.commandTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd := platform.Command(ctx, command)
 	cmd.Dir = w.basePath
 
 	var stdout, stderr strings.Builder

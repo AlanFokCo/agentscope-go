@@ -92,3 +92,47 @@ func TestIsStreamingTool(t *testing.T) {
 		t.Fatal("wrapped tool should be a StreamingTool")
 	}
 }
+
+// TestCollectStream_ErrorStatePreserved locks in upstream fix #2178: once a
+// final chunk reports ERROR, a trailing INTERRUPTED or DENIED final chunk must
+// not overwrite it.
+func TestCollectStream_ErrorStatePreserved(t *testing.T) {
+	cases := []struct {
+		name string
+		late message.ToolResultState
+	}{
+		{"interrupted-after-error", message.ToolResultInterrupted},
+		{"denied-after-error", message.ToolResultDenied},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ch := make(chan ToolChunk, 2)
+			ch <- ToolChunk{
+				Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: "boom"}},
+				IsFinal: true,
+				State:   message.ToolResultError,
+			}
+			ch <- ToolChunk{IsFinal: true, State: tc.late}
+			close(ch)
+
+			resp := CollectStream(ch)
+			if resp.State != message.ToolResultError {
+				t.Errorf("state = %q, want %q (ERROR must not be overwritten by %q)",
+					resp.State, message.ToolResultError, tc.late)
+			}
+		})
+	}
+}
+
+// A later SUCCESS final chunk still wins over an earlier ERROR only if the
+// stream genuinely recovered; INTERRUPTED/DENIED are the guarded states.
+func TestCollectStream_LateStateStillApplies(t *testing.T) {
+	ch := make(chan ToolChunk, 2)
+	ch <- ToolChunk{IsFinal: true, State: message.ToolResultInterrupted}
+	ch <- ToolChunk{IsFinal: true, State: message.ToolResultSuccess}
+	close(ch)
+	resp := CollectStream(ch)
+	if resp.State != message.ToolResultSuccess {
+		t.Errorf("state = %q, want success", resp.State)
+	}
+}

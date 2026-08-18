@@ -6,6 +6,8 @@ import (
 
 // OpenAIFormatter formats messages for OpenAI-compatible APIs (OpenAI, DashScope, DeepSeek).
 type OpenAIFormatter struct {
+	// audioAsDataURL wraps base64 audio in a "data:;base64," URL (DashScope).
+	audioAsDataURL bool
 	// SupportsThinking enables reasoning_content field (DashScope/DeepSeek).
 	SupportsThinking bool
 	// SupportedInputMediaTypes lists glob patterns of accepted media types (e.g. "image/*").
@@ -69,7 +71,11 @@ func (f *OpenAIFormatter) formatMsg(msg *message.Msg) map[string]any {
 		case message.HintBlock:
 			textParts = append(textParts, blk.GetHintText())
 		case message.DataBlock:
-			if formatted := FormatDataBlockForOpenAI(blk, f.SupportedInputMediaTypes); formatted != nil {
+			formatBlock := FormatDataBlockForOpenAI
+			if f.audioAsDataURL {
+				formatBlock = FormatDataBlockForDashScope
+			}
+			if formatted := formatBlock(blk, f.SupportedInputMediaTypes); formatted != nil {
 				multimodalParts = append(multimodalParts, formatted)
 				hasMultimodal = true
 			}
@@ -142,6 +148,7 @@ type DashScopeFormatter struct {
 func NewDashScopeFormatter() *DashScopeFormatter {
 	return &DashScopeFormatter{
 		OpenAIFormatter: OpenAIFormatter{
+			audioAsDataURL:           true,
 			SupportsThinking:         true,
 			SupportedInputMediaTypes: []string{"image/*", "audio/*", "video/*"},
 		},

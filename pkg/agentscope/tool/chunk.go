@@ -106,6 +106,12 @@ func CollectStream(ch <-chan ToolChunk) *ToolResponse {
 			lastMeta = chunk.Metadata
 		}
 		if chunk.IsFinal {
+			// Preserve an ERROR state: a trailing INTERRUPTED/DENIED final
+			// chunk must not overwrite it (upstream fix #2178).
+			if lastState == message.ToolResultError &&
+				(chunk.State == message.ToolResultInterrupted || chunk.State == message.ToolResultDenied) {
+				continue
+			}
 			lastState = chunk.State
 		}
 	}

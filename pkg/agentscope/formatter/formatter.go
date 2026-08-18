@@ -93,6 +93,17 @@ func GroupMessages(msgs []*message.Msg) []MessageGroup {
 
 // FormatDataBlockForOpenAI converts a DataBlock to OpenAI image_url format.
 func FormatDataBlockForOpenAI(blk message.DataBlock, supported []string) map[string]any {
+	return formatDataBlock(blk, supported, false)
+}
+
+// FormatDataBlockForDashScope converts a DataBlock for DashScope's compatible
+// API: like OpenAI, but base64 audio is wrapped in a data URL and the mpeg
+// format suffix maps to mp3 (upstream fix #2315).
+func FormatDataBlockForDashScope(blk message.DataBlock, supported []string) map[string]any {
+	return formatDataBlock(blk, supported, true)
+}
+
+func formatDataBlock(blk message.DataBlock, supported []string, audioDataURL bool) map[string]any {
 	mt := blk.GetMediaType()
 	if !SupportsMediaType(supported, mt) {
 		return nil
@@ -118,10 +129,21 @@ func FormatDataBlockForOpenAI(blk message.DataBlock, supported []string) map[str
 	if strings.HasPrefix(mt, "audio/") {
 		if src, ok := blk.Source.(message.Base64Source); ok {
 			format := strings.TrimPrefix(src.MediaType, "audio/")
+			if format == "mpeg" {
+				// Shared by all audio-capable providers on purpose: the
+				// OpenAI-compatible input_audio API only accepts wav|mp3
+				// format labels, and audio/mpeg IS mp3 audio.
+				format = "mp3"
+			}
+			data := src.Data
+			if audioDataURL {
+				// DashScope requires base64 audio wrapped in a data URL.
+				data = "data:;base64," + src.Data
+			}
 			return map[string]any{
 				"type": "input_audio",
 				"input_audio": map[string]any{
-					"data":   src.Data,
+					"data":   data,
 					"format": format,
 				},
 			}

@@ -9,6 +9,61 @@ details can be verified with `git log <prev-tag>..<tag> --oneline`.
 
 ## [Unreleased]
 
+### Added
+- **Model cards synced with the upstream AgentScope Python v2.0.6 refresh**:
+  24 cards added (claude-fable-5/opus-5/sonnet-5, qwen-flash and
+  qwen3.5/3.6/3.7-flash, qwen3.8-max, gemini flash-lite family,
+  gemini-3.5/3.6-flash, kimi-k2.7-code(-highspeed), gpt-5.6 luna/sol/terra,
+  grok-4.20 family, grok-4.5, grok-build-0.1); 48 existing cards refreshed to
+  upstream values; Go-exclusive embedding cards preserved
+- **`ModelCard` lenient `deprecated_at` parsing** (`UnmarshalYAML`): accepts
+  RFC3339, naive ISO, space-separated, and plain-date timestamps, matching the
+  upstream Python card format (previously sunset cards were silently dropped)
+- **`Toolkit.HasGroup` / `IsGroupActive` / `GroupNames`** for group inspection
+- **`StdioClient.Reconnect`** (`mcp/`): reconnect a closed or failed MCP
+  stdio client; `Close` is now idempotent and calls on a closed client return
+  a clear error (port of upstream fix #2308). `Close`/`Reconnect` stay
+  responsive even while a `CallTool` is hung on an unresponsive server — the
+  subprocess is killed outside the wire mutex, which unblocks the in-flight
+  read
+- **`platform.Command`**: build an `exec.Cmd` through the platform-detected
+  shell (bash/zsh/sh on Unix; pwsh, powershell.exe, or cmd.exe on Windows)
+- **`FormatDataBlockForDashScope`** (`formatter/`): DashScope audio variant —
+  base64 audio wrapped in a `data:;base64,` URL (port of upstream fix #2315).
+  The mpeg→mp3 format mapping lives in the shared data-block formatter and
+  applies to the OpenAI path as well (its `input_audio` API only accepts
+  `wav|mp3` labels)
+- Regression test locking in Moonshot/OpenAI-compatible trailing usage-only
+  chunk handling (upstream #2314; verified not affected)
+
+### Changed
+- **DashScope requests now use `DashScopeFormatter`**: base64 audio sent as
+  data URLs (upstream fix #2315), video DataBlocks emitted as `video_url`
+  parts (previously dropped), and `reasoning_content` preserved in request
+  history
+- **Shell execution is platform-aware**: `LocalWorkspace.Execute`,
+  `workspace.LocalBackend.ExecCommand`, `tool.LocalBackend.ExecShell`, and the
+  legacy shell tool run commands through `platform.Command` instead of
+  hardcoded `sh -c` — Windows workspaces execute via PowerShell/cmd
+  (port of upstream feature #2132). On Unix, execution now follows the
+  detected shell (bash/zsh/sh): a non-POSIX `$SHELL` (fish, tcsh, xonsh, …)
+  is skipped in favor of the bash→zsh→sh chain so `-c` commands keep POSIX
+  semantics
+
+### Fixed
+- **ResetTools validates all group names before changing any state**: unknown
+  or `basic` group names now return an error listing the invalid names and
+  available groups instead of partially resetting activations; non-string
+  array elements (e.g. `activate: [1]`) are rejected instead of being
+  silently dropped (port of upstream fix #2302)
+- **`CollectStream` preserves ERROR state**: a trailing INTERRUPTED/DENIED
+  final chunk no longer overwrites an earlier ERROR (port of upstream fix
+  #2178)
+- **External tool results no longer emit a duplicate `ToolResultStart`**: a
+  SUBMITTED external call already emits its start event at submission, so a
+  wait that ends without a matching result (canceled, timed out, or unmatched
+  submission) now emits only the delta/end (upstream #2167 class)
+
 ## [v2.0.7] - 2026-08-11
 
 ### Added

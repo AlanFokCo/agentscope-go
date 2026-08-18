@@ -10,6 +10,7 @@ import (
 	"time"
 
 	agentscope "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/formatter"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/internal/httpx"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 )
@@ -75,7 +76,7 @@ func (m *DashScopeChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts
 
 	reqBody := openAIChatRequest{
 		Model:    m.model,
-		Messages: convertMessagesToOpenAI(msgs),
+		Messages: convertMessagesWithFormatter(msgs, formatter.NewDashScopeFormatter()),
 	}
 	if callOpts.Temperature != nil {
 		t := float32(*callOpts.Temperature)
@@ -131,7 +132,7 @@ func (m *DashScopeChatModel) ChatStream(ctx context.Context, msgs []*message.Msg
 
 	reqBody := openAIChatRequest{
 		Model:         m.model,
-		Messages:      convertMessagesToOpenAI(msgs),
+		Messages:      convertMessagesWithFormatter(msgs, formatter.NewDashScopeFormatter()),
 		Stream:        true,
 		StreamOptions: &openAIStreamOpts{IncludeUsage: true},
 	}

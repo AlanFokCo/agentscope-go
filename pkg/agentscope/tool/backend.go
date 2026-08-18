@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/platform"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -56,7 +57,7 @@ func (b *LocalBackend) ExecShell(ctx context.Context, command string, timeout ti
 		defer cancel()
 	}
 
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
+	cmd := platform.Command(ctx, command)
 	if b.WorkDir != "" {
 		cmd.Dir = b.WorkDir
 	}

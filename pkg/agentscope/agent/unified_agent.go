@@ -638,8 +638,13 @@ func (a *UnifiedAgent) executeToolCallWithPermission(
 		emit(ctx, ch, event.NewRequireExternalExecutionEvent(replyID, []message.ToolCallBlock{*tc}))
 		result := a.waitForExternalResult(ctx, tc.ID)
 		if result == nil {
-			return a.emitToolResult(ctx, ch, replyID, tc, message.ToolResultError,
-				"External execution timed out or canceled")
+			// ToolResultStart was already emitted when the call was
+			// submitted; emit only the delta/end so consumers never see a
+			// duplicate start for the same call (upstream #2167).
+			const reason = "External execution timed out, canceled, or no matching result was submitted"
+			emit(ctx, ch, event.NewToolResultTextDeltaEvent(replyID, tc.ID, reason))
+			emit(ctx, ch, event.NewToolResultEndEvent(replyID, tc.ID, message.ToolResultError))
+			return message.ToolResultError, reason
 		}
 		outputText := result.GetOutputText()
 		emit(ctx, ch, event.NewToolResultTextDeltaEvent(replyID, tc.ID, outputText))

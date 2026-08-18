@@ -915,11 +915,73 @@ func TestOpenAIFamily_DataBlock_Audio(t *testing.T) {
 			if !ok {
 				t.Fatal("input_audio field missing")
 			}
-			if ia["data"] != "AAAA" {
-				t.Errorf("data = %v", ia["data"])
+			wantData := "AAAA" // OpenAI: raw base64
+			if nf.name == "DashScope" {
+				// DashScope requires a data URL (upstream fix #2315).
+				wantData = "data:;base64,AAAA"
+			}
+			if ia["data"] != wantData {
+				t.Errorf("data = %v, want %q", ia["data"], wantData)
 			}
 			if ia["format"] != "mp3" {
 				t.Errorf("format = %v, want mp3", ia["format"])
+			}
+		})
+	}
+}
+
+// TestOpenAIFamily_DataBlock_AudioMpegMapsToMp3 locks in the shared
+// mpeg→mp3 format mapping (evaluator M3): the OpenAI input_audio API only
+// accepts wav|mp3 format labels, so audio/mpeg must be emitted as mp3 on the
+// OpenAI path too, not only on the DashScope data-URL path.
+func TestOpenAIFamily_DataBlock_AudioMpegMapsToMp3(t *testing.T) {
+	msgs := []*message.Msg{
+		message.UserMsg("user", []message.ContentBlock{
+			message.DataBlock{
+				Type: "data",
+				ID:   "aud_mpeg",
+				Source: message.Base64Source{
+					Type:      "base64",
+					Data:      "BBBB",
+					MediaType: "audio/mpeg",
+				},
+			},
+		}),
+	}
+
+	formatters := []namedFormatter{
+		{"OpenAI", NewOpenAIFormatter(), nil},
+		{"DashScope", NewDashScopeFormatter(), nil},
+	}
+	for _, nf := range formatters {
+		t.Run(nf.name, func(t *testing.T) {
+			result, err := nf.f.Format(msgs)
+			if err != nil {
+				t.Fatalf("Format error: %v", err)
+			}
+			content, ok := result[0]["content"].([]map[string]any)
+			if !ok {
+				t.Fatalf("content not []map: %T", result[0]["content"])
+			}
+			var ia map[string]any
+			for _, c := range content {
+				if c["type"] == "input_audio" {
+					ia, _ = c["input_audio"].(map[string]any)
+					break
+				}
+			}
+			if ia == nil {
+				t.Fatal("no input_audio block found")
+			}
+			if ia["format"] != "mp3" {
+				t.Errorf("format = %v, want mp3 (mpeg must map to mp3)", ia["format"])
+			}
+			wantData := "BBBB"
+			if nf.name == "DashScope" {
+				wantData = "data:;base64,BBBB"
+			}
+			if ia["data"] != wantData {
+				t.Errorf("data = %v, want %q", ia["data"], wantData)
 			}
 		})
 	}

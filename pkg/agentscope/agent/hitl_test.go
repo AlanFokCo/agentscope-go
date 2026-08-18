@@ -591,3 +591,140 @@ func TestObserve_RejectsToolResultBlocks(t *testing.T) {
 		t.Errorf("error should mention tool_result, got: %s", err.Error())
 	}
 }
+
+func TestHITL_ExternalTool_NoDuplicateToolResultStart_OnUnmatchedResult(t *testing.T) {
+	// Upstream #2167 class: a SUBMITTED external call already emitted
+	// ToolResultStart when it was submitted. If the wait ends without a
+	// matching result, the error emission must NOT emit a second
+	// ToolResultStart for the same call.
+	toolCallResp := model.ChatResponse{
+		Content: []message.ContentBlock{
+			message.ToolCallBlock{
+				Type:  "tool_call",
+				ID:    "tc_ext",
+				Name:  "external_tool",
+				Input: `{}`,
+				State: message.ToolCallPending,
+			},
+		},
+		IsLast: true,
+	}
+
+	mock := &mockChatModel{
+		responses: []model.ChatResponse{toolCallResp},
+	}
+
+	tk := tool.NewToolkit(newHITLMockTool("external_tool", true))
+	permCtx := permission.NewContext(permission.ModeBypass)
+
+	agent := NewUnifiedAgent("hitl-agent", "You are helpful.", mock,
+		WithToolkit(tk),
+		WithPermissionContext(permCtx),
+		WithReactConfig(ReactConfig{MaxIters: 3}),
+	)
+
+	ch, err := agent.ReplyStream(context.Background(), "Call external")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	starts := 0
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for evt := range ch {
+			if se, ok := evt.(event.ToolResultStartEvent); ok && se.ToolCallID == "tc_ext" {
+				starts++
+			}
+			if _, ok := evt.(event.RequireExternalExecutionEvent); ok {
+				// Submit a result whose ID does not match the pending call:
+				// the wait ends with no matching result (nil path) while the
+				// reply context is still alive.
+				agent.SubmitExternalResult(&event.ExternalExecutionResultEvent{
+					ExecutionResults: []message.ToolResultBlock{
+						{
+							Type:   "tool_result",
+							ID:     "tc_other",
+							Name:   "external_tool",
+							Output: "wrong id",
+							State:  message.ToolResultSuccess,
+						},
+					},
+				})
+			}
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for reply to complete")
+	}
+
+	if starts != 1 {
+		t.Errorf("expected exactly 1 ToolResultStartEvent for tc_ext, got %d", starts)
+	}
+}
+
+func TestHITL_ExternalTool_CancelWhileSubmitted_NoHangNoDuplicateStart(t *testing.T) {
+	// Same nil-result path as the unmatched-ID test, entered via ctx
+	// cancellation: the reply must terminate promptly and must never emit a
+	// second ToolResultStart for the submitted call.
+	toolCallResp := model.ChatResponse{
+		Content: []message.ContentBlock{
+			message.ToolCallBlock{
+				Type:  "tool_call",
+				ID:    "tc_ext",
+				Name:  "external_tool",
+				Input: `{}`,
+				State: message.ToolCallPending,
+			},
+		},
+		IsLast: true,
+	}
+
+	mock := &mockChatModel{
+		responses: []model.ChatResponse{toolCallResp},
+	}
+
+	tk := tool.NewToolkit(newHITLMockTool("external_tool", true))
+	permCtx := permission.NewContext(permission.ModeBypass)
+
+	agent := NewUnifiedAgent("hitl-agent", "You are helpful.", mock,
+		WithToolkit(tk),
+		WithPermissionContext(permCtx),
+		WithReactConfig(ReactConfig{MaxIters: 3}),
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ch, err := agent.ReplyStream(ctx, "Call external")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	starts := 0
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for evt := range ch {
+			if se, ok := evt.(event.ToolResultStartEvent); ok && se.ToolCallID == "tc_ext" {
+				starts++
+			}
+			if _, ok := evt.(event.RequireExternalExecutionEvent); ok {
+				cancel()
+			}
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("reply hung after ctx cancel while parked on external result")
+	}
+
+	if starts > 1 {
+		t.Errorf("expected at most 1 ToolResultStartEvent for tc_ext, got %d", starts)
+	}
+}

@@ -1,9 +1,11 @@
 package platform
 
 import (
+	"context"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestShellTypeString(t *testing.T) {
@@ -137,5 +139,52 @@ func TestPowerShellDangerousPatterns(t *testing.T) {
 		if ok, _ := CheckPowerShellDangerous(cmd); ok {
 			t.Errorf("should not be dangerous: %q", cmd)
 		}
+	}
+}
+
+// TestCommandRunsViaDetectedShell is a cross-platform smoke test: whatever
+// shell Detect() picks (sh/bash on Unix, pwsh/powershell/cmd on Windows),
+// commands must run and produce output — including arguments with embedded
+// spaces, the classic breakage zone for argv construction through
+// pwsh -Command / cmd /c (evaluator M9).
+func TestCommandRunsViaDetectedShell(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := Command(ctx, `echo "agentscope platform smoke with spaces"`)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Command failed: %v (output: %s)", err, out)
+	}
+	// The unquoted substring must survive on every shell: sh/bash/zsh and
+	// pwsh strip the quotes; cmd.exe keeps them but the words still appear
+	// contiguously.
+	if !strings.Contains(string(out), "agentscope platform smoke with spaces") {
+		t.Errorf("output = %q, want it to contain the spaced marker", out)
+	}
+}
+
+func TestDetectSkipsNonPOSIXShellEnv(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("$SHELL handling is Unix-only")
+	}
+	// fish/tcsh are not POSIX: detect() must not invoke them as
+	// "<shell> -c <posix command>" (evaluator M4) — it falls back to the
+	// bash/zsh/sh chain instead.
+	for _, shell := range []string{"/usr/bin/fish", "/usr/local/bin/tcsh", "/opt/xonsh"} {
+		t.Setenv("SHELL", shell)
+		got := detect()
+		if got.Path == shell {
+			t.Errorf("SHELL=%s: detect() returned the non-POSIX shell %q (type %s)", shell, got.Path, got.Type)
+		}
+		switch got.Type {
+		case ShellBash, ShellZsh, ShellSh:
+		default:
+			t.Errorf("SHELL=%s: detect() returned non-Unix shell type %s", shell, got.Type)
+		}
+	}
+	// Known shells are still honored.
+	t.Setenv("SHELL", "/bin/zsh")
+	if got := detect(); got.Type != ShellZsh || got.Path != "/bin/zsh" {
+		t.Errorf("SHELL=/bin/zsh: got %+v", got)
 	}
 }

@@ -54,3 +54,31 @@ func TestProcessOpenAIStream_SurfacesStopReason(t *testing.T) {
 		t.Fatalf("StopReason = %q, want %q", last.StopReason, StopReasonLength)
 	}
 }
+
+// TestProcessOpenAIStream_TrailingUsageOnlyChunk locks in the fix for upstream
+// issue #2314 (Moonshot streaming usage): providers such as Moonshot emit a
+// trailing chunk with usage but no choices. The accumulated usage must still
+// surface on the final IsLast response.
+func TestProcessOpenAIStream_TrailingUsageOnlyChunk(t *testing.T) {
+	sseCh := make(chan httpx.SSEEvent, 4)
+	sseCh <- httpx.SSEEvent{Data: `{"id":"x","choices":[{"delta":{"content":"hi"},"finish_reason":"stop"}]}`}
+	// Trailing usage-only chunk: no choices.
+	sseCh <- httpx.SSEEvent{Data: `{"id":"x","choices":[],"usage":{"prompt_tokens":11,"completion_tokens":7}}`}
+	sseCh <- httpx.SSEEvent{Data: "[DONE]"}
+	close(sseCh)
+
+	got := drainStream(sseCh)
+	if len(got) == 0 {
+		t.Fatal("expected at least one response")
+	}
+	last := got[len(got)-1]
+	if !last.IsLast {
+		t.Fatal("last response should be marked IsLast")
+	}
+	if last.Usage == nil {
+		t.Fatal("usage from trailing usage-only chunk was dropped")
+	}
+	if last.Usage.InputTokens != 11 || last.Usage.OutputTokens != 7 {
+		t.Errorf("usage = %+v, want input 11 / output 7", last.Usage)
+	}
+}

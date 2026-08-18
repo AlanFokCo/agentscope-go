@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 
@@ -205,6 +206,34 @@ func (tk *Toolkit) DeactivateGroup(name string) {
 	if g, ok := tk.groups[name]; ok {
 		g.Active = false
 	}
+}
+
+// HasGroup reports whether a tool group with the given name exists.
+func (tk *Toolkit) HasGroup(name string) bool {
+	tk.mu.RLock()
+	defer tk.mu.RUnlock()
+	_, ok := tk.groups[name]
+	return ok
+}
+
+// IsGroupActive reports whether the named group exists and is active.
+func (tk *Toolkit) IsGroupActive(name string) bool {
+	tk.mu.RLock()
+	defer tk.mu.RUnlock()
+	g, ok := tk.groups[name]
+	return ok && g.Active
+}
+
+// GroupNames returns the names of all tool groups, sorted for stable output.
+func (tk *Toolkit) GroupNames() []string {
+	tk.mu.RLock()
+	defer tk.mu.RUnlock()
+	names := make([]string, 0, len(tk.groups))
+	for name := range tk.groups {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // GetToolSchemas returns ToolSchema for all active tools, suitable for passing to model.WithTools.
