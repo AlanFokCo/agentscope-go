@@ -2,6 +2,9 @@ package model
 
 import (
 	"testing"
+	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestListModelsAll(t *testing.T) {
@@ -74,8 +77,8 @@ func TestGetModelCard(t *testing.T) {
 	if card.ContextSize != 1000000 {
 		t.Errorf("context_size = %d, want 1000000", card.ContextSize)
 	}
-	if card.OutputSize != 131072 {
-		t.Errorf("output_size = %d, want 131072", card.OutputSize)
+	if card.OutputSize != 128000 {
+		t.Errorf("output_size = %d, want 128000", card.OutputSize)
 	}
 	if !card.SupportsThinking() {
 		t.Error("expected SupportsThinking() = true")
@@ -142,5 +145,48 @@ func TestModelCardFields(t *testing.T) {
 	}
 	if card.Type != ModelCardTypeChat {
 		t.Errorf("type = %q, want %q", card.Type, ModelCardTypeChat)
+	}
+}
+
+func TestModelCardDeprecatedAtFormats(t *testing.T) {
+	cases := []struct {
+		name string
+		doc  string
+		want string // expected RFC3339 (UTC); empty means DeprecatedAt must be nil
+	}{
+		{"rfc3339", "name: m\ndeprecated_at: \"2026-07-24T00:00:00Z\"\n", "2026-07-24T00:00:00Z"},
+		{"naive-iso", "name: m\ndeprecated_at: \"2026-07-24T00:00:00\"\n", "2026-07-24T00:00:00Z"},
+		{"date-only", "name: m\ndeprecated_at: \"2026-07-24\"\n", "2026-07-24T00:00:00Z"},
+		{"space-separated", "name: m\ndeprecated_at: \"2026-07-24 00:00:00\"\n", "2026-07-24T00:00:00Z"},
+		{"unquoted-naive", "name: m\ndeprecated_at: 2026-07-24T10:30:00\n", "2026-07-24T10:30:00Z"},
+		{"absent", "name: m\n", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var card ModelCard
+			if err := yaml.Unmarshal([]byte(tc.doc), &card); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if tc.want == "" {
+				if card.DeprecatedAt != nil {
+					t.Fatalf("DeprecatedAt = %v, want nil", card.DeprecatedAt)
+				}
+				return
+			}
+			if card.DeprecatedAt == nil {
+				t.Fatal("DeprecatedAt = nil, want set")
+			}
+			if got := card.DeprecatedAt.UTC().Format(time.RFC3339); got != tc.want {
+				t.Errorf("DeprecatedAt = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestModelCardDeprecatedAtInvalid(t *testing.T) {
+	var card ModelCard
+	err := yaml.Unmarshal([]byte("name: m\ndeprecated_at: \"not-a-date\"\n"), &card)
+	if err == nil {
+		t.Fatal("expected error for invalid deprecated_at, got nil")
 	}
 }

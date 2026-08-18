@@ -45,6 +45,46 @@ type ModelCard struct {
 	OutputSize   int           `yaml:"output_size"   json:"output_size"`
 }
 
+// UnmarshalYAML makes deprecated_at parsing lenient. Upstream Python model
+// cards emit naive ISO timestamps (e.g. "2026-07-24T00:00:00"), while older
+// Go cards used RFC3339. Accept RFC3339, naive ISO seconds, and plain dates.
+func (c *ModelCard) UnmarshalYAML(value *yaml.Node) error {
+	var aux struct {
+		Type         string   `yaml:"type"`
+		Name         string   `yaml:"name"`
+		Label        string   `yaml:"label"`
+		Status       string   `yaml:"status"`
+		DeprecatedAt string   `yaml:"deprecated_at"`
+		InputTypes   []string `yaml:"input_types"`
+		OutputTypes  []string `yaml:"output_types"`
+		ContextSize  int      `yaml:"context_size"`
+		OutputSize   int      `yaml:"output_size"`
+	}
+	if err := value.Decode(&aux); err != nil {
+		return err
+	}
+	c.Type = ModelCardType(aux.Type)
+	c.Name = aux.Name
+	c.Label = aux.Label
+	c.Status = ModelStatus(aux.Status)
+	c.InputTypes = aux.InputTypes
+	c.OutputTypes = aux.OutputTypes
+	c.ContextSize = aux.ContextSize
+	c.OutputSize = aux.OutputSize
+	c.DeprecatedAt = nil
+	raw := strings.TrimSpace(aux.DeprecatedAt)
+	if raw == "" {
+		return nil
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02 15:04:05", "2006-01-02"} {
+		if parsed, err := time.Parse(layout, raw); err == nil {
+			c.DeprecatedAt = &parsed
+			return nil
+		}
+	}
+	return fmt.Errorf("deprecated_at %q is not a valid timestamp", raw)
+}
+
 // SupportsThinking returns true if the model can produce thinking/reasoning output.
 func (c *ModelCard) SupportsThinking() bool {
 	for _, t := range c.OutputTypes {
@@ -90,7 +130,7 @@ var modelsFS embed.FS
 
 // embeddedModelCards is the parsed, sorted set of all embedded model cards. The
 // embedded FS is immutable at runtime, so it is parsed exactly once (previously
-// every ListModels/GetModelCard call re-read and re-parsed ~50 YAML files, and
+// every ListModels/GetModelCard call re-read and re-parsed 78 YAML files, and
 // GetModelCard sits on the reply hot path via context compression).
 var (
 	embeddedModelCardsOnce sync.Once

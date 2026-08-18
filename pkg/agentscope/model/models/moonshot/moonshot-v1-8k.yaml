@@ -1,6 +1,7 @@
 name: moonshot-v1-8k
-label: Moonshot V1 8K
-status: active
+label: Kimi Moonshot v1 8K
+status: deprecated
+deprecated_at: "2026-08-31T00:00:00"
 
 input_types:
   - text/plain
@@ -8,5 +9,11 @@ input_types:
 output_types:
   - text/plain
 
-context_size: 8000
-output_size: 4096
+context_size: 8192
+output_size: 8192
+
+parameter_overrides:
+  max_tokens:
+    maximum: 8192
+  reasoning_effort:
+    hidden: true

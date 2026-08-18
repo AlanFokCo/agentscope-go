@@ -1,6 +1,7 @@
 name: deepseek-chat
 label: DeepSeek Chat
-status: active
+status: sunset
+deprecated_at: "2026-07-24T00:00:00"
 
 input_types:
   - text/plain
@@ -8,5 +9,9 @@ input_types:
 output_types:
   - text/plain
 
-context_size: 64000
-output_size: 8192
+context_size: 1000000
+output_size: 384000
+
+parameter_overrides:
+  max_tokens:
+    maximum: 384000

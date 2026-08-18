@@ -1,6 +1,7 @@
 name: gpt-audio-mini
 label: GPT Audio Mini
-status: active
+status: deprecated
+deprecated_at: "2027-01-20T00:00:00"
 
 input_types:
   - text/plain
@@ -13,3 +14,19 @@ output_types:
 
 context_size: 128000
 output_size: 16384
+
+parameter_overrides:
+  max_tokens:
+    maximum: 16384
+  thinking_enable:
+    hidden: true
+  # Source: https://platform.openai.com/docs/guides/text-to-speech
+  voice:
+    default: alloy
+    enum:
+      - alloy
+      - echo
+      - nova
+      - shimmer
+      - sage
+      - verse

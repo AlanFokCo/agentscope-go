@@ -1,6 +1,6 @@
 name: grok-3
 label: Grok 3
-status: active
+status: deprecated
 
 input_types:
   - text/plain
@@ -13,3 +13,7 @@ output_types:
 
 context_size: 131072
 output_size: 16000
+
+parameter_overrides:
+  max_tokens:
+    maximum: 16000

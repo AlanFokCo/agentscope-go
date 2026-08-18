@@ -187,7 +187,7 @@ All providers support `Chat`, `ChatStream` (SSE), `CountTokens`, and native tool
 | **Moonshot** | `model.NewMoonshotChatModel` | kimi-k2.6, moonshot-v1-128k |
 | **xAI** | `model.NewXAIChatModel` | grok-3, grok-4.3 |
 
-54 model cards with context sizes, capabilities, and status are bundled via `//go:embed`.
+78 model cards with context sizes, capabilities, and status are bundled via `//go:embed`.
 
 Additional model features: `FallbackChatModel` (automatic primary→fallback failover), `ClientOptions` (custom HTTP timeout/headers/transport), extended thinking with budget tokens, audio caption streaming (PCM→WAV).
 
@@ -449,7 +449,7 @@ a := agent.NewUnifiedAgent("bot", "...", cm,
 ```
 pkg/agentscope/
 ├── agent/                  # Agent interface + UnifiedAgent, UserAgent, A2AAgent
-├── model/                  # ChatModel interface + 9 providers + 54 model cards
+├── model/                  # ChatModel interface + 9 providers + 78 model cards
 ├── tool/                   # Tool interface + FunctionTool + 17 built-in tools + safety analysis
 ├── message/                # Msg + ContentBlock (text, thinking, tool_call, tool_result, data, hint)
 ├── event/                  # 30 event types for streaming lifecycle

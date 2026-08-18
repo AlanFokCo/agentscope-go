@@ -11,3 +11,7 @@ output_types:
 
 context_size: 40960
 output_size: 8192
+
+parameter_overrides:
+  max_tokens:
+    maximum: 8192

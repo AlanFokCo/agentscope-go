@@ -7,6 +7,14 @@ input_types:
 
 output_types:
   - text/plain
+  - application/x-thinking
 
-context_size: 131072
-output_size: 8192
+context_size: 1000000
+output_size: 128000
+
+parameter_overrides:
+  max_tokens: {"maximum": 128000}
+  # Voice only applies to omni-style models; hide the field for this
+  # non-omni model so the frontend popover doesn't render it.
+  voice:
+    hidden: true

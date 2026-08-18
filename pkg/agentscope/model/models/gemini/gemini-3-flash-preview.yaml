@@ -4,7 +4,6 @@ status: active
 
 input_types:
   - text/plain
-  - application/x-thinking
   - image/jpeg
   - image/png
   - image/gif
@@ -12,6 +11,7 @@ input_types:
   - audio/mp3
   - audio/wav
   - video/mp4
+  - application/pdf
 
 output_types:
   - text/plain
@@ -19,3 +19,7 @@ output_types:
 
 context_size: 1048576
 output_size: 65536
+
+parameter_overrides:
+  max_tokens:
+    maximum: 65536
