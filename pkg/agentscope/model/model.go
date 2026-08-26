@@ -186,6 +186,17 @@ func WithTemperature(t float64) CallOption {
 	}
 }
 
+// WithThinkingDisabled explicitly turns provider-side thinking/reasoning off
+// for this call. Used by the structured-output fallback ladder (upstream
+// #2140): providers with a thinking toggle honor false by sending
+// enable_thinking=false (or equivalent); providers without one ignore it.
+func WithThinkingDisabled() CallOption {
+	return func(o *CallOptions) {
+		f := false
+		o.ThinkingEnable = &f
+	}
+}
+
 func WithMaxTokens(n int) CallOption {
 	return func(o *CallOptions) {
 		o.MaxTokens = &n

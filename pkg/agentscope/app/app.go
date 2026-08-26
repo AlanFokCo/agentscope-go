@@ -266,17 +266,17 @@ func (a *App) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "chat already running for this session", http.StatusConflict)
 		return
 	}
+	// Defer so a panic mid-handler cannot wedge the session slot forever.
+	defer a.chatRegistry.Release(sessionID)
 
 	ch, err := a.chatSvc.ChatStream(r.Context(), sessionID, req.Message)
 	if err != nil {
-		a.chatRegistry.Release(sessionID)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	sse, err2 := service.NewSSEWriter(w)
 	if err2 != nil {
-		a.chatRegistry.Release(sessionID)
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
 		return
 	}
@@ -285,7 +285,6 @@ func (a *App) handleChatStream(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	a.chatRegistry.Release(sessionID)
 }
 
 func (a *App) handleCancelChat(w http.ResponseWriter, r *http.Request) {

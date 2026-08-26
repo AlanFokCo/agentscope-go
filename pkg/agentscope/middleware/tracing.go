@@ -3,8 +3,10 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/event"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tool"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tracing"
@@ -106,6 +108,15 @@ func (m *TracingMiddleware) OnModelCall(ctx context.Context, input *ModelCallInp
 		{Key: "gen_ai.tool.count", Value: len(input.Tools)},
 	}
 
+	// Upstream #2391: record what the model saw so traces can replay the
+	// call. Serialized compactly and bounded to keep spans lightweight.
+	if len(input.Messages) > 0 {
+		attrs = append(attrs, tracing.SpanAttribute{
+			Key:   "gen_ai.input.messages",
+			Value: serializeMessagesForTrace(input.Messages),
+		})
+	}
+
 	// Add model name from input if available.
 	if input.ModelName != "" {
 		attrs = append(attrs, tracing.SpanAttribute{Key: "gen_ai.request.model", Value: input.ModelName})
@@ -186,4 +197,48 @@ func (m *TracingMiddleware) startSpan(ctx context.Context, name string, attrs ..
 		return at.StartSpanWithAttrs(ctx, name, attrs...)
 	}
 	return m.Tracer.StartSpan(ctx, name)
+}
+
+// traceMessagePreviewLen bounds each message's text in trace attributes.
+const traceMessagePreviewLen = 512
+
+// traceMessagesTotalLen bounds the whole gen_ai.input.messages attribute.
+const traceMessagesTotalLen = 8192
+
+// serializeMessagesForTrace renders messages as "role: text" lines with
+// per-message previews, truncated to a total budget (upstream #2391).
+// Truncation is rune-safe so span attributes stay valid UTF-8.
+func serializeMessagesForTrace(msgs []*message.Msg) string {
+	var sb strings.Builder
+	emitted := 0
+	for _, m := range msgs {
+		if m == nil {
+			continue
+		}
+		if emitted > 0 {
+			sb.WriteString("\n")
+		}
+		emitted++
+		textPtr := m.GetTextContent(" ")
+		text := ""
+		if textPtr != nil {
+			text = *textPtr
+		}
+		text = truncateRunes(text, traceMessagePreviewLen)
+		fmt.Fprintf(&sb, "%s: %s", m.Role, text)
+		if sb.Len() > traceMessagesTotalLen {
+			return truncateRunes(sb.String(), traceMessagesTotalLen) + "...(truncated)"
+		}
+	}
+	return sb.String()
+}
+
+// truncateRunes shortens s to at most n runes, appending a marker when it
+// was cut. Never splits a multi-byte rune.
+func truncateRunes(s string, n int) string {
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	return string(runes[:n]) + "...(truncated)"
 }

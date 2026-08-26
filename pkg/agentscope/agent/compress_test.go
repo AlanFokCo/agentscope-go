@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -506,5 +507,145 @@ func TestCompressContext_ToolResultTruncationInReply(t *testing.T) {
 	}
 	if !found {
 		t.Error("tool result should have been truncated")
+	}
+}
+
+func TestContextConfig_TriggerRatioAllowsPointNine(t *testing.T) {
+	// Upstream #2396: 0.9 is a legal trigger ratio; only values above 0.9
+	// (or <= 0) fall back to the 0.8 default.
+	c1 := ContextConfig{TriggerRatio: 0.9}
+	if cfg := c1.withDefaults(); cfg.TriggerRatio != 0.9 {
+		t.Errorf("TriggerRatio = %v, want 0.9 kept", cfg.TriggerRatio)
+	}
+	c2 := ContextConfig{TriggerRatio: 0.95}
+	if cfg := c2.withDefaults(); cfg.TriggerRatio != 0.8 {
+		t.Errorf("TriggerRatio = %v, want default 0.8 for >0.9", cfg.TriggerRatio)
+	}
+	c3 := ContextConfig{TriggerRatio: 0.5}
+	if cfg := c3.withDefaults(); cfg.TriggerRatio != 0.5 {
+		t.Errorf("TriggerRatio = %v, want 0.5 kept", cfg.TriggerRatio)
+	}
+}
+
+func TestCompressContext_SummaryFailureFallsBackToTruncation(t *testing.T) {
+	// Upstream #2140: when summary generation fails, compression must fall
+	// back to truncating the context to the reserve set while keeping the
+	// previous summary — not leave the context wedged above the threshold.
+	mock := &compressionMockModel{
+		tokenCount:  30000,
+		contextSize: 32000,
+		chatErr:     fmt.Errorf("400: tool_choice unsupported"),
+	}
+	agent := NewUnifiedAgent("test", "prompt", mock,
+		WithContextConfig(&ContextConfig{
+			TriggerRatio: 0.8,
+			ReserveRatio: 0.1,
+		}),
+	)
+	agent.state.Summary = "previous summary"
+
+	for i := 0; i < 10; i++ {
+		agent.state.Context = append(agent.state.Context,
+			message.UserMsg("user", fmt.Sprintf("message %d", i)),
+			message.AssistantMsg("bot", fmt.Sprintf("reply %d", i)),
+		)
+	}
+
+	if err := agent.compressContext(context.Background()); err != nil {
+		t.Fatalf("compression should fall back gracefully, got error: %v", err)
+	}
+	if agent.state.Summary != "previous summary" {
+		t.Errorf("previous summary must be kept, got %q", agent.state.Summary)
+	}
+	if len(agent.state.Context) >= 20 {
+		t.Errorf("context must be truncated, still has %d messages", len(agent.state.Context))
+	}
+}
+
+func TestCompressContext_FallbackEmptySummaryGetsNotice(t *testing.T) {
+	// Upstream #2140: when there is no previous summary, the truncation
+	// fallback must install a notice so the model knows history was dropped.
+	mock := &compressionMockModel{
+		tokenCount:  30000,
+		contextSize: 32000,
+		chatErr:     fmt.Errorf("400: tool_choice unsupported"),
+	}
+	agent := NewUnifiedAgent("test", "prompt", mock,
+		WithContextConfig(&ContextConfig{TriggerRatio: 0.8, ReserveRatio: 0.1}),
+	)
+	// No previous summary.
+	for i := 0; i < 6; i++ {
+		agent.state.Context = append(agent.state.Context,
+			message.UserMsg("user", fmt.Sprintf("message %d", i)),
+			message.AssistantMsg("bot", fmt.Sprintf("reply %d", i)),
+		)
+	}
+	if err := agent.compressContext(context.Background()); err != nil {
+		t.Fatalf("fallback should be graceful, got: %v", err)
+	}
+	if !strings.Contains(agent.state.Summary, "truncated") {
+		t.Errorf("empty summary must be replaced by a truncation notice, got %q", agent.state.Summary)
+	}
+}
+
+type fakeOffloader struct {
+	mu       sync.Mutex
+	contents []string
+	filename string
+}
+
+func (f *fakeOffloader) OffloadContent(_ context.Context, content string, filename string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.contents = append(f.contents, content)
+	f.filename = filename
+	return fmt.Sprintf("/workspace/offloaded/%s", filename), nil
+}
+
+func (f *fakeOffloader) OffloadToolResult(_ context.Context, content string, toolCallID string) (string, error) {
+	return f.OffloadContent(context.Background(), content, "tool_"+toolCallID+".txt")
+}
+
+func TestCompressContext_FallbackOffloadsDroppedMessages(t *testing.T) {
+	// Upstream #2140: the truncation fallback must offload the dropped
+	// messages even when no previous summary exists, and the reminder must
+	// not duplicate across repeated fallbacks.
+	mock := &compressionMockModel{
+		tokenCount:  30000,
+		contextSize: 32000,
+		chatErr:     fmt.Errorf("400: tool_choice unsupported"),
+	}
+	off := &fakeOffloader{}
+	agent := NewUnifiedAgent("test", "prompt", mock,
+		WithContextConfig(&ContextConfig{TriggerRatio: 0.8, ReserveRatio: 0.1}),
+		WithOffloader(off),
+	)
+	for i := 0; i < 6; i++ {
+		agent.state.Context = append(agent.state.Context,
+			message.UserMsg("user", fmt.Sprintf("message %d", i)),
+			message.AssistantMsg("bot", fmt.Sprintf("reply %d", i)),
+		)
+	}
+
+	if err := agent.compressContext(context.Background()); err != nil {
+		t.Fatalf("first fallback: %v", err)
+	}
+	if err := agent.compressContext(context.Background()); err != nil {
+		t.Fatalf("second fallback: %v", err)
+	}
+
+	off.mu.Lock()
+	defer off.mu.Unlock()
+	if len(off.contents) == 0 {
+		t.Fatal("fallback must offload dropped messages")
+	}
+	if !strings.Contains(off.contents[0], "message 0") {
+		t.Errorf("offloaded content should contain dropped messages, got %.120s", off.contents[0])
+	}
+	if got := strings.Count(agent.state.Summary, "compressed_context_fallback.json"); got != 1 {
+		t.Errorf("offload reminder must appear exactly once across repeated fallbacks, got %d (summary: %q)", got, agent.state.Summary)
+	}
+	if !strings.Contains(agent.state.Summary, "truncated") {
+		t.Errorf("empty summary must still get the truncation notice, got %q", agent.state.Summary)
 	}
 }

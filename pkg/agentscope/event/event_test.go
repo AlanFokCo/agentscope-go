@@ -261,3 +261,43 @@ func TestAppendEvent_ThinkingStreaming(t *testing.T) {
 		t.Fatalf("expected 'let me think...', got %q", tb.Thinking)
 	}
 }
+
+func TestToolResultDataDeltaEvent_Validate(t *testing.T) {
+	// Upstream #2370: exactly one of Data/URL must be set.
+	valid := []ToolResultDataDeltaEvent{
+		NewToolResultDataDeltaEvent("r1", "tc1", "b1", "image/png", "AAAA", ""),
+		NewToolResultDataDeltaEvent("r1", "tc1", "b1", "image/png", "", "https://x/y.png"),
+	}
+	for i, ev := range valid {
+		if err := ev.Validate(); err != nil {
+			t.Errorf("valid case %d: unexpected error: %v", i, err)
+		}
+	}
+	invalid := []ToolResultDataDeltaEvent{
+		NewToolResultDataDeltaEvent("r1", "tc1", "b1", "image/png", "", ""),
+		NewToolResultDataDeltaEvent("r1", "tc1", "b1", "image/png", "AAAA", "https://x/y.png"),
+	}
+	for i, ev := range invalid {
+		if err := ev.Validate(); err == nil {
+			t.Errorf("invalid case %d: expected validation error", i)
+		}
+	}
+}
+
+func TestModelCallEndEventWithCache_CarriesCacheTokens(t *testing.T) {
+	// Upstream #2318 class: prompt-cache accounting must ride the event so
+	// observability/consumers see cache creation and read tokens.
+	evt := NewModelCallEndEventWithCache("r1", 100, 50, 20, 30)
+	if evt.InputTokens != 100 || evt.OutputTokens != 50 {
+		t.Errorf("token counts = %d/%d, want 100/50", evt.InputTokens, evt.OutputTokens)
+	}
+	if evt.CacheCreationTokens != 20 {
+		t.Errorf("CacheCreationTokens = %d, want 20", evt.CacheCreationTokens)
+	}
+	if evt.CacheReadTokens != 30 {
+		t.Errorf("CacheReadTokens = %d, want 30", evt.CacheReadTokens)
+	}
+	if evt.GetEventType() != EventModelCallEnd {
+		t.Errorf("event type = %v, want %v", evt.GetEventType(), EventModelCallEnd)
+	}
+}

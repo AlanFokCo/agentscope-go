@@ -494,3 +494,46 @@ func TestTracingMiddleware_OnReasoning_Iteration(t *testing.T) {
 		t.Errorf("agentscope.iteration = %v, want 3", v)
 	}
 }
+
+func TestTracingMiddleware_ChatSpanIncludesInputMessages(t *testing.T) {
+	// Upstream #2391: chat spans must carry the input messages observed at
+	// the tracing middleware so traces can replay what the model saw.
+	tracer := &attributedRecordingTracer{}
+	mw := NewTracingMiddleware(tracer)
+
+	core := func(_ context.Context, _ *ModelCallInput) (*model.ChatResponse, error) {
+		return &model.ChatResponse{
+			Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: "2"}},
+		}, nil
+	}
+
+	msgs := []*message.Msg{
+		message.SystemMsg("sys", "be helpful"),
+		message.UserMsg("user", "what is 1+1"),
+	}
+	_, err := mw.OnModelCall(context.Background(), &ModelCallInput{
+		AgentName: "test",
+		Messages:  msgs,
+	}, core)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(tracer.spans) != 1 {
+		t.Fatalf("expected 1 span, got %d", len(tracer.spans))
+	}
+	v, ok := findAttr(tracer.spans[0], "gen_ai.input.messages")
+	if !ok {
+		t.Fatal("chat span missing gen_ai.input.messages attribute")
+	}
+	found, _ := v.(string)
+	if found == "" {
+		t.Fatal("gen_ai.input.messages attribute is empty")
+	}
+	if !strings.Contains(found, "what is 1+1") {
+		t.Errorf("input messages attribute should contain the user text, got %q", found)
+	}
+	if !strings.Contains(found, "user") {
+		t.Errorf("input messages attribute should carry roles, got %q", found)
+	}
+}

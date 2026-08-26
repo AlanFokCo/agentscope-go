@@ -7,6 +7,52 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Version sections below correspond to git tags (`v2.0.4` onward). Per-version
 details can be verified with `git log <prev-tag>..<tag> --oneline`.
 
+## [Unreleased]
+
+### Added
+- **Structured output strategy ladder** (`model/`): `GenerateStructuredOutput`
+  now walks `forced → auto → no_think → none`; provider request-shape
+  rejections and missing structured results advance the ladder, other errors
+  stop it; failures wrap the typed `errors.ErrStructuredOutput` (port of
+  upstream fix #2140)
+- **`model.WithThinkingDisabled()`** call option + `ThinkingDisabler`
+  provider interface: DashScope sends `enable_thinking=false`;
+  DeepSeek/Moonshot/Anthropic send `thinking:{"type":"disabled"}`
+  (upstream #2140)
+- **`gen_ai.input.messages` chat-span attribute** (`middleware/tracing`):
+  bounded `role: text` serialization of what the model saw (port of upstream
+  fix #2391)
+- **`ToolResultDataDeltaEvent.Validate()`** (`event/`): enforces exactly one
+  of Data/URL (port of upstream fix #2370)
+
+### Changed
+- **Gemini usage accounting**: tool-use prompt tokens count as input, thought
+  tokens as output, cached-content tokens feed cache accounting (port of
+  upstream fix #2406)
+- **Audio input formats**: explicit `wav|mp3|mpeg→mp3` map for `input_audio`;
+  unsupported audio subtypes produce a clear `Format` error instead of being
+  passed through to the API (port of upstream fix #2301). Note: the exported
+  `FormatDataBlockForOpenAI`/`FormatDataBlockForDashScope` helpers keep their
+  signatures and return nil for invalid audio (dropping the block); the
+  `Format` paths surface the error
+- **Compression trigger ratio** `0.9` is now accepted; only values above it
+  fall back to the 0.8 default (port of upstream fix #2396)
+
+### Fixed
+- **OpenAI Responses streams close deterministically**: `processStream`
+  honors ctx on every send; scan errors and streams ending without
+  `response.completed` surface as a final `IsLast` response instead of
+  ending silently (port of upstream fix #2349)
+- **`ReadCache` refreshes recency on hit**: repeatedly-read files no longer
+  evict first under FIFO (port of upstream fix #1811)
+- **Compression falls back to truncation** when summary generation fails —
+  the context is truncated to the reserve set, the previous summary is kept
+  (a truncation notice substitutes an empty one) and the dropped content is
+  offloaded when an offloader is configured, instead of staying wedged above
+  the threshold (port of upstream fix #2140)
+- **Chat SSE handler releases the session registry via defer**: a panic
+  mid-handler can no longer wedge the session slot permanently
+
 ## [v2.0.8] - 2026-08-18
 
 ### Added

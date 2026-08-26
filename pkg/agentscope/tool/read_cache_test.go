@@ -216,3 +216,38 @@ func TestReadCache_DefaultLimits(t *testing.T) {
 		t.Errorf("maxCacheBytes = %d, want %d", rc.maxCacheBytes, DefaultMaxCacheBytes)
 	}
 }
+
+func TestReadCache_HitRefreshesRecency(t *testing.T) {
+	// Upstream #1811: a cache hit must refresh recency, otherwise a
+	// repeatedly-read hot file is evicted first (FIFO by insertion).
+	dir := t.TempDir()
+	mk := func(name string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("content-"+name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	a, b, c := mk("a.txt"), mk("b.txt"), mk("c.txt")
+
+	rc := NewReadCache(2, 1<<20)
+	rc.CacheFile(a, []string{"a"})
+	rc.CacheFile(b, []string{"b"})
+
+	// Touch a so it becomes most recent: order must now be [b, a].
+	if rc.GetCache(a) == nil {
+		t.Fatal("expected cache hit for a")
+	}
+
+	// Caching c must evict b (least recent), not a.
+	rc.CacheFile(c, []string{"c"})
+	if rc.GetCache(a) == nil {
+		t.Error("hot file a was evicted despite a more recent access (upstream #1811)")
+	}
+	if rc.GetCache(c) == nil {
+		t.Error("expected cache hit for c")
+	}
+	if rc.GetCache(b) != nil {
+		t.Error("expected b to be evicted as the least recently used")
+	}
+}

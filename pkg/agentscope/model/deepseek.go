@@ -88,6 +88,11 @@ func (m *DeepSeekChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts 
 	if callOpts.ToolChoice != nil {
 		reqBody.ToolChoice = formatToolChoice(callOpts.ToolChoice)
 	}
+	if callOpts.ThinkingEnable != nil && !*callOpts.ThinkingEnable {
+		// Upstream #2140: DeepSeek/Moonshot disable thinking via
+		// {"thinking":{"type":"disabled"}}, not enable_thinking.
+		reqBody.Thinking = &openAIThinking{Type: "disabled"}
+	}
 
 	var parsed openAIChatResponse
 	if err := httpx.DoJSONRequest(
@@ -142,6 +147,11 @@ func (m *DeepSeekChatModel) ChatStream(ctx context.Context, msgs []*message.Msg,
 	if callOpts.ToolChoice != nil {
 		reqBody.ToolChoice = formatToolChoice(callOpts.ToolChoice)
 	}
+	if callOpts.ThinkingEnable != nil && !*callOpts.ThinkingEnable {
+		// Upstream #2140: DeepSeek/Moonshot disable thinking via
+		// {"thinking":{"type":"disabled"}}, not enable_thinking.
+		reqBody.Thinking = &openAIThinking{Type: "disabled"}
+	}
 
 	sseCh, err := httpx.DoSSERequest(
 		ctx,
@@ -161,6 +171,11 @@ func (m *DeepSeekChatModel) ChatStream(ctx context.Context, msgs []*message.Msg,
 	outCh := make(chan ChatResponse, 16)
 	go processOpenAIStream(ctx, sseCh, outCh)
 	return outCh, nil
+}
+
+// DisableThinkingOptions implements ThinkingDisabler (upstream #2140).
+func (m *DeepSeekChatModel) DisableThinkingOptions() []CallOption {
+	return []CallOption{WithThinkingDisabled()}
 }
 
 // CountTokens estimates token count.

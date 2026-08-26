@@ -99,7 +99,7 @@ func (m *openaiResponseModel) ChatStream(ctx context.Context, msgs []*message.Ms
 	}
 
 	ch := make(chan ChatResponse, 32)
-	go m.processStream(respBody, ch)
+	go m.processStream(ctx, respBody, ch)
 	return ch, nil
 }
 
@@ -312,18 +312,40 @@ func (m *openaiResponseModel) parseResponse(raw map[string]any) (*ChatResponse, 
 	return resp, nil
 }
 
-func (m *openaiResponseModel) processStream(body io.ReadCloser, ch chan<- ChatResponse) {
+// processStream consumes the Responses SSE stream. Contract: exactly one
+// IsLast response is emitted on every path EXCEPT ctx cancellation
+// (abandoned consumer), where the channel simply closes — consumers looping
+// until IsLast must also handle channel closure (upstream #2349).
+func (m *openaiResponseModel) processStream(ctx context.Context, body io.ReadCloser, ch chan<- ChatResponse) {
 	defer close(ch)
 	defer body.Close()
+
+	// Upstream #2349 class: every send is ctx-selected so an abandoned
+	// stream can never wedge the producer goroutine on a full buffer.
+	send := func(resp ChatResponse) bool {
+		select {
+		case ch <- resp:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
 
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	var accText string
 	var accThinking string
+	var completedFinal bool
 	toolCalls := make(map[string]*message.ToolCallBlock)
 
+scanLoop:
 	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data: ") {
 			continue
@@ -344,15 +366,19 @@ func (m *openaiResponseModel) processStream(body io.ReadCloser, ch chan<- ChatRe
 		case "response.output_text.delta":
 			delta, _ := event["delta"].(string)
 			accText += delta
-			ch <- ChatResponse{
+			if !send(ChatResponse{
 				Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: delta}},
+			}) {
+				return
 			}
 
 		case "response.reasoning_summary_text.delta":
 			delta, _ := event["delta"].(string)
 			accThinking += delta
-			ch <- ChatResponse{
+			if !send(ChatResponse{
 				Content: []message.ContentBlock{message.ThinkingBlock{Type: "thinking", Thinking: delta}},
+			}) {
+				return
 			}
 
 		case "response.output_item.added":
@@ -400,11 +426,34 @@ func (m *openaiResponseModel) processStream(body io.ReadCloser, ch chan<- ChatRe
 				}
 			}
 
-			ch <- *resp
+			if !send(*resp) {
+				return
+			}
+			completedFinal = true
+			break scanLoop
 		}
 	}
 
+	if ctx.Err() != nil || completedFinal {
+		return
+	}
+
+	// Upstream #2349: never end silently. A scan error or a stream that
+	// terminates without response.completed still delivers a final IsLast
+	// response so consumers can distinguish completion from truncation.
+	final := ChatResponse{IsLast: true, ModelName: m.cfg.Model}
+	if accText != "" {
+		final.Content = append(final.Content, message.TextBlock{Type: "text", Text: accText})
+	}
+	if accThinking != "" {
+		final.Content = append(final.Content, message.ThinkingBlock{Type: "thinking", Thinking: accThinking})
+	}
+	for _, tc := range toolCalls {
+		final.Content = append(final.Content, *tc)
+	}
 	if err := scanner.Err(); err != nil {
 		logrus.WithError(err).Error("openai response: stream scan error")
+		final.Error = err
 	}
+	send(final)
 }

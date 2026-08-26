@@ -63,7 +63,12 @@ func (rc *ReadCache) GetCache(filePath string) *ReadCacheEntry {
 				rc.removeAt(i)
 				return nil
 			}
-			return &rc.entries[i]
+			// Upstream #1811: a hit refreshes recency. Without this a
+			// repeatedly-read hot file ages out first under FIFO eviction.
+			entry := rc.entries[i]
+			rc.removeAt(i)
+			rc.entries = append(rc.entries, entry)
+			return &rc.entries[len(rc.entries)-1]
 		}
 	}
 	return nil

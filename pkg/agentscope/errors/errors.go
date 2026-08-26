@@ -143,6 +143,7 @@ var (
 	ErrModelRateLimited  = &AgentError{Category: CategoryModel, Code: "model.rate_limited", Message: "model rate limited", Retryable: true}
 	ErrModelTimeout      = &AgentError{Category: CategoryModel, Code: "model.timeout", Message: "model call timed out", Retryable: true}
 	ErrModelContextLimit = &AgentError{Category: CategoryContext, Code: "context.too_long", Message: "context exceeds model limit", Retryable: false}
+	ErrStructuredOutput  = &AgentError{Category: CategoryModel, Code: "model.structured_output", Message: "model did not produce valid structured output", Retryable: false}
 	ErrToolDenied        = &AgentError{Category: CategoryPermission, Code: "tool.denied", Message: "tool execution denied", Retryable: false}
 	ErrToolTimeout       = &AgentError{Category: CategoryTool, Code: "tool.timeout", Message: "tool execution timed out", Retryable: false}
 	ErrSandboxDenied     = &AgentError{Category: CategoryPermission, Code: "sandbox.denied", Message: "sandbox execution denied", Retryable: true}

@@ -151,7 +151,7 @@ type anthropicToolChoice struct {
 
 type anthropicThinking struct {
 	Type         string `json:"type"`
-	BudgetTokens int    `json:"budget_tokens"`
+	BudgetTokens int    `json:"budget_tokens,omitempty"`
 }
 
 type anthropicTool struct {
@@ -212,6 +212,10 @@ func (m *AnthropicChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts
 			reqBody.MaxTokens = budget + 1024
 		}
 		reqBody.Thinking = &anthropicThinking{Type: "enabled", BudgetTokens: budget}
+	} else if callOpts.ThinkingEnable != nil && !*callOpts.ThinkingEnable {
+		// Upstream #2140: explicitly disable thinking (structured-output
+		// fallback rung; Anthropic rejects forced tool_choice with thinking).
+		reqBody.Thinking = &anthropicThinking{Type: "disabled"}
 	}
 
 	if len(callOpts.Tools) > 0 {
@@ -353,6 +357,10 @@ func (m *AnthropicChatModel) ChatStream(ctx context.Context, msgs []*message.Msg
 			reqBody.MaxTokens = budget + 1024
 		}
 		reqBody.Thinking = &anthropicThinking{Type: "enabled", BudgetTokens: budget}
+	} else if callOpts.ThinkingEnable != nil && !*callOpts.ThinkingEnable {
+		// Upstream #2140: explicitly disable thinking (structured-output
+		// fallback rung; Anthropic rejects forced tool_choice with thinking).
+		reqBody.Thinking = &anthropicThinking{Type: "disabled"}
 	}
 
 	if len(callOpts.Tools) > 0 {
@@ -661,6 +669,11 @@ type anthropicAccBlock struct {
 }
 
 // CountTokens estimates token count.
+// DisableThinkingOptions implements ThinkingDisabler (upstream #2140).
+func (m *AnthropicChatModel) DisableThinkingOptions() []CallOption {
+	return []CallOption{WithThinkingDisabled()}
+}
+
 func (m *AnthropicChatModel) CountTokens(msgs []*message.Msg, tools []ToolSchema) int {
 	return countTokensByBytes(msgs, tools)
 }

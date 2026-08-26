@@ -22,7 +22,10 @@ func (f *OpenAIFormatter) Format(msgs []*message.Msg) ([]map[string]any, error) 
 		if msg == nil {
 			continue
 		}
-		formatted := f.formatMsg(msg)
+		formatted, err := f.formatMsg(msg)
+		if err != nil {
+			return nil, err
+		}
 		if formatted != nil {
 			result = append(result, formatted)
 		}
@@ -30,13 +33,13 @@ func (f *OpenAIFormatter) Format(msgs []*message.Msg) ([]map[string]any, error) 
 	return result, nil
 }
 
-func (f *OpenAIFormatter) formatMsg(msg *message.Msg) map[string]any {
+func (f *OpenAIFormatter) formatMsg(msg *message.Msg) (map[string]any, error) {
 	m := map[string]any{"role": string(msg.Role)}
 
 	blocks := msg.GetContentBlocks()
 	if len(blocks) == 0 {
 		m["content"] = ""
-		return m
+		return m, nil
 	}
 
 	var textParts []string
@@ -71,11 +74,14 @@ func (f *OpenAIFormatter) formatMsg(msg *message.Msg) map[string]any {
 		case message.HintBlock:
 			textParts = append(textParts, blk.GetHintText())
 		case message.DataBlock:
-			formatBlock := FormatDataBlockForOpenAI
-			if f.audioAsDataURL {
-				formatBlock = FormatDataBlockForDashScope
+			// Use the checked internal variant so invalid audio subtypes
+			// surface as Format errors instead of being sent to the API
+			// (upstream #2301).
+			formatted, err := formatDataBlock(blk, f.SupportedInputMediaTypes, f.audioAsDataURL)
+			if err != nil {
+				return nil, err
 			}
-			if formatted := formatBlock(blk, f.SupportedInputMediaTypes); formatted != nil {
+			if formatted != nil {
 				multimodalParts = append(multimodalParts, formatted)
 				hasMultimodal = true
 			}
@@ -91,7 +97,7 @@ func (f *OpenAIFormatter) formatMsg(msg *message.Msg) map[string]any {
 		if f.ToolNameInResult {
 			result["tool_name"] = toolResultName
 		}
-		return result
+		return result, nil
 	}
 
 	if len(toolCalls) > 0 {
@@ -119,7 +125,7 @@ func (f *OpenAIFormatter) formatMsg(msg *message.Msg) map[string]any {
 		m["reasoning_content"] = joinStrings(thinkingParts)
 	}
 
-	return m
+	return m, nil
 }
 
 func joinStrings(parts []string) string {

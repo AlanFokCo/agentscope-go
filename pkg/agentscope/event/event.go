@@ -1,6 +1,7 @@
 package event
 
 import (
+	"fmt"
 	"time"
 
 	agentscope "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
@@ -397,8 +398,26 @@ func (e ToolResultDataDeltaEvent) GetEventType() EventType { return EventToolRes
 func (e ToolResultDataDeltaEvent) GetEventID() string      { return e.ID }
 func (e ToolResultDataDeltaEvent) GetReplyID() string      { return e.ReplyID }
 
+// NewToolResultDataDeltaEvent builds the event. Producers MUST pass exactly
+// one of data/url and call Validate() before emitting (upstream #2370
+// enforces this at construction in Python).
 func NewToolResultDataDeltaEvent(replyID, toolCallID, blockID, mediaType, data, url string) ToolResultDataDeltaEvent {
 	return ToolResultDataDeltaEvent{Base: newBase(), ReplyID: replyID, ToolCallID: toolCallID, BlockID: blockID, MediaType: mediaType, Data: data, URL: url}
+}
+
+// Validate enforces the source invariant (upstream #2370): exactly one of
+// Data (inline base64) or URL must be set. Producers must validate before
+// emitting; both-empty and both-set events are invalid.
+func (e ToolResultDataDeltaEvent) Validate() error {
+	hasData := e.Data != ""
+	hasURL := e.URL != ""
+	if hasData == hasURL {
+		if hasData {
+			return fmt.Errorf("tool result data delta: Data and URL are mutually exclusive, got both")
+		}
+		return fmt.Errorf("tool result data delta: exactly one of Data or URL is required, got neither")
+	}
+	return nil
 }
 
 type ToolResultEndEvent struct {

@@ -2,6 +2,7 @@ package formatter
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
@@ -1784,5 +1785,38 @@ func TestGroupMessages_NilsSkipped(t *testing.T) {
 	}
 	if len(groups[0].Msgs) != 1 {
 		t.Errorf("group[0] has %d msgs, want 1", len(groups[0].Msgs))
+	}
+}
+
+func TestOpenAIFamily_AudioUnsupportedSubtypeRejected(t *testing.T) {
+	// Upstream #2301: only wav/mp3/mpeg are valid input_audio formats; an
+	// arbitrary subtype (e.g. audio/ogg) must produce a clear error instead
+	// of being passed through to the API, which rejects it.
+	msgs := []*message.Msg{
+		message.UserMsg("user", []message.ContentBlock{
+			message.DataBlock{
+				Type: "data",
+				ID:   "aud_ogg",
+				Source: message.Base64Source{
+					Type:      "base64",
+					Data:      "CCCC",
+					MediaType: "audio/ogg",
+				},
+			},
+		}),
+	}
+	for _, nf := range []namedFormatter{
+		{"OpenAI", NewOpenAIFormatter(), nil},
+		{"DashScope", NewDashScopeFormatter(), nil},
+	} {
+		t.Run(nf.name, func(t *testing.T) {
+			_, err := nf.f.Format(msgs)
+			if err == nil {
+				t.Fatal("expected an error for unsupported audio subtype")
+			}
+			if !strings.Contains(err.Error(), "audio/ogg") {
+				t.Errorf("error should name the offending media type, got: %v", err)
+			}
+		})
 	}
 }

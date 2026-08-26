@@ -95,6 +95,9 @@ func (m *DashScopeChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts
 	if callOpts.ToolChoice != nil {
 		reqBody.ToolChoice = formatToolChoice(callOpts.ToolChoice)
 	}
+	if callOpts.ThinkingEnable != nil {
+		reqBody.EnableThinking = callOpts.ThinkingEnable
+	}
 	if callOpts.Voice != nil {
 		reqBody.Audio = &openAIAudioConfig{Voice: *callOpts.Voice, Format: "pcm16"}
 		reqBody.Modalities = []string{"text", "audio"}
@@ -152,6 +155,9 @@ func (m *DashScopeChatModel) ChatStream(ctx context.Context, msgs []*message.Msg
 	}
 	if callOpts.ToolChoice != nil {
 		reqBody.ToolChoice = formatToolChoice(callOpts.ToolChoice)
+	}
+	if callOpts.ThinkingEnable != nil {
+		reqBody.EnableThinking = callOpts.ThinkingEnable
 	}
 	if callOpts.Voice != nil {
 		reqBody.Audio = &openAIAudioConfig{Voice: *callOpts.Voice, Format: "pcm16"}
@@ -422,6 +428,11 @@ func processOpenAIStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, outCh
 	}
 }
 
+// DisableThinkingOptions implements ThinkingDisabler (upstream #2140).
+func (m *DashScopeChatModel) DisableThinkingOptions() []CallOption {
+	return []CallOption{WithThinkingDisabled()}
+}
+
 // CountTokens estimates token count by byte length / 4.
 func (m *DashScopeChatModel) CountTokens(msgs []*message.Msg, tools []ToolSchema) int {
 	return countTokensByBytes(msgs, tools)
@@ -470,13 +481,27 @@ type openAIChatRequest struct {
 
 	Temperature         *float32 `json:"temperature,omitempty"`
 	MaxTokens           *int
-	MaxCompletionTokens *int               `json:"max_completion_tokens,omitempty"`
-	TopP                *float32           `json:"top_p,omitempty"`
-	Tools               []ToolSchema       `json:"tools,omitempty"`
-	ToolChoice          any                `json:"tool_choice,omitempty"`
-	Audio               *openAIAudioConfig `json:"audio,omitempty"`
-	Modalities          []string           `json:"modalities,omitempty"`
-	StreamOptions       *openAIStreamOpts  `json:"stream_options,omitempty"`
+	MaxCompletionTokens *int         `json:"max_completion_tokens,omitempty"`
+	TopP                *float32     `json:"top_p,omitempty"`
+	Tools               []ToolSchema `json:"tools,omitempty"`
+	ToolChoice          any          `json:"tool_choice,omitempty"`
+	// EnableThinking maps to the OpenAI-compatible enable_thinking toggle
+	// (qwen3 and similar); only DashScope sets it. Thinking on DeepSeek and
+	// Moonshot uses the Thinking object below instead (upstream #2140).
+	EnableThinking *bool `json:"enable_thinking,omitempty"`
+	// Thinking carries provider-specific reasoning configuration: DeepSeek
+	// and Moonshot disable thinking via {"type":"disabled"} (upstream #2140
+	// structured-output fallback).
+	Thinking      *openAIThinking    `json:"thinking,omitempty"`
+	Audio         *openAIAudioConfig `json:"audio,omitempty"`
+	Modalities    []string           `json:"modalities,omitempty"`
+	StreamOptions *openAIStreamOpts  `json:"stream_options,omitempty"`
+}
+
+// openAIThinking is the OpenAI-compatible thinking configuration object
+// ({"type":"disabled"} turns reasoning off on DeepSeek/Moonshot).
+type openAIThinking struct {
+	Type string `json:"type"`
 }
 
 type openAIStreamOpts struct {

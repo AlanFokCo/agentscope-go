@@ -309,9 +309,26 @@ type geminiCandidate struct {
 }
 
 type geminiUsage struct {
-	PromptTokenCount     int `json:"promptTokenCount"`
-	CandidatesTokenCount int `json:"candidatesTokenCount"`
-	TotalTokenCount      int `json:"totalTokenCount"`
+	PromptTokenCount        int `json:"promptTokenCount"`
+	CandidatesTokenCount    int `json:"candidatesTokenCount"`
+	TotalTokenCount         int `json:"totalTokenCount"`
+	ToolUsePromptTokenCount int `json:"toolUsePromptTokenCount,omitempty"`
+	ThoughtsTokenCount      int `json:"thoughtsTokenCount,omitempty"`
+	CachedContentTokenCount int `json:"cachedContentTokenCount,omitempty"`
+}
+
+// geminiUsageToChatUsage maps Gemini usageMetadata onto ChatUsage
+// (upstream #2406): tool-use prompt tokens count as input, thought tokens
+// count as output, and cached-content tokens feed the cache accounting.
+func geminiUsageToChatUsage(u *geminiUsage) *ChatUsage {
+	if u == nil {
+		return nil
+	}
+	return &ChatUsage{
+		InputTokens:      u.PromptTokenCount + u.ToolUsePromptTokenCount,
+		OutputTokens:     u.CandidatesTokenCount + u.ThoughtsTokenCount,
+		CacheInputTokens: u.CachedContentTokenCount,
+	}
 }
 
 func parseGeminiResponse(parsed geminiResponse) (*ChatResponse, error) {
@@ -345,13 +362,7 @@ func parseGeminiResponse(parsed geminiResponse) (*ChatResponse, error) {
 		}
 	}
 
-	var usage *ChatUsage
-	if parsed.UsageMetadata != nil {
-		usage = &ChatUsage{
-			InputTokens:  parsed.UsageMetadata.PromptTokenCount,
-			OutputTokens: parsed.UsageMetadata.CandidatesTokenCount,
-		}
-	}
+	usage := geminiUsageToChatUsage(parsed.UsageMetadata)
 
 	return &ChatResponse{
 		Content:   content,
@@ -402,11 +413,8 @@ func processGeminiStream(ctx context.Context, sseCh <-chan httpx.SSEEvent, outCh
 			modelName = chunk.ModelVersion
 		}
 
-		if chunk.UsageMetadata != nil {
-			usage = &ChatUsage{
-				InputTokens:  chunk.UsageMetadata.PromptTokenCount,
-				OutputTokens: chunk.UsageMetadata.CandidatesTokenCount,
-			}
+		if u := geminiUsageToChatUsage(chunk.UsageMetadata); u != nil {
+			usage = u
 		}
 
 		if len(chunk.Candidates) == 0 {

@@ -77,7 +77,9 @@ type ContextConfig struct {
 
 func (c *ContextConfig) withDefaults() ContextConfig {
 	cfg := *c
-	if cfg.TriggerRatio <= 0 || cfg.TriggerRatio >= 0.9 {
+	// Upstream #2396: 0.9 itself is a legal trigger ratio; only values
+	// above it (or <= 0) fall back to the default.
+	if cfg.TriggerRatio <= 0 || cfg.TriggerRatio > 0.9 {
 		cfg.TriggerRatio = 0.8
 	}
 	if cfg.ReserveRatio <= 0 || cfg.ReserveRatio >= 0.9 {
@@ -190,17 +192,25 @@ func (a *UnifiedAgent) compressContextImpl(ctx context.Context, cfg *ContextConf
 		if contextOverflow {
 			logrus.WithField("agent", a.name).Warn("compression context overflow, removing oldest messages and retrying")
 			result, err = a.retryCompressWithFewer(ctx, compressionMsgs, msgsToCompress, cfg, ctxSize, compressionToolSchema)
-			if err != nil {
-				return fmt.Errorf("agent %s: context compression failed after overflow retry: %w", a.name, err)
-			}
-		} else {
-			return fmt.Errorf("agent %s: context compression failed: %w", a.name, err)
+		}
+		if err != nil {
+			// Upstream #2140: a failed summary must not leave the context
+			// wedged above the threshold. Fall back to truncating to the
+			// reserve set while keeping the previous summary.
+			logrus.WithError(err).WithField("agent", a.name).
+				Warn("summary generation failed; falling back to truncation with previous summary")
+			a.fallbackTruncateKeepSummary(ctx, msgsToCompress, msgsToReserve)
+			return nil
 		}
 	}
 
 	newSummary, err := formatSummary(cfg.SummaryTemplate, result)
 	if err != nil {
-		return fmt.Errorf("agent %s: failed to format summary: %w", a.name, err)
+		// Unusable summary: same fallback as a generation failure (#2140).
+		logrus.WithError(err).WithField("agent", a.name).
+			Warn("summary formatting failed; falling back to truncation with previous summary")
+		a.fallbackTruncateKeepSummary(ctx, msgsToCompress, msgsToReserve)
+		return nil
 	}
 
 	// Offload the compressed context to workspace if offloader is set
@@ -227,6 +237,54 @@ func (a *UnifiedAgent) compressContextImpl(ctx context.Context, cfg *ContextConf
 
 	logrus.WithField("agent", a.name).Info("context compression finished")
 	return nil
+}
+
+// defaultTruncationNotice replaces a missing summary when compression falls
+// back to truncation, so the model knows earlier history was dropped
+// (upstream #2140).
+const defaultTruncationNotice = "<system-info>Some earlier messages were truncated for limited context.</system-info>"
+
+// fallbackTruncateKeepSummary resolves a failed compression by truncating
+// the context to the reserve set while keeping the previous summary
+// (upstream #2140), so the reply can proceed instead of staying wedged
+// above the compression threshold. The dropped messages are offloaded when
+// an offloader is configured (with a deduplicated reminder), and an empty
+// summary is replaced by a truncation notice.
+func (a *UnifiedAgent) fallbackTruncateKeepSummary(ctx context.Context, msgsToCompress, msgsToReserve []*message.Msg) {
+	a.mu.Lock()
+	summary := a.state.Summary
+	a.mu.Unlock()
+
+	if summary == "" {
+		summary = defaultTruncationNotice
+	}
+
+	// Offload the dropped messages regardless of whether a summary existed
+	// (Python offloads unconditionally after the notice substitution).
+	if a.offloader != nil && len(msgsToCompress) > 0 {
+		if content, mErr := json.Marshal(msgsToCompress); mErr == nil {
+			if path, offErr := a.offloader.OffloadContent(ctx, string(content), "compressed_context_fallback.json"); offErr != nil {
+				logrus.WithError(offErr).WithField("agent", a.name).Warn("failed to offload truncated context")
+			} else {
+				reminder := fmt.Sprintf(
+					"\n<system-reminder>The truncated context is offloaded to '%s'.</system-reminder>",
+					path,
+				)
+				// Avoid duplicating the reminder across repeated fallbacks.
+				if !strings.Contains(summary, reminder) {
+					summary += reminder
+				}
+			}
+		}
+	}
+
+	a.mu.Lock()
+	a.state.Summary = summary
+	a.state.Context = msgsToReserve
+	a.mu.Unlock()
+	if a.readCache != nil {
+		cleanReadCacheForReserved(a.readCache, msgsToReserve)
+	}
 }
 
 func (a *UnifiedAgent) retryCompressWithFewer(

@@ -91,22 +91,39 @@ func GroupMessages(msgs []*message.Msg) []MessageGroup {
 	return groups
 }
 
+// audioFormatMap is the explicit media-type → input_audio format mapping
+// (upstream #2301). OpenAI-compatible input_audio APIs only accept wav|mp3
+// format labels; anything else must be rejected with a clear error instead
+// of being passed through for the API to refuse.
+var audioFormatMap = map[string]string{
+	"wav":  "wav",
+	"mp3":  "mp3",
+	"mpeg": "mp3", // audio/mpeg IS mp3 audio
+}
+
 // FormatDataBlockForOpenAI converts a DataBlock to OpenAI image_url format.
+// Returns nil when the block is unsupported or carries an invalid audio
+// subtype; use OpenAIFormatter.Format to surface the latter as an error.
 func FormatDataBlockForOpenAI(blk message.DataBlock, supported []string) map[string]any {
-	return formatDataBlock(blk, supported, false)
+	formatted, _ := formatDataBlock(blk, supported, false)
+	return formatted
 }
 
 // FormatDataBlockForDashScope converts a DataBlock for DashScope's compatible
 // API: like OpenAI, but base64 audio is wrapped in a data URL and the mpeg
 // format suffix maps to mp3 (upstream fix #2315).
 func FormatDataBlockForDashScope(blk message.DataBlock, supported []string) map[string]any {
-	return formatDataBlock(blk, supported, true)
+	formatted, _ := formatDataBlock(blk, supported, true)
+	return formatted
 }
 
-func formatDataBlock(blk message.DataBlock, supported []string, audioDataURL bool) map[string]any {
+// formatDataBlock converts a DataBlock for OpenAI-style APIs. It returns
+// (nil, nil) for unsupported media, but an error for malformed input the
+// API would reject (upstream #2301: unknown audio subtypes).
+func formatDataBlock(blk message.DataBlock, supported []string, audioDataURL bool) (map[string]any, error) {
 	mt := blk.GetMediaType()
 	if !SupportsMediaType(supported, mt) {
-		return nil
+		return nil, nil
 	}
 	if strings.HasPrefix(mt, "image/") {
 		switch src := blk.Source.(type) {
@@ -116,24 +133,24 @@ func formatDataBlock(blk message.DataBlock, supported []string, audioDataURL boo
 				"image_url": map[string]any{
 					"url": fmt.Sprintf("data:%s;base64,%s", src.MediaType, src.Data),
 				},
-			}
+			}, nil
 		case message.URLSource:
 			return map[string]any{
 				"type": "image_url",
 				"image_url": map[string]any{
 					"url": src.URL,
 				},
-			}
+			}, nil
 		}
 	}
 	if strings.HasPrefix(mt, "audio/") {
 		if src, ok := blk.Source.(message.Base64Source); ok {
-			format := strings.TrimPrefix(src.MediaType, "audio/")
-			if format == "mpeg" {
-				// Shared by all audio-capable providers on purpose: the
-				// OpenAI-compatible input_audio API only accepts wav|mp3
-				// format labels, and audio/mpeg IS mp3 audio.
-				format = "mp3"
+			subtype := strings.TrimPrefix(src.MediaType, "audio/")
+			format, known := audioFormatMap[subtype]
+			if !known {
+				return nil, fmt.Errorf(
+					"formatter: unsupported audio media type %q (supported: audio/wav, audio/mp3, audio/mpeg)",
+					src.MediaType)
 			}
 			data := src.Data
 			if audioDataURL {
@@ -146,7 +163,7 @@ func formatDataBlock(blk message.DataBlock, supported []string, audioDataURL boo
 					"data":   data,
 					"format": format,
 				},
-			}
+			}, nil
 		}
 	}
 	if strings.HasPrefix(mt, "video/") {
@@ -157,17 +174,17 @@ func formatDataBlock(blk message.DataBlock, supported []string, audioDataURL boo
 				"video_url": map[string]any{
 					"url": src.URL,
 				},
-			}
+			}, nil
 		case message.Base64Source:
 			return map[string]any{
 				"type": "video_url",
 				"video_url": map[string]any{
 					"url": fmt.Sprintf("data:%s;base64,%s", src.MediaType, src.Data),
 				},
-			}
+			}, nil
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 // formatMultiAgentOpenAI applies multi-agent formatting for OpenAI-compatible APIs:
