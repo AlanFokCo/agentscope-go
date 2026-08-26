@@ -68,8 +68,10 @@ func (i *QdrantIndex) AddDocuments(ctx context.Context, docs []Document) error {
 		}
 
 		points = append(points, &qdrant.PointStruct{
-			Id:      &qdrant.PointId{PointIdOptions: &qdrant.PointId_Uuid{Uuid: d.ID}},
-			Vectors: &qdrant.Vectors{VectorsOptions: &qdrant.Vectors_Vector{Vector: &qdrant.Vector{Data: vec}}},
+			Id: &qdrant.PointId{PointIdOptions: &qdrant.PointId_Uuid{Uuid: d.ID}},
+			// Vector.Data is deprecated upstream; dense vectors go through
+			// the Vector_Dense oneof (qdrant points.proto).
+			Vectors: &qdrant.Vectors{VectorsOptions: &qdrant.Vectors_Vector{Vector: &qdrant.Vector{Vector: &qdrant.Vector_Dense{Dense: &qdrant.DenseVector{Data: vec}}}}},
 			Payload: qdrant.NewValueMap(payload),
 		})
 	}
