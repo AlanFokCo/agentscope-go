@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-`agentscope-go` is a Go port of the Python [AgentScope](https://github.com/agentscope-ai/agentscope) multi-agent LLM framework. The module path is **`github.com/alanfokco/agentscope-go/v2`** (v2+ line): internal and consumer imports use `github.com/alanfokco/agentscope-go/v2/pkg/agentscope/...`. Latest release tag: **`v2.0.8`**. All library code lives under `pkg/agentscope/`; runnable demos live under `examples/`.
+`agentscope-go` is a Go port of the Python [AgentScope](https://github.com/agentscope-ai/agentscope) multi-agent LLM framework. The module path is **`github.com/alanfokco/agentscope-go/v2`** (v2+ line): internal and consumer imports use `github.com/alanfokco/agentscope-go/v2/pkg/agentscope/...`. Latest release tag: **`v2.0.9`**. All library code lives under `pkg/agentscope/`; runnable demos live under `examples/`.
 
 See `STABILITY.md` for the API-stability policy, stability tiers, and the production-hardening status (what's done, what's open) — read it before large changes.
 

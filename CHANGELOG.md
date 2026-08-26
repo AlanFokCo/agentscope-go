@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Version sections below correspond to git tags (`v2.0.4` onward). Per-version
 details can be verified with `git log <prev-tag>..<tag> --oneline`.
 
-## [Unreleased]
+## [v2.0.9] - 2026-08-26
 
 ### Added
 - **Structured output strategy ladder** (`model/`): `GenerateStructuredOutput`
