@@ -18,9 +18,11 @@ import "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
   `agent` (UnifiedAgent), `tool`, `permission`, `formatter`, `errors`.
 - **Experimental** (may change): `runtime`, `loop`, `app`, `service`, `realtime`,
   `tune`, `replay/evalkit`, `event/streamcheck`, `agenttest/faults`,
-  `providercontract` (test-only), `console`, `channel`, `channel/dingtalk`.
-  These are the newer v3 infrastructure layers, harness tooling, and the
-  console/channel frontends.
+  `providercontract` (test-only), `console`, `channel`, `channel/dingtalk`,
+  `hub` (built-in sources), `skill` (`Store` partitions), `middleware/memory`
+  (`FileStore` + `AgenticMemoryMiddleware`).
+  These are the newer v3 infrastructure layers, harness tooling, the
+  console/channel frontends, and the Phase 3 hub/skill/memory additions.
 - **Internal** (`internal/...`): no compatibility guarantee; do not import.
 
 ## Error handling
@@ -136,5 +138,16 @@ Recently landed (since initial hardening):
 - ~~Output guardrails~~ **Done:** `GuardrailMiddleware` with 3 actions
   (Block/Redact/Warn), rule-based content filtering on model responses. Built-in
   rules: KeywordBlock, KeywordRedact, MaxLength, Custom. Hooks into `OnModelCall`.
+
+- ~~Phase 3 porting batch~~ **Done:** built-in hub sources
+  (`hub.GitHubMCPRegistry`, `hub.ClawHub`); per-agent workspace skill
+  partitions (`skill.Store`, `/api/workspace/skill` routes implemented);
+  agentic memory (`memory.FileStore` + `memory.AgenticMemoryMiddleware` +
+  `app.WorkspaceAgentFactory` hook); session↔workspace sharing with
+  refcounts + read-only artifact endpoints (`/api/workspace/share`,
+  `/api/workspace/{id}/list_dir|read_file`). Path jail hardened:
+  `LocalWorkspace` containment is separator-aware and symlink-aware;
+  `BubblewrapWorkspace` containment is separator-aware.
+  All code batches passed evaluator adversarial review (no HIGH findings).
 
 All originally-planned production hardening items are now complete.

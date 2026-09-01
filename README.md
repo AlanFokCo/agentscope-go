@@ -244,6 +244,21 @@ Unified registry for installable components:
 | **MCP Hub** | Browse, search, and install MCP servers from a remote registry |
 | **Skill Hub** | Discover and install reusable agent skills |
 | **Registry** | Multi-hub aggregation with unified search across sources |
+| **GitHub MCP Registry** | `hub.GitHubMCPRegistry` — GitHub's public MCP registry as a `Hub` source (runtime-hint-driven install commands, auth inputs preserved) |
+| **ClawHub** | `hub.ClawHub` — the ClawHub skill registry as a `Hub` source (owner-scoped IDs, zip-slip/zip-bomb-safe install) |
+
+### Workspace Skills & Sharing
+
+- **Per-agent skill partitions** (`skill.Store`) — `skills/<agent_id>/` under a
+  workspace with a `.seed` template equipped once per agent, idempotent
+  migration of the legacy flat layout, content/directory adds, `PurgeAgent`
+- **Session↔workspace sharing** — refcounted bindings
+  (`WorkspaceManager.Share` / `BoundWorkspaceID` / `RefCount`), plus read-only
+  artifact endpoints (`GET /api/workspace/{id}/list_dir|read_file`) with jail
+  enforcement and a pre-read size cap
+- **Workspace-aware agent factories** — `app.WorkspaceAgentFactory` hands the
+  session's workspace to the factory (the hook for filesystem-backed
+  middleware such as agentic memory)
 
 ### Access Control (`access/`)
 
@@ -286,7 +301,7 @@ Production-ready coding agent toolkit:
 - **Bash / Read / Write / Edit / Glob / Grep** — Full filesystem + shell with AST-level injection detection, dangerous path protection, read-only command recognition
 - **Task Management** — `task_create`, `task_get`, `task_list`, `task_update` with bidirectional dependency tracking
 - **Structured Output** — `GenerateStructuredOutput` forces JSON Schema-compliant responses via synthetic tool calls with automatic retry
-- **Long-term Memory** — Cross-session memory middleware with 3 modes (static, agent-controlled, both), backed by vector similarity search or mem0 REST API
+- **Long-term Memory** — Cross-session memory middleware with 3 modes (static, agent-controlled, both), backed by vector similarity search, mem0 REST API, or a JSON Lines `FileStore`; `AgenticMemoryMiddleware` adds file-based memory (workspace `MEMORY.md` with a token-budgeted snapshot injected into the system prompt)
 
 ### Agent Architecture
 
@@ -469,7 +484,7 @@ pkg/agentscope/
 ├── a2a/                    # A2A protocol types + HTTP client
 ├── a2a/grpc/               # TCP transport: bidirectional agent mesh
 │
-├── hub/                    # MCP Hub + Skill Hub + Registry (multi-hub aggregation)
+├── hub/                    # MCP Hub + Skill Hub + Registry + built-in sources (GitHub MCP registry, ClawHub)
 ├── access/                 # Resource sharing: users/groups/orgs with 4 permission levels
 ├── workspace/              # 8 backends: Local, Docker, E2B, Apple, Bubblewrap, Daytona, OpenSandbox, K8s
 ├── rag/                    # Index + KnowledgeBase + 5 vector stores
@@ -492,7 +507,7 @@ pkg/agentscope/
 ├── messagebus/mqtt/        # MQTT PubSub adapter for edge/IoT (build tag: mqtt)
 ├── device/                 # Hardware connectors (Serial/GPIO/CAN/I2C) + DeviceTool + Watchdog
 ├── session/                # Session KV store (memory + JSON file)
-├── skill/                  # Reusable skill system + SkillManager registry
+├── skill/                  # Reusable skill system + SkillManager + per-agent workspace partitions (skill.Store)
 ├── prompt/                 # Composable system prompt assembly
 ├── schedule/               # InMemoryScheduler for periodic tasks
 ├── realtime/               # Realtime streaming interface
@@ -515,7 +530,7 @@ pkg/agentscope/
 
 ## Examples
 
-51 examples in `examples/`. Run any with `go run ./examples/<name>`.
+54 examples in `examples/`. Run any with `go run ./examples/<name>`.
 
 | Example | Description |
 |---------|-------------|
@@ -542,6 +557,7 @@ pkg/agentscope/
 | `agent_loop` | v3 agent loop with MetricsHook and InMemoryProvider |
 | `embedding` | Text embedding + cosine similarity matrix |
 | `long_term_memory` | Cross-session memory middleware (3 modes) |
+| `agentic_memory` | File-based memory: FileStore JSON Lines persistence + MEMORY.md agentic middleware |
 | `rag_react` | RAG with in-memory index + knowledge base |
 | **Multi-Agent & Orchestration** | |
 | `pipeline_multi_agent` | Pipeline + MsgHub orchestration |
@@ -556,6 +572,8 @@ pkg/agentscope/
 | `grpc_a2a` | TCP agent mesh with bidirectional streaming |
 | `bench` | Agent load testing with P50/P95/P99 latency |
 | `hub_install` | Browse and install MCP servers/skills from hub |
+| `skill_partitions` | Per-agent skill partitions: .seed template, equip-once, migration, purge |
+| `workspace_sharing` | Session-workspace sharing + read-only artifact endpoints (list_dir/read_file) |
 | `access_control` | Resource sharing across users/groups/orgs |
 | `document_parser` | Parse PDF/Word/Excel/PPT into RAG chunks |
 | `audit_logging` | Sandbox policy enforcement + structured audit trail |
