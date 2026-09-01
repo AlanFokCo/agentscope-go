@@ -10,6 +10,7 @@ import (
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/event"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/permission"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/types"
 )
 
 const (
@@ -50,8 +51,9 @@ type Renderer struct {
 	color              bool
 	colorConfigured    bool
 
-	msg       *message.Msg
-	midStream bool
+	msg         *message.Msg
+	midStream   bool
+	sawReplyEnd bool
 }
 
 // RendererOption configures NewRenderer.
@@ -103,6 +105,11 @@ func NewRenderer(opts ...RendererOption) *Renderer {
 
 // LastMsg returns the reply message accumulated from rendered events.
 func (r *Renderer) LastMsg() *message.Msg { return r.msg }
+
+// SawReplyEnd reports whether the current (or last) reply's ReplyEndEvent
+// was rendered; callers use it to avoid double-printing interruption
+// notices when the stream dies without the end event.
+func (r *Renderer) SawReplyEnd() bool { return r.sawReplyEnd }
 
 // Render prints the event to the console. Unknown event types are skipped
 // silently (or shown as a dim line under debug verbosity), so the renderer
@@ -158,6 +165,14 @@ func (r *Renderer) Render(e event.Event) {
 		}
 	case event.ReplyEndEvent:
 		r.breakLine(true)
+		r.sawReplyEnd = true
+		if evt.Error != nil && evt.Error.Message != "" {
+			r.printStyled(ansiRed+ansiBold, "✗ Error ("+string(evt.Error.Type)+"): "+evt.Error.Message)
+			r.printRaw("\n")
+		} else if evt.FinishedReason == types.ReplyInterrupted && r.show(1) {
+			r.printStyled(ansiYellow, "⚠ Reply interrupted by the user.")
+			r.printRaw("\n")
+		}
 	case event.CustomEvent:
 		r.renderCustom(&evt)
 	default:
@@ -185,6 +200,7 @@ func (r *Renderer) accumulate(e event.Event) {
 		m := message.AssistantMsg(name, []message.ContentBlock{})
 		m.ID = replyID
 		r.msg = m
+		r.sawReplyEnd = false
 	} else if r.msg == nil || r.msg.ID != replyID {
 		// A continuation (e.g. after resume) without a ReplyStartEvent.
 		m := message.AssistantMsg("agent", []message.ContentBlock{})

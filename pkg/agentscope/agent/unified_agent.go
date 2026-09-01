@@ -3,9 +3,11 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/audit"
 	"strings"
+
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/audit"
 	"sync"
 	"time"
 
@@ -22,6 +24,7 @@ import (
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/protocol"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/skill"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tool"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/types"
 )
 
 const (
@@ -292,23 +295,55 @@ func (a *UnifiedAgent) ReplyStream(ctx context.Context, input string) (<-chan ev
 		ctx = tool.WithReadCache(ctx, a.readCache)
 	}
 
-	if len(a.middlewares) == 0 {
-		ch := make(chan event.Event, 32)
-		go a.replyLoop(ctx, input, ch)
-		return ch, nil
-	}
-
-	// Wrap replyLoop through the OnReply middleware chain.
+	// Wrap replyLoop through the OnReply middleware chain (an empty chain
+	// is the identity), then observe the chain's output from this
+	// agent-owned forwarder: it records whether each ReplyEndEvent escapes
+	// the chain (swallow detection, Python #2322) and strips the internal
+	// round-boundary sentinel.
+	verdict := make(chan bool, 8)
 	core := func(ctx context.Context, ri middleware.ReplyInput) <-chan event.Event {
 		ch := make(chan event.Event, 32)
-		go a.replyLoop(ctx, ri.UserInput, ch)
+		go a.replyLoop(ctx, ri.UserInput, ch, verdict)
 		return ch
 	}
 	chain := middleware.BuildReplyChain(a.middlewares, core)
-	return chain(ctx, middleware.ReplyInput{
+	chainOut := chain(ctx, middleware.ReplyInput{
 		AgentName: a.name,
 		UserInput: input,
-	}), nil
+	})
+
+	out := make(chan event.Event, 32)
+	go func() {
+		defer close(out)
+		var curReplyID string
+		sawEnd := false
+		for evt := range chainOut {
+			switch e := evt.(type) {
+			case event.ReplyStartEvent:
+				curReplyID = e.ReplyID
+				sawEnd = false
+			case event.ReplyEndEvent:
+				if e.ReplyID == curReplyID {
+					sawEnd = true
+				}
+			case event.CustomEvent:
+				if e.Name == roundBoundSentinel {
+					select {
+					case verdict <- sawEnd:
+					default:
+					}
+					sawEnd = false
+					continue
+				}
+			}
+			select {
+			case out <- evt:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out, nil
 }
 
 // Observe injects external messages into the agent's context.
@@ -372,7 +407,15 @@ func (a *UnifiedAgent) ReadCache() *tool.ReadCache {
 	return a.readCache
 }
 
-func (a *UnifiedAgent) replyLoop(ctx context.Context, input string, ch chan<- event.Event) {
+// roundBoundSentinel names the internal CustomEvent emitted after each
+// ReplyEndEvent: the agent-owned forwarder outside the middleware chain
+// uses it to report whether the end event escaped the chain (was not
+// swallowed). Middleware MUST forward CustomEvent values whose name starts
+// with "agentscope." — dropping them stalls swallow detection until the
+// reply context ends.
+const roundBoundSentinel = "agentscope.round_bound"
+
+func (a *UnifiedAgent) replyLoop(ctx context.Context, input string, ch chan<- event.Event, verdict <-chan bool) {
 	defer close(ch)
 
 	hooks := a.hookRunner
@@ -409,10 +452,80 @@ func (a *UnifiedAgent) replyLoop(ctx context.Context, input string, ch chan<- ev
 	modelCallHandler := a.buildModelCallHandler()
 	actingHandler := a.buildActingHandler()
 
+	// Swallow loop (Python #2322): an OnReply middleware may swallow the
+	// ReplyEndEvent (receive it without forwarding it) to force another
+	// reasoning-acting round. Detection: after emitting the end event the
+	// loop emits an internal sentinel; the agent-owned forwarder outside
+	// the chain reports on `verdict` whether the end event escaped. A new
+	// round restarts the iteration counter, which also unblocks a swallowed
+	// exceed-max-iters end. Interrupted ends cannot be swallowed.
+	madeProgress := true
+	for {
+		reason, progress, errInfo := a.reactRound(ctx, ch, replyID, hooks, modelCallHandler, actingHandler)
+		if progress {
+			madeProgress = true
+		}
+
+		if reason == types.ReplyInterrupted {
+			// Cannot be swallowed to continue the reply (Python parity).
+			emit(ctx, ch, event.NewReplyEndEventWithReason(a.state.SessionID, replyID, reason))
+			return
+		}
+
+		if errInfo != nil {
+			emit(ctx, ch, event.NewReplyEndEventWithError(a.state.SessionID, replyID, errInfo.Type, errInfo.Message))
+		} else {
+			emit(ctx, ch, event.NewReplyEndEventWithReason(a.state.SessionID, replyID, reason))
+		}
+
+		emit(ctx, ch, event.NewCustomEvent(replyID, roundBoundSentinel, nil))
+		select {
+		case delivered := <-verdict:
+			if delivered {
+				return
+			}
+			// Swallowed: force another round — unless the middleware keeps
+			// swallowing without any reasoning/acting in between (busy loop).
+			if !madeProgress {
+				logrus.WithField("agent", a.name).Error(
+					"a middleware swallowed the ReplyEndEvent twice without any reasoning/acting in between; ending the reply")
+				emit(ctx, ch, event.NewCustomEvent(replyID, "error.swallow_loop", map[string]any{
+					"error": "a middleware swallowed the ReplyEndEvent twice without progress",
+				}))
+				// Keep the reply start/end pairing intact.
+				emit(ctx, ch, event.NewReplyEndEventWithError(a.state.SessionID, replyID,
+					types.ErrorInternal, "ReplyEndEvent swallowed repeatedly without progress"))
+				return
+			}
+			madeProgress = false
+			continue
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// reactRound runs one reasoning-acting cycle until an exit condition:
+// final text (completed), iteration exhaustion (exceed_max_iters), model
+// failure (error), context cancellation (interrupted), or a parked wait
+// state. It emits every lifecycle event except ReplyEndEvent, which the
+// swallow loop in replyLoop owns.
+func (a *UnifiedAgent) reactRound(
+	ctx context.Context,
+	ch chan<- event.Event,
+	replyID string,
+	hooks *loop.HookRunner,
+	modelCallHandler middleware.ModelCallHandler,
+	actingHandler middleware.ActingHandler,
+) (reason types.ReplyFinishedReason, madeProgress bool, errInfo *types.ReplyErrorInfo) {
 	curState := protocol.StateReason
+	finishedNormally := false
 
 reactLoop:
 	for iter := 0; iter < a.reactCfg.MaxIters; iter++ {
+		if ctx.Err() != nil {
+			return types.ReplyInterrupted, madeProgress, nil
+		}
 		a.mu.Lock()
 		a.state.CurIter = iter
 		a.mu.Unlock()
@@ -439,14 +552,14 @@ reactLoop:
 				// batch-boundary checkpoint would re-execute an
 				// already-executed tool on resume (HARNESS review M-2).
 				a.Checkpoint(ctx)
+				madeProgress = true
 				continue
 			}
 			// Waiting for external events — emit to consumer, don't save to context
 			if exitMsg != nil {
 				emitContentEvents(ctx, ch, replyID, exitMsg.Content)
 			}
-			emit(ctx, ch, event.NewReplyEndEvent(a.state.SessionID, replyID))
-			return
+			return types.ReplyCompleted, madeProgress, nil
 
 		case protocol.StateAct:
 			// Execute pending tool calls from prior iteration
@@ -469,6 +582,7 @@ reactLoop:
 					}
 				}
 			}
+			madeProgress = true
 			// Checkpoint at the batch boundary (HARNESS_DESIGN F1): a crash
 			// after this point resumes from the recorded results, never
 			// mid-batch.
@@ -512,10 +626,15 @@ reactLoop:
 				hooks.AfterModelCall(curState, iter, err)
 				logrus.WithError(err).Error("agent: model call failed")
 				emit(ctx, ch, event.NewModelCallEndEvent(replyID, 0, 0))
-				break reactLoop
+				if ctx.Err() != nil {
+					return types.ReplyInterrupted, madeProgress, nil
+				}
+				info := classifyReplyError(err)
+				return types.ReplyError, madeProgress, &info
 			}
 
 			hooks.AfterModelCall(curState, iter, nil)
+			madeProgress = true
 
 			var inputTok, outputTok, cacheCreate, cacheRead int
 			if resp.Usage != nil {
@@ -541,6 +660,7 @@ reactLoop:
 			if len(toolCalls) == 0 {
 				// No tool calls — transition to Exit
 				hooks.OnStateTransition(curState, protocol.StateExit, iter)
+				finishedNormally = true
 				break reactLoop
 			}
 
@@ -580,7 +700,34 @@ reactLoop:
 		}
 	}
 
-	emit(ctx, ch, event.NewReplyEndEvent(a.state.SessionID, replyID))
+	if !finishedNormally {
+		// Iteration exhaustion (Python parity: EXCEED_MAX_ITERS). The end
+		// is swallowable like any non-interrupted end; the next round
+		// restarts the iteration counter.
+		return types.ReplyExceedMaxIters, madeProgress, nil
+	}
+	return types.ReplyCompleted, madeProgress, nil
+}
+
+// classifyReplyError maps a model-call failure onto the structured
+// reply-error taxonomy (parity with Python's ErrorType).
+func classifyReplyError(err error) types.ReplyErrorInfo {
+	t := types.ErrorUnknown
+	switch {
+	case errors.Is(err, agenterrors.ErrModelRateLimited):
+		t = types.ErrorRateLimit
+	case errors.Is(err, agenterrors.ErrModelTimeout):
+		t = types.ErrorConnection
+	case errors.Is(err, agenterrors.ErrModelContextLimit):
+		t = types.ErrorInvalidRequest
+	}
+	var ae *agenterrors.AgentError
+	if errors.As(err, &ae) && t == types.ErrorUnknown {
+		if ae.Retryable {
+			t = types.ErrorUpstream
+		}
+	}
+	return types.ReplyErrorInfo{Type: t, Message: agenterrors.GetAgentMessage(err)}
 }
 
 // emitContentEvents emits streaming events for content blocks.

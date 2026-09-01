@@ -78,6 +78,13 @@ type ReasoningInput struct {
 
 // Middleware defines the hooks that can intercept agent behavior.
 // Implement only the hooks you need; embed BaseMiddleware for pass-through defaults.
+//
+// Reply-lifecycle contract: an OnReply hook may swallow a completed reply's
+// ReplyEndEvent (receive it without forwarding it) to force another
+// reasoning-acting round; interrupted ends cannot be swallowed. Middleware
+// MUST forward CustomEvent values whose name starts with "agentscope." —
+// they are internal round-boundary sentinels, and dropping them stalls
+// swallow detection until the reply context ends.
 type Middleware interface {
 	// OnReply wraps the entire reply lifecycle (outermost hook).
 	OnReply(ctx context.Context, input ReplyInput, next ReplyHandler) <-chan event.Event

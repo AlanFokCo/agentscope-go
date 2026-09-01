@@ -9,6 +9,26 @@ details can be verified with `git log <prev-tag>..<tag> --oneline`.
 
 ## [Unreleased]
 
+### Added — reply lifecycle semantics (Phase 3)
+- **`ReplyEndEvent` parity**: `FinishedReason` (completed / interrupted /
+  exceed_max_iters / error) plus structured `Error` (`types.ReplyErrorInfo`,
+  classified authentication/permission/rate_limit/invalid_request/upstream/
+  connection/internal/setup/unknown); `NewReplyEndEventWithReason` /
+  `NewReplyEndEventWithError` constructors; model-call failures now end the
+  reply with reason `error` instead of a bare end (classified into
+  rate_limit / connection / invalid_request / upstream / unknown);
+  iteration exhaustion ends with reason `exceed_max_iters`
+- **Swallowable `ReplyEndEvent`** (port of Python #2322): an `OnReply`
+  middleware that receives a completed reply's `ReplyEndEvent` without
+  forwarding it forces another reasoning-acting round (the iteration
+  counter restarts, unblocking a swallowed exceed-max-iters end);
+  interrupted ends cannot be swallowed; a busy-loop guard ends the reply
+  when end events keep getting swallowed without any reasoning/acting in
+  between. Middleware must forward `CustomEvent` values named
+  `agentscope.*` (internal round-boundary sentinels)
+- Console renderer prints error/interrupted ends; `Launch` no longer
+  double-notices interruptions; DingTalk channel surfaces reply errors
+
 ### Added — channels (Phase 2, DingTalk first)
 - **`channel` package**: `Channel` interface + normalised `Event` /
   `ConfirmationEvent` inbound types, `Capability`, connection `Status`,

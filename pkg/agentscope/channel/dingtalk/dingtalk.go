@@ -250,6 +250,10 @@ func (c *Channel) SendResponse(ctx context.Context, r channel.Response) error {
 			if strings.Contains(e.Name, "error") {
 				notices = append(notices, agentErrorReply)
 			}
+		case event.ReplyEndEvent:
+			if e.Error != nil && e.Error.Message != "" {
+				notices = append(notices, "❌ "+e.Error.Message)
+			}
 		}
 	}
 

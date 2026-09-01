@@ -240,3 +240,31 @@ func TestRenderer_LastMsgInterleavedDataThenTextDeltas(t *testing.T) {
 	}
 	t.Fatal("tool result block not found")
 }
+
+func TestRenderer_ReplyEndErrorAndInterrupted(t *testing.T) {
+	r, buf := newTestRenderer(t, VerbosityDefault)
+	r.Render(event.NewReplyStartEvent("sess", "reply-1", "bot", message.RoleAssistant))
+	r.Render(event.NewReplyEndEventWithError("sess", "reply-1", "rate_limit", "slow down"))
+	out := buf.String()
+	if !strings.Contains(out, "rate_limit") || !strings.Contains(out, "slow down") {
+		t.Errorf("error end must render type + message:\n%q", out)
+	}
+	if !r.SawReplyEnd() {
+		t.Error("SawReplyEnd must be true after ReplyEndEvent")
+	}
+
+	// Python parity: the interrupted notice is gated at verbosity >=
+	// default; errors render at every verbosity (covered above).
+	r2, buf2 := newTestRenderer(t, VerbosityQuiet)
+	r2.Render(event.NewReplyStartEvent("sess", "reply-2", "bot", message.RoleAssistant))
+	r2.Render(event.NewReplyEndEventWithReason("sess", "reply-2", "interrupted"))
+	if strings.Contains(buf2.String(), "interrupted") {
+		t.Errorf("quiet mode must not show the interrupted notice:\n%q", buf2.String())
+	}
+	r3, buf3 := newTestRenderer(t, VerbosityDefault)
+	r3.Render(event.NewReplyStartEvent("sess", "reply-3", "bot", message.RoleAssistant))
+	r3.Render(event.NewReplyEndEventWithReason("sess", "reply-3", "interrupted"))
+	if !strings.Contains(buf3.String(), "interrupted") {
+		t.Errorf("default verbosity must show the interrupted notice:\n%q", buf3.String())
+	}
+}

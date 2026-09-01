@@ -6,6 +6,7 @@ import (
 
 	agentscope "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/types"
 )
 
 // EventType enumerates all event types in the agent lifecycle.
@@ -111,14 +112,34 @@ type ReplyEndEvent struct {
 	Base
 	SessionID string `json:"session_id"`
 	ReplyID   string `json:"reply_id"`
+	// FinishedReason says why the reply ended (default completed).
+	FinishedReason types.ReplyFinishedReason `json:"finished_reason,omitempty"`
+	// Error carries structured error info, populated only when
+	// FinishedReason == types.ReplyError.
+	Error *types.ReplyErrorInfo `json:"error,omitempty"`
 }
 
 func (e ReplyEndEvent) GetEventType() EventType { return EventReplyEnd }
 func (e ReplyEndEvent) GetEventID() string      { return e.ID }
 func (e ReplyEndEvent) GetReplyID() string      { return e.ReplyID }
 
+// NewReplyEndEvent creates a completed-reply end event.
 func NewReplyEndEvent(sessionID, replyID string) ReplyEndEvent {
-	return ReplyEndEvent{Base: newBase(), SessionID: sessionID, ReplyID: replyID}
+	return ReplyEndEvent{Base: newBase(), SessionID: sessionID, ReplyID: replyID,
+		FinishedReason: types.ReplyCompleted}
+}
+
+// NewReplyEndEventWithReason creates an end event with an explicit reason
+// (interrupted, exceed_max_iters, ...).
+func NewReplyEndEventWithReason(sessionID, replyID string, reason types.ReplyFinishedReason) ReplyEndEvent {
+	return ReplyEndEvent{Base: newBase(), SessionID: sessionID, ReplyID: replyID, FinishedReason: reason}
+}
+
+// NewReplyEndEventWithError creates an error end event.
+func NewReplyEndEventWithError(sessionID, replyID string, errType types.ReplyErrorType, msg string) ReplyEndEvent {
+	return ReplyEndEvent{Base: newBase(), SessionID: sessionID, ReplyID: replyID,
+		FinishedReason: types.ReplyError,
+		Error:          &types.ReplyErrorInfo{Type: errType, Message: msg}}
 }
 
 // --- Model call lifecycle ---

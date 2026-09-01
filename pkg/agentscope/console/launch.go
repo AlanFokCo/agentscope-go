@@ -212,9 +212,13 @@ func runReply(
 	}
 
 	if replyCtx.Err() != nil && ctx.Err() == nil {
-		// Canceled by SIGINT (watcher) or an aborted confirmation.
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, "⚠ Reply interrupted by the user.")
+		// Canceled by SIGINT (watcher) or an aborted confirmation. The
+		// renderer prints the notice itself when the interrupted
+		// ReplyEndEvent made it through; cover the case where it didn't.
+		if !renderer.SawReplyEnd() {
+			fmt.Fprintln(out)
+			fmt.Fprintln(out, "⚠ Reply interrupted by the user.")
+		}
 		return nil
 	}
 	return ctx.Err()
