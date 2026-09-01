@@ -180,6 +180,7 @@ The package layout intentionally mirrors the Python project. Each subpackage exp
 
 - **`app`** — `CreateApp(cfg)` factory wiring session management, chat (sync + SSE streaming), credentials, models, background tasks. HTTP routes: `/api/session`, `/api/chat/{id}`, `/api/chat/{id}/stream`, `/api/credential/schemas`, `/api/model`, `/api/task`, plus `GET /healthz`, `GET /readyz`, and optional `GET /metrics` (`Config.MetricsHandler`). Servers apply `httpsec.Harden` + `LimitBody`. `BackgroundTaskManager`, `CancelDispatcher`.
 - **`service`** — Lower-level HTTP service with `SSEWriter` + `Shutdown` (graceful drain), `/healthz`, `/readyz`, hardened server. AG-UI protocol constants. Service middleware (inbox, state change, tool offload).
+- **`console`** — Terminal viewing and interactive trial of agents (port of Python's `console` module). `Renderer` turns an event stream into line-based output (quiet/default/debug verbosity, `LastMsg` accumulation); `Launch` runs an interactive chat loop over any `Agent` with `ReplyStream` + `SubmitUserConfirm` (HITL confirmation y/N/a, Ctrl+C interrupts the current reply).
 
 ### Context Compression
 

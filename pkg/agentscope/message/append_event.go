@@ -131,13 +131,57 @@ func (m *Msg) AppendEvent(ev any) {
 				idx := m.findBlockByTypeAndID(ContentBlockToolResult, te.GetToolCallID())
 				if idx >= 0 {
 					if tr, ok := m.Content[idx].(ToolResultBlock); ok {
-						if s, ok := tr.Output.(string); ok {
-							tr.Output = s + de.GetDelta()
-						} else {
+						switch out := tr.Output.(type) {
+						case string:
+							tr.Output = out + de.GetDelta()
+						case []ContentBlock:
+							// Output was promoted by data deltas; keep the
+							// blocks and merge the text into the trailing
+							// TextBlock (HARNESS review R6-M1).
+							tr.Output = appendTextToBlocks(out, de.GetDelta())
+						default:
 							tr.Output = de.GetDelta()
 						}
 						m.Content[idx] = tr
 					}
+				}
+			}
+		}
+
+	case "tool_result_data_delta":
+		if te, ok := ev.(interface{ GetToolCallID() string }); ok {
+			idx := m.findBlockByTypeAndID(ContentBlockToolResult, te.GetToolCallID())
+			if idx >= 0 {
+				if tr, ok := m.Content[idx].(ToolResultBlock); ok {
+					blockID := ""
+					if be, ok := ev.(interface{ GetBlockID() string }); ok {
+						blockID = be.GetBlockID()
+					}
+					mt := ""
+					if me, ok := ev.(interface{ GetMediaType_() string }); ok {
+						mt = me.GetMediaType_()
+					}
+					data := ""
+					if de, ok := ev.(interface{ GetData() string }); ok {
+						data = de.GetData()
+					}
+					url := ""
+					if ue, ok := ev.(interface{ GetURL() string }); ok {
+						url = ue.GetURL()
+					}
+					var db DataBlock
+					switch {
+					case data != "":
+						db = DataBlock{Type: "data", ID: blockID,
+							Source: Base64Source{Type: "base64", Data: data, MediaType: mt}}
+					case url != "":
+						db = DataBlock{Type: "data", ID: blockID,
+							Source: URLSource{Type: "url", URL: url, MediaType: mt}}
+					default:
+						return
+					}
+					tr.Output = appendResultData(tr.Output, db)
+					m.Content[idx] = tr
 				}
 			}
 		}
@@ -283,5 +327,53 @@ func (m *Msg) applyThinkingDelta(ev any) {
 	if tb, ok := m.Content[idx].(ThinkingBlock); ok {
 		tb.Thinking += de.GetDelta()
 		m.Content[idx] = tb
+	}
+}
+
+// appendTextToBlocks merges a text delta into the trailing TextBlock of a
+// promoted tool-result Output, or appends a new TextBlock.
+func appendTextToBlocks(blocks []ContentBlock, delta string) []ContentBlock {
+	if len(blocks) > 0 {
+		if tb, ok := blocks[len(blocks)-1].(TextBlock); ok {
+			tb.Text += delta
+			blocks[len(blocks)-1] = tb
+			return blocks
+		}
+	}
+	return append(blocks, TextBlock{Type: "text", Text: delta})
+}
+
+// appendResultData merges a streamed data block into a tool result Output
+// (string or []ContentBlock), coalescing consecutive base64 chunks of the
+// same block ID (tool_result_data_delta accumulation).
+func appendResultData(output any, db DataBlock) any {
+	appendOrMerge := func(blocks []ContentBlock) []ContentBlock {
+		if len(blocks) > 0 {
+			last := blocks[len(blocks)-1]
+			if prev, ok := last.(DataBlock); ok && prev.ID == db.ID && db.ID != "" {
+				if ps, ok := prev.Source.(Base64Source); ok {
+					if ns, ok := db.Source.(Base64Source); ok {
+						prev.Source = Base64Source{Type: "base64",
+							Data: mergeBase64Chunks(ps.Data, ns.Data), MediaType: ns.MediaType}
+						blocks[len(blocks)-1] = prev
+						return blocks
+					}
+				}
+			}
+		}
+		return append(blocks, db)
+	}
+	switch out := output.(type) {
+	case nil:
+		return []ContentBlock{db}
+	case string:
+		if out == "" {
+			return []ContentBlock{db}
+		}
+		return []ContentBlock{TextBlock{Type: "text", Text: out}, db}
+	case []ContentBlock:
+		return appendOrMerge(out)
+	default:
+		return output
 	}
 }

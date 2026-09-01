@@ -59,6 +59,7 @@ func (e ToolResultEndEvent) GetState() message.ToolResultState { return e.State 
 
 func (e DataBlockDeltaEvent) GetData() string      { return e.Data }
 func (e ToolResultDataDeltaEvent) GetData() string { return e.Data }
+func (e ToolResultDataDeltaEvent) GetURL() string  { return e.URL }
 
 // --- MediaType accessor ---
 

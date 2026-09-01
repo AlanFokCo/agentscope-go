@@ -80,6 +80,7 @@ Recent additions (2026-09) — **harness engineering batch** (evaluation, regres
 - **Run logs**: `middleware.NewRunJSONL` + `replay.ParseRunLog`/`DiffRunLogs` (LCS alignment with truncation flag); `examples/replayview` + `examples/rundiff`.
 - **Crash recovery**: `agent.WithStateSaver` checkpoints at batch boundaries/park points (and right after resumed calls execute); `agent.LoadCheckpoint` resumes and re-drives pending HITL/external handshakes. Contract: a crash mid-batch re-executes the whole batch (not exactly-once).
 - **Fault injection** (`agenttest/faults/`) and **bench v2** (`Battery` + `Baseline` + `CheckBaseline` regression detection); `model.WithSeed` pass-through for OpenAI-family providers.
+- **Console** (`console/`, Phase 1): `Renderer` (event stream → terminal, 3 verbosity levels, `LastMsg`) + `Launch` (interactive chat with tool-call confirmation and Ctrl+C interruption); `examples/console`.
 
 ## Conventions (summary; full list in CLAUDE.md)
 

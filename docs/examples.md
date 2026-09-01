@@ -1,6 +1,6 @@
 # Examples
 
-49 runnable examples in `examples/`. Run any with:
+50 runnable examples in `examples/`. Run any with:
 
 ```bash
 export DASHSCOPE_API_KEY=sk-...  # or ANTHROPIC_API_KEY / OPENAI_API_KEY
@@ -16,6 +16,7 @@ go run ./examples/<name>
 | `streaming` | Real-time streaming via `ReplyStream` + event channel | Yes |
 | `react_tool` | UnifiedAgent with a custom sum_numbers FunctionTool | Yes |
 | `react_builtin_tools` | UnifiedAgent with enhanced built-in toolkit (bash, read, write, edit, glob, grep) | Yes |
+| `console` | Interactive terminal chat: streamed rendering, tool-call confirmation (y/N/a), Ctrl+C interruption | Yes |
 
 ## Model API
 

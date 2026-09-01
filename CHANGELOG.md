@@ -9,6 +9,20 @@ details can be verified with `git log <prev-tag>..<tag> --oneline`.
 
 ## [Unreleased]
 
+### Added — console (Phase 1)
+- **`console` package** (port of Python agentscope's `console` module):
+  `console.Renderer` turns an agent event stream into line-based terminal
+  output (three verbosity levels, tool-result truncation, HITL notices,
+  token usage, auto-detected ANSI color honoring `NO_COLOR`) and exposes
+  the accumulated reply via `LastMsg`; `console.Launch` is an interactive
+  chat loop bound to one agent — stdin prompt, streamed rendering,
+  tool-call confirmation (`y`/`N`/`a`, where `a` accepts suggested
+  permission rules), Ctrl+C interrupts the current reply at the stream or
+  the confirmation prompt and exits at the input prompt, `exit`/`quit`/
+  Ctrl+D to leave. Interruption is context cancellation; confirmations
+  are submitted out-of-band via `SubmitUserConfirm` while the reply
+  stream stays open (`examples/console`)
+
 ### Added — harness engineering batch
 - **Flight recorder** (`replay/`): `NewRecorder` gains `WithRingLimit`,
   `WithRecordSizeLimit` (oversized inputs stored as summaries),
