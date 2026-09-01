@@ -537,3 +537,60 @@ func TestTracingMiddleware_ChatSpanIncludesInputMessages(t *testing.T) {
 		t.Errorf("input messages attribute should carry roles, got %q", found)
 	}
 }
+
+type lateAttributingTracer struct {
+	attributedRecordingTracer
+	late []tracing.SpanAttribute
+}
+
+func (t *lateAttributingTracer) AddSpanAttr(_ context.Context, attr tracing.SpanAttribute) {
+	t.late = append(t.late, attr)
+}
+
+func TestTracingMiddleware_ReplyIDLateAttribute(t *testing.T) {
+	// HARNESS_DESIGN A2: the invoke_agent span is opened before the reply
+	// loop mints the reply ID; the ID must be attached late, when the
+	// ReplyStartEvent flows through.
+	tracer := &lateAttributingTracer{}
+	mw := NewTracingMiddleware(tracer)
+
+	core := func(_ context.Context, _ ReplyInput) <-chan event.Event {
+		ch := make(chan event.Event, 2)
+		ch <- event.NewReplyStartEvent("s1", "reply-late-1", "agent", message.RoleAssistant)
+		ch <- event.NewReplyEndEvent("s1", "reply-late-1")
+		close(ch)
+		return ch
+	}
+
+	out := mw.OnReply(context.Background(), ReplyInput{AgentName: "agent"}, core)
+	for range out {
+	}
+
+	if len(tracer.late) != 1 {
+		t.Fatalf("expected 1 late attribute, got %d", len(tracer.late))
+	}
+	if tracer.late[0].Key != "agentscope.reply_id" || tracer.late[0].Value != "reply-late-1" {
+		t.Errorf("late attr = %+v", tracer.late[0])
+	}
+}
+
+func TestTracingMiddleware_NoLateAttrWithoutSupport(t *testing.T) {
+	// A plain recording tracer (no LateAttributer) must not break.
+	tracer := &recordingTracer{}
+	mw := NewTracingMiddleware(tracer)
+	core := func(_ context.Context, _ ReplyInput) <-chan event.Event {
+		ch := make(chan event.Event, 2)
+		ch <- event.NewReplyStartEvent("s1", "reply-x", "agent", message.RoleAssistant)
+		ch <- event.NewReplyEndEvent("s1", "reply-x")
+		close(ch)
+		return ch
+	}
+	out := mw.OnReply(context.Background(), ReplyInput{AgentName: "agent"}, core)
+	n := 0
+	for range out {
+		n++
+	}
+	if n != 2 {
+		t.Errorf("events = %d, want 2", n)
+	}
+}

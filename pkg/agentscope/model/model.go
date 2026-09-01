@@ -166,6 +166,7 @@ type CallOptions struct {
 	Temperature     *float64
 	MaxTokens       *int
 	TopP            *float64
+	Seed            *int64 // sampling seed where the provider supports it (eval determinism, HARNESS_DESIGN C5)
 	Tools           []ToolSchema
 	ToolChoice      *ToolChoice
 	ThinkingEnable  *bool
@@ -200,6 +201,14 @@ func WithThinkingDisabled() CallOption {
 func WithMaxTokens(n int) CallOption {
 	return func(o *CallOptions) {
 		o.MaxTokens = &n
+	}
+}
+
+// WithSeed pins the sampling seed on providers that support it (OpenAI
+// family). Providers without seed support ignore it.
+func WithSeed(seed int64) CallOption {
+	return func(o *CallOptions) {
+		o.Seed = &seed
 	}
 }
 

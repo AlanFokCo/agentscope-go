@@ -1,0 +1,264 @@
+// Package providercontract is the provider behavior contract wall
+// (HARNESS_DESIGN B1): table-driven contracts that every model provider
+// must satisfy, exercised against local httptest fixture servers (zero
+// network, zero cost). New or changed providers must pass the wall;
+// regressions in usage accounting, streaming lifecycle, error taxonomy, or
+// thinking wire formats are caught here instead of in production.
+package providercontract
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
+)
+
+// Scenario selects which fixture behavior the test server should play.
+type Scenario int
+
+const (
+	ScnChatSuccess     Scenario = iota // non-stream success with usage
+	ScnStreamSuccess                   // full SSE stream with usage
+	ScnStreamTruncated                 // SSE stream cut mid-flight
+	ScnStreamSlow                      // slow stream (for ctx-cancel)
+	ScnErr429                          // rate-limit HTTP error
+	ScnErr401                          // auth HTTP error
+	ScnCaptureBody                     // record the request body, return success
+)
+
+// Harness describes one provider under test: how to construct a model
+// pointed at a test server, and how the fixture server should respond in
+// each scenario using the provider's own wire format.
+type Harness struct {
+	Name     string
+	NewModel func(baseURL string) (model.ChatModel, error)
+	// Serve implements the fixture server behavior for a scenario. It may
+	// inspect/record the request (ScnCaptureBody records into captured).
+	Serve func(w http.ResponseWriter, r *http.Request, scn Scenario, captured *[]byte)
+
+	ExpectUsage       *model.ChatUsage // expected mapping for ScnChatSuccess
+	ExpectStreamText  string           // accumulated text expected from the stream
+	ExpectStreamUsage *model.ChatUsage // expected usage on the final stream chunk
+
+	DisableThinkingCheck func(t *testing.T, body []byte) // wire assertion (nil = unsupported)
+	EnableThinkingCheck  func(t *testing.T, body []byte)
+}
+
+func newServer(h *Harness, scn Scenario, captured *[]byte) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.Serve(w, r, scn, captured)
+	}))
+}
+
+func testMsgs() []*message.Msg {
+	return []*message.Msg{message.UserMsg("user", "contract test")}
+}
+
+// Run executes the full contract wall for one provider harness.
+func Run(t *testing.T, h *Harness) {
+	t.Helper()
+
+	t.Run("UsageAccounting", func(t *testing.T) {
+		srv := newServer(h, ScnChatSuccess, nil)
+		defer srv.Close()
+		m, err := h.NewModel(srv.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := m.Chat(context.Background(), testMsgs(), model.WithRetries(0, time.Millisecond))
+		if err != nil {
+			t.Fatalf("Chat: %v", err)
+		}
+		if resp.Usage == nil {
+			t.Fatal("usage missing")
+		}
+		want := h.ExpectUsage
+		if got := resp.Usage; got.InputTokens != want.InputTokens ||
+			got.OutputTokens != want.OutputTokens ||
+			got.CacheCreationInputTokens != want.CacheCreationInputTokens ||
+			got.CacheInputTokens != want.CacheInputTokens {
+			t.Errorf("usage = %+v, want %+v", *got, *want)
+		}
+	})
+
+	t.Run("StreamingLifecycle", func(t *testing.T) {
+		srv := newServer(h, ScnStreamSuccess, nil)
+		defer srv.Close()
+		m, err := h.NewModel(srv.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ch, err := m.ChatStream(context.Background(), testMsgs())
+		if err != nil {
+			t.Fatalf("ChatStream: %v", err)
+		}
+		var deltaText strings.Builder
+		lastCount := 0
+		var lastResp model.ChatResponse
+		for resp := range ch {
+			if resp.IsLast {
+				lastCount++
+				lastResp = resp
+				continue // final assembled content is checked separately
+			}
+			for _, b := range resp.Content {
+				if tb, ok := b.(message.TextBlock); ok {
+					deltaText.WriteString(tb.Text)
+				}
+			}
+		}
+		if lastCount != 1 {
+			t.Fatalf("IsLast responses = %d, want exactly 1", lastCount)
+		}
+		if lastResp.Error != nil {
+			t.Fatalf("clean stream ended with error: %v", lastResp.Error)
+		}
+		// Strict equality on deltas: a provider emitting cumulative deltas
+		// (double-text bug) must fail the wall (HARNESS review M8).
+		if deltaText.String() != h.ExpectStreamText {
+			t.Errorf("stream delta text = %q, want exactly %q", deltaText.String(), h.ExpectStreamText)
+		}
+		// Consistency: the final assembled content must equal the delta
+		// accumulation.
+		var finalText strings.Builder
+		for _, b := range lastResp.Content {
+			if tb, ok := b.(message.TextBlock); ok {
+				finalText.WriteString(tb.Text)
+			}
+		}
+		if finalText.String() != h.ExpectStreamText {
+			t.Errorf("final assembled text = %q, want exactly %q", finalText.String(), h.ExpectStreamText)
+		}
+		if want := h.ExpectStreamUsage; want != nil {
+			got := lastResp.Usage
+			if got == nil {
+				t.Fatal("final stream chunk missing usage")
+			}
+			if got.InputTokens != want.InputTokens || got.OutputTokens != want.OutputTokens {
+				t.Errorf("stream usage = %+v, want %+v", *got, *want)
+			}
+		}
+	})
+
+	t.Run("StreamTruncationSurfacesError", func(t *testing.T) {
+		srv := newServer(h, ScnStreamTruncated, nil)
+		defer srv.Close()
+		m, err := h.NewModel(srv.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ch, err := m.ChatStream(context.Background(), testMsgs())
+		if err != nil {
+			t.Fatalf("ChatStream: %v", err)
+		}
+		var lastResp model.ChatResponse
+		sawLast := false
+		for resp := range ch {
+			if resp.IsLast {
+				lastResp = resp
+				sawLast = true
+			}
+		}
+		if !sawLast {
+			t.Fatal("truncated stream emitted no final IsLast response")
+		}
+		if lastResp.Error == nil {
+			t.Error("truncated stream must surface a final error (silent endings hide data loss)")
+		}
+	})
+
+	t.Run("CtxCancelStopsStream", func(t *testing.T) {
+		srv := newServer(h, ScnStreamSlow, nil)
+		defer srv.Close()
+		m, err := h.NewModel(srv.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		ch, err := m.ChatStream(ctx, testMsgs())
+		if err != nil {
+			t.Fatalf("ChatStream: %v", err)
+		}
+		// Take the first chunk, then abandon.
+		if _, ok := <-ch; !ok {
+			t.Fatal("expected at least one chunk")
+		}
+		cancel()
+		select {
+		case _, ok := <-ch:
+			for ok {
+				_, ok = <-ch
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("stream did not stop after ctx cancel")
+		}
+	})
+
+	t.Run("ErrorTaxonomy", func(t *testing.T) {
+		srv429 := newServer(h, ScnErr429, nil)
+		defer srv429.Close()
+		m, err := h.NewModel(srv429.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = m.Chat(context.Background(), testMsgs(), model.WithRetries(0, time.Millisecond))
+		if err == nil {
+			t.Fatal("expected error for 429")
+		}
+		if !model.IsRetryableError(err) {
+			t.Errorf("429 must classify as retryable, got: %v", err)
+		}
+
+		srv401 := newServer(h, ScnErr401, nil)
+		defer srv401.Close()
+		m2, err := h.NewModel(srv401.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = m2.Chat(context.Background(), testMsgs(), model.WithRetries(0, time.Millisecond))
+		if err == nil {
+			t.Fatal("expected error for 401")
+		}
+		if model.IsRetryableError(err) {
+			t.Errorf("401 must NOT classify as retryable, got: %v", err)
+		}
+	})
+
+	if h.DisableThinkingCheck != nil {
+		t.Run("ThinkingWireFormat", func(t *testing.T) {
+			var captured []byte
+			srv := newServer(h, ScnCaptureBody, &captured)
+			defer srv.Close()
+			m, err := h.NewModel(srv.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := m.Chat(context.Background(), testMsgs(), model.WithThinkingDisabled()); err != nil {
+				t.Fatalf("Chat(disabled): %v", err)
+			}
+			h.DisableThinkingCheck(t, captured)
+
+			captured = nil
+			if _, err := m.Chat(context.Background(), testMsgs(), model.WithThinking(true, 1024)); err != nil {
+				t.Fatalf("Chat(enabled): %v", err)
+			}
+			if h.EnableThinkingCheck != nil {
+				h.EnableThinkingCheck(t, captured)
+			}
+		})
+	}
+}
+
+// requireContains fails the test when body does not contain the wire marker.
+func requireContains(t *testing.T, body []byte, marker, what string) {
+	t.Helper()
+	if !strings.Contains(string(body), marker) {
+		t.Errorf("%s: request body missing %s; body: %.300s", what, marker, body)
+	}
+}

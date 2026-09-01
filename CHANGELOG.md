@@ -7,6 +7,81 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Version sections below correspond to git tags (`v2.0.4` onward). Per-version
 details can be verified with `git log <prev-tag>..<tag> --oneline`.
 
+## [Unreleased]
+
+### Added — harness engineering batch
+- **Flight recorder** (`replay/`): `NewRecorder` gains `WithRingLimit`,
+  `WithRecordSizeLimit` (oversized inputs stored as summaries),
+  `WithDumpOnError` (atomic `flight-<reply_id>-<unixnano>.jsonl` on failed
+  replies, tape + event tail) and `WithRedactor`; `Entry` gains `reply_id` and
+  `usage` fields (additive JSON)
+- **Run correlation**: reply IDs flow from the agent through MiddleContext
+  into recorders and audit entries (`audit.Entry.reply_id`), and into
+  tracing spans via the new optional `tracing.LateAttributer` extension
+- **`event/streamcheck`**: single implementation of event-stream invariants
+  (reply/block/tool-call/tool-result pairing, no orphan deltas); `agenttest`
+  delegates to it, and `middleware.NewStreamValidator` offers opt-in runtime
+  validation for development
+- **Provider contract wall** (`providercontract/`, test-only): usage
+  accounting, streaming lifecycle (exactly one IsLast), truncation-error
+  surfacing, ctx-cancel stops, error taxonomy (429 retryable / 401 not),
+  and thinking wire formats — harnesses for openai, anthropic, dashscope,
+  gemini, deepseek, moonshot
+- **Golden replay seeds** (`agent/testdata/golden/`): multi-tool batch,
+  HITL park/resume, external tool, compression summary; randomized
+  ids/timestamps normalized; regenerate with `-golden-update`
+- **Repetition breaker** (`middleware.NewRepetitionBreaker`): detects
+  identical successful tool-call spins (name+input hash; failed calls reset
+  the streak), injects a change-strategy reminder at threshold, and past the
+  threshold ends the reply with typed `ErrToolRepetition` (the over-threshold
+  call itself still executes — side effects cannot be un-run — but its
+  result is discarded). Allowlist exempts read-only/idempotent tools.
+  Spins whose inputs vary by timestamps/random values are out of scope
+- **Reply watchdog** (`middleware.NewReplyWatchdog`): wall-clock and idle
+  timeouts cancel stalled replies
+- **Evaluation kit** (`replay/evalkit/`): YAML task suites with fixtures
+  and budgets, a runner with pinned sampling (default temperature 0),
+  scorers (contains / json_field / text_contains / trajectory / budget /
+  LLM judge with result caching), multi-turn tasks, Markdown suite reports,
+  and A/B `Compare` reports (flips + token deltas + verdict)
+- **Cost governance**: `model.ResolvePrice` pricing overlay (`SetPrice`
+  overrides win; kept separate from upstream card sync), `CostLedger` +
+  `CostTrackingMiddleware` cross-session aggregation (session-safe query
+  API; low-cardinality labels only for metrics), and
+  `ReplyCostBudgetMiddleware` (80% soft warning hint + hard stop with
+  `ErrBudgetExceeded`)
+- **Run logs**: `middleware.NewRunJSONL` (with redactor hook) writes the
+  full event stream + middleware-routed model-call records as JSONL
+  (compression summary calls bypass middleware and are not recorded); `replay.ParseRunLog` /
+  `DiffRunLogs` align two runs by LCS over event types;
+  `examples/replayview` terminal viewer
+- **Fault injection** (`agenttest/faults/`): deterministic model-error /
+  tool-failure / latency injection for resilience chaos testing
+- **Crash recovery**: `agent.WithStateSaver` auto-checkpoints at tool-batch
+  boundaries and park points; `AgentState` gains `schema_version`;
+  `agent.LoadCheckpoint` loads resumable state (rejects newer schemas);
+  resumed replies re-emit `RequireUserConfirmEvent` /
+  `RequireExternalExecutionEvent` for pending calls and wait again.
+  Contract: a crash mid-batch resumes by re-executing the whole batch
+  (side effects are not exactly-once across crashes)
+- **Bench v2**: `Battery` + `Baseline` save/load + `CheckBaseline`
+  regression detection (p95 latency with fractional-ms precision + success
+  rate, 10% slack)
+- **`model.WithSeed`**: sampling seed pass-through for the OpenAI-family
+  providers (evaluation determinism)
+
+### Changed
+- Resumed conversations with pending ASKING calls are detected even when a
+  fresh user input follows the restored assistant message; a confirmed call
+  is executed inline through the normal acting path so resumed HITL work
+  actually runs. Batch confirmations are stashed per call ID so a single
+  `ConfirmResults` event answering several pending calls is never lost
+
+### Fixed
+- Reprompted confirmations force the ALLOWED call state regardless of the
+  state echoed back by the confirmer (previously an echoed asking-state
+  block could loop the re-prompt forever)
+
 ## [v2.0.9] - 2026-08-26
 
 ### Added

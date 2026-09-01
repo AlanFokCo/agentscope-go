@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/event"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/event/streamcheck"
 )
 
 // AssertEventPresent fails the test if no event of the given type is found.
@@ -32,22 +33,10 @@ func AssertEventAbsent(t *testing.T, events []event.Event, eventType event.Event
 // matching ToolResultEndEvent with the same ToolCallID.
 func AssertNoMissingToolResults(t *testing.T, events []event.Event) {
 	t.Helper()
-	started := make(map[string]bool)
-	ended := make(map[string]bool)
-
-	for _, ev := range events {
-		switch e := ev.(type) {
-		case event.ToolResultStartEvent:
-			started[e.ToolCallID] = true
-		case event.ToolResultEndEvent:
-			ended[e.ToolCallID] = true
-		}
-	}
-
-	for id := range started {
-		if !ended[id] {
-			t.Errorf("tool result started but not ended: %s", id)
-		}
+	// Delegates to the single invariant implementation (HARNESS_DESIGN B3)
+	// so test helpers and runtime validation cannot drift apart.
+	for _, issue := range streamcheck.ToolPairingIssues(events) {
+		t.Error(issue)
 	}
 }
 

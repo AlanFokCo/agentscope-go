@@ -19,6 +19,14 @@ type SpanAttribute struct {
 	Value any // string, int, float64, bool
 }
 
+// LateAttributer is an optional extension of Tracer that supports adding
+// attributes to an already-started span (identified by the ctx returned
+// from StartSpan). Reply IDs are only known after the reply loop starts,
+// so long-lived spans (e.g. invoke_agent) need late attributes.
+type LateAttributer interface {
+	AddSpanAttr(ctx context.Context, attr SpanAttribute)
+}
+
 // AttributedTracer is an optional extension of Tracer that supports
 // attaching attributes to spans. Implementations that support richer
 // tracing (like OTEL) should implement this interface.

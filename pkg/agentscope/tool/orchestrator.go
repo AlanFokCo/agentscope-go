@@ -113,6 +113,7 @@ func (o *Orchestrator) Execute(ctx context.Context, call message.ToolCallBlock) 
 			}
 			_ = o.auditLogger.Log(ctx, &audit.Entry{
 				Timestamp:  start,
+				ReplyID:    audit.ReplyIDFromCtx(ctx),
 				ToolCallID: call.ID,
 				Action:     audit.ActionPermissionAsk,
 				ToolName:   call.Name,
@@ -131,6 +132,7 @@ func (o *Orchestrator) Execute(ctx context.Context, call message.ToolCallBlock) 
 			}
 			_ = o.auditLogger.Log(ctx, &audit.Entry{
 				Timestamp:  start,
+				ReplyID:    audit.ReplyIDFromCtx(ctx),
 				ToolCallID: call.ID,
 				Action:     audit.ActionPermissionAsk,
 				ToolName:   call.Name,
@@ -151,6 +153,7 @@ func (o *Orchestrator) Execute(ctx context.Context, call message.ToolCallBlock) 
 		if resp := o.enforceSandboxPolicy(call.Name, input); resp != nil {
 			_ = o.auditLogger.Log(ctx, &audit.Entry{
 				Timestamp:  start,
+				ReplyID:    audit.ReplyIDFromCtx(ctx),
 				ToolCallID: call.ID,
 				Action:     audit.ActionPolicyDenied,
 				ToolName:   call.Name,
@@ -180,6 +183,7 @@ func (o *Orchestrator) Execute(ctx context.Context, call message.ToolCallBlock) 
 	// 6. Audit the execution result.
 	auditEntry := &audit.Entry{
 		Timestamp:  start,
+		ReplyID:    audit.ReplyIDFromCtx(ctx),
 		ToolCallID: call.ID,
 		Action:     audit.ActionToolExecute,
 		ToolName:   call.Name,

@@ -82,6 +82,9 @@ func (m *XAIChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts ...Ca
 		p := float32(*callOpts.TopP)
 		reqBody.TopP = &p
 	}
+	if callOpts.Seed != nil {
+		reqBody.Seed = callOpts.Seed
+	}
 	if len(callOpts.Tools) > 0 {
 		reqBody.Tools = callOpts.Tools
 	}
@@ -135,6 +138,9 @@ func (m *XAIChatModel) ChatStream(ctx context.Context, msgs []*message.Msg, opts
 	if callOpts.TopP != nil {
 		p := float32(*callOpts.TopP)
 		reqBody.TopP = &p
+	}
+	if callOpts.Seed != nil {
+		reqBody.Seed = callOpts.Seed
 	}
 	if len(callOpts.Tools) > 0 {
 		reqBody.Tools = callOpts.Tools

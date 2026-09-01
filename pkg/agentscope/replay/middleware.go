@@ -19,15 +19,30 @@ type Middleware struct {
 	tape   *Tape
 	mu     sync.Mutex
 	cursor int // current position in replay mode
+
+	// Flight-recorder configuration (record mode; see flight.go).
+	ringEntries int                 // 0 = unbounded entry count
+	ringBytes   int                 // 0 = unbounded approximate bytes
+	recordLimit int                 // 0 = no per-record size cap
+	dumpDir     string              // "" = no dump on error
+	redactor    func(string) string // optional dump redaction
+	nextIndex   int                 // monotonic entry numbering
+	totalBytes  int64               // approximate serialized size of the tape
 }
 
 // NewRecorder creates a middleware that records all model calls to a tape.
-func NewRecorder() *Middleware {
-	return &Middleware{
+// Options configure the flight-recorder behavior (retention, size caps,
+// dump-on-error, redaction).
+func NewRecorder(opts ...RecorderOption) *Middleware {
+	m := &Middleware{
 		BaseMiddleware: middleware.BaseMiddleware{MiddlewareKey: "replay-recorder"},
 		mode:           ModeRecord,
 		tape:           NewTape(),
 	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
 }
 
 // NewReplayer creates a middleware that replays responses from a pre-recorded tape.
@@ -59,8 +74,12 @@ func (m *Middleware) OnModelCall(ctx context.Context, input *middleware.ModelCal
 }
 
 func (m *Middleware) record(ctx context.Context, input *middleware.ModelCallInput, next middleware.ModelCallHandler) (*model.ChatResponse, error) {
-	// Serialize request data
+	// Serialize request data; oversized inputs are stored as a summary so a
+	// single huge context cannot evict the whole ring.
 	messagesJSON, _ := json.Marshal(input.Messages)
+	if m.recordLimit > 0 && len(messagesJSON) > m.recordLimit {
+		messagesJSON = summarizeMessages(input.Messages)
+	}
 	var toolsJSON json.RawMessage
 	if len(input.Tools) > 0 {
 		toolsJSON, _ = json.Marshal(input.Tools)
@@ -80,17 +99,27 @@ func (m *Middleware) record(ctx context.Context, input *middleware.ModelCallInpu
 		DurationMs: duration.Milliseconds(),
 	}
 
+	// Correlate with the enclosing reply when the agent stashed its ID in
+	// the MiddleContext (HARNESS_DESIGN A2).
+	if mc := middleware.GetMiddleContext(ctx); mc != nil {
+		if v, ok := mc.Get("agent", "reply_id"); ok {
+			if id, ok := v.(string); ok {
+				entry.ReplyID = id
+			}
+		}
+	}
+
 	if err != nil {
 		entry.Error = err.Error()
 	}
 	if resp != nil {
 		entry.Response, _ = json.Marshal(resp)
+		entry.Usage = resp.Usage
 	}
 
-	// Append to tape
+	// Append to tape (ring caps enforced inside).
 	m.mu.Lock()
-	entry.Index = len(m.tape.Entries)
-	m.tape.Entries = append(m.tape.Entries, entry)
+	m.appendEntryLocked(&entry)
 	m.mu.Unlock()
 
 	return resp, err

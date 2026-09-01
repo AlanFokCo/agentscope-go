@@ -11,6 +11,7 @@ import (
 
 // agentStateJSON is the JSON-friendly representation of AgentState.
 type agentStateJSON struct {
+	SchemaVersion   int                 `json:"schema_version,omitempty"`
 	SessionID       string              `json:"session_id"`
 	Context         []*message.Msg      `json:"context"`
 	Summary         string              `json:"summary,omitempty"`
@@ -26,6 +27,7 @@ type agentStateJSON struct {
 // MarshalJSON serializes AgentState to JSON.
 func (s *AgentState) MarshalJSON() ([]byte, error) {
 	return json.Marshal(agentStateJSON{
+		SchemaVersion:   s.SchemaVersion,
 		SessionID:       s.SessionID,
 		Context:         s.Context,
 		Summary:         s.Summary,
@@ -45,6 +47,7 @@ func (s *AgentState) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return fmt.Errorf("unmarshal agent state: %w", err)
 	}
+	s.SchemaVersion = raw.SchemaVersion
 	s.SessionID = raw.SessionID
 	s.Context = raw.Context
 	s.Summary = raw.Summary

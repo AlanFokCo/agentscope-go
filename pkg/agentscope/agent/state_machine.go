@@ -31,6 +31,13 @@ func (a *UnifiedAgent) getLastAssistantMsg() *message.Msg {
 func (a *UnifiedAgent) checkNextAction() (protocol.LoopState, *message.Msg) {
 	lastMsg := a.getLastAssistantMsg()
 	if lastMsg == nil {
+		// Resume scenario (HARNESS_DESIGN F1): a fresh user input follows a
+		// restored assistant message that still has asking/submitted calls.
+		// Detect the pending handshake so the loop re-drives it instead of
+		// reasoning over an unfinished conversation.
+		if askCount, subCount := a.countAwaitingInContext(); askCount+subCount > 0 {
+			return protocol.StateWait, waitExitMsg(a.name, askCount, subCount)
+		}
 		return protocol.StateReason, nil
 	}
 
@@ -60,7 +67,6 @@ func (a *UnifiedAgent) checkNextAction() (protocol.LoopState, *message.Msg) {
 	}
 
 	if len(awaiting) > 0 {
-		var parts []string
 		askCount, subCount := 0, 0
 		for _, tc := range awaiting {
 			if tc.State == message.ToolCallAsking {
@@ -69,15 +75,7 @@ func (a *UnifiedAgent) checkNextAction() (protocol.LoopState, *message.Msg) {
 				subCount++
 			}
 		}
-		if askCount > 0 {
-			parts = append(parts, "user confirmation")
-		}
-		if subCount > 0 {
-			parts = append(parts, "external execution results")
-		}
-		text := "Waiting for " + strings.Join(parts, " and ") + "."
-		exitMsg := message.AssistantMsg(a.name, text)
-		return protocol.StateWait, exitMsg
+		return protocol.StateWait, waitExitMsg(a.name, askCount, subCount)
 	}
 
 	return protocol.StateReason, nil
@@ -117,18 +115,20 @@ func (a *UnifiedAgent) getExecutableToolCalls() []message.ToolCallBlock {
 func (a *UnifiedAgent) updateToolCallState(callID string, newState message.ToolCallState) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if len(a.state.Context) == 0 {
-		return
-	}
-	last := a.state.Context[len(a.state.Context)-1]
-	if last.Role != message.RoleAssistant || last.Name != a.name {
-		return
-	}
-	for i, b := range last.Content {
-		if tc, ok := b.(message.ToolCallBlock); ok && tc.ID == callID {
-			tc.State = newState
-			last.Content[i] = tc
-			return
+	// Scan backwards: after a resume the call may live in an assistant
+	// message that is no longer the last context message (a fresh user
+	// input follows it). Call IDs are unique per reply.
+	for i := len(a.state.Context) - 1; i >= 0; i-- {
+		msg := a.state.Context[i]
+		if msg == nil {
+			continue
+		}
+		for j, b := range msg.Content {
+			if tc, ok := b.(message.ToolCallBlock); ok && tc.ID == callID {
+				tc.State = newState
+				msg.Content[j] = tc
+				return
+			}
 		}
 	}
 }
@@ -173,4 +173,56 @@ func (a *UnifiedAgent) saveToContext(blocks []message.ContentBlock, usage *model
 		}
 	}
 	a.state.Context = append(a.state.Context, msg)
+}
+
+// waitExitMsg builds the "waiting for ..." assistant message shown when the
+// loop parks on unfinished handshakes.
+func waitExitMsg(agentName string, askCount, subCount int) *message.Msg {
+	var parts []string
+	if askCount > 0 {
+		parts = append(parts, "user confirmation")
+	}
+	if subCount > 0 {
+		parts = append(parts, "external execution results")
+	}
+	text := "Waiting for " + strings.Join(parts, " and ") + "."
+	msg := message.AssistantMsg(agentName, text)
+	return msg
+}
+
+// countAwaitingInContext scans backwards for an assistant message that still
+// has unfinished asking/submitted tool calls (resume detection). Finished
+// calls (with results or finished state) never count.
+func (a *UnifiedAgent) countAwaitingInContext() (ask, sub int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for i := len(a.state.Context) - 1; i >= 0; i-- {
+		msg := a.state.Context[i]
+		if msg == nil || msg.Role != message.RoleAssistant || msg.Name != a.name {
+			continue
+		}
+		finished := map[string]bool{}
+		for _, b := range msg.GetContentBlocks(message.ContentBlockToolResult) {
+			if tr, ok := b.(message.ToolResultBlock); ok {
+				finished[tr.ID] = true
+			}
+		}
+		for _, b := range msg.GetContentBlocks(message.ContentBlockToolCall) {
+			tc, ok := b.(message.ToolCallBlock)
+			if !ok || finished[tc.ID] {
+				continue
+			}
+			switch tc.State {
+			case message.ToolCallAsking:
+				ask++
+			case message.ToolCallSubmitted:
+				sub++
+			}
+		}
+		if ask+sub > 0 {
+			return ask, sub
+		}
+		return 0, 0 // most recent assistant message has no awaiting calls
+	}
+	return 0, 0
 }

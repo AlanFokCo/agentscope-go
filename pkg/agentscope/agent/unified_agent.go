@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/audit"
 	"strings"
 	"sync"
 	"time"
@@ -48,6 +49,8 @@ type UnifiedAgent struct {
 	externalCh     chan event.ExternalExecutionResultEvent
 	mu             sync.Mutex
 	offloader      Offloader
+	stateSaver     StateSaver
+	confirmStash   map[string]event.ConfirmResult
 	hookRunner     *loop.HookRunner
 	stateAwareness bool
 	responseFormat *model.ResponseFormat
@@ -67,7 +70,13 @@ type ModelConfig struct {
 }
 
 // AgentState holds conversation state for a session.
+// StateSchemaVersion is bumped when AgentState's serialized shape changes
+// incompatibly; loaders dispatch on it (HARNESS_DESIGN F1).
+const StateSchemaVersion = 1
+
 type AgentState struct {
+	SchemaVersion int `json:"schema_version,omitempty"`
+
 	SessionID string
 	Context   []*message.Msg
 	Summary   string
@@ -121,6 +130,19 @@ func WithModelConfig(cfg ModelConfig) AgentOption {
 }
 
 // WithState sets an initial agent state (for session recovery).
+// WithStateSaver attaches a StateSaver used for automatic checkpointing
+// (HARNESS_DESIGN F1). Checkpoints are written after every tool batch and
+// when the reply parks awaiting user/external input, so a crashed process
+// can resume mid-conversation via LoadCheckpoint + WithState.
+//
+// Crash semantics: checkpoints sit at batch boundaries. A crash mid-batch
+// resumes by RE-EXECUTING THE WHOLE BATCH — side effects of batch tools are
+// not exactly-once; prefer read-only/idempotent tools in crash-sensitive
+// deployments.
+func WithStateSaver(s StateSaver) AgentOption {
+	return func(a *UnifiedAgent) { a.stateSaver = s }
+}
+
 func WithState(state *AgentState) AgentOption {
 	return func(a *UnifiedAgent) { a.state = state }
 }
@@ -355,11 +377,19 @@ func (a *UnifiedAgent) replyLoop(ctx context.Context, input string, ch chan<- ev
 	}
 
 	replyID := agentscope.GenerateID()
+	a.clearConfirmStash()
 
 	a.mu.Lock()
 	a.state.ReplyID = replyID
 	a.state.CurIter = 0
 	a.mu.Unlock()
+
+	// HARNESS_DESIGN A2: make the reply ID visible to middleware hooks
+	// (recorders, etc.) via the MiddleContext and to audit loggers via ctx.
+	if mc := middleware.GetMiddleContext(ctx); mc != nil {
+		mc.Set("agent", "reply_id", replyID)
+	}
+	ctx = audit.WithReplyID(ctx, replyID)
 
 	hooks.OnLoopStart()
 	defer hooks.OnLoopEnd(nil)
@@ -392,6 +422,14 @@ reactLoop:
 
 		switch nextState {
 		case protocol.StateWait:
+			// Crash-recovery re-prompt (HARNESS_DESIGN F1): after a resume
+			// via WithState, asking/submitted calls have no blocked waiter —
+			// re-drive their handshakes. When nothing is awaiting (e.g. an
+			// external system parked us), fall through to the wait exit.
+			a.Checkpoint(ctx)
+			if a.repromptAwaitingCalls(ctx, ch, replyID, actingHandler) {
+				continue
+			}
 			// Waiting for external events — emit to consumer, don't save to context
 			if exitMsg != nil {
 				emitContentEvents(ctx, ch, replyID, exitMsg.Content)
@@ -420,6 +458,10 @@ reactLoop:
 					}
 				}
 			}
+			// Checkpoint at the batch boundary (HARNESS_DESIGN F1): a crash
+			// after this point resumes from the recorded results, never
+			// mid-batch.
+			a.Checkpoint(ctx)
 			// Transition back to Reason after acting
 			hooks.OnStateTransition(curState, protocol.StateReason, iter)
 			curState = protocol.StateReason
@@ -515,6 +557,8 @@ reactLoop:
 				}
 			}
 
+			// Checkpoint at the batch boundary (HARNESS_DESIGN F1).
+			a.Checkpoint(ctx)
 			// After acting, transition back to Reason
 			hooks.OnStateTransition(curState, protocol.StateReason, iter)
 			curState = protocol.StateReason
@@ -656,27 +700,74 @@ func (a *UnifiedAgent) executeToolCallWithPermission(
 }
 
 func (a *UnifiedAgent) waitForConfirmation(ctx context.Context, toolCallID string) (bool, message.ToolCallBlock) {
-	select {
-	case result := <-a.confirmCh:
-		for i := range result.ConfirmResults {
-			cr := &result.ConfirmResults[i]
-			if cr.ToolCall.ID == toolCallID {
-				if cr.Confirmed {
+	// A batch confirmation consumed by an earlier waiter may already carry our
+	// call (HARNESS review M2): check the stash first.
+	if confirmed, tc, found := a.takeStashedConfirm(toolCallID); found {
+		return confirmed, tc
+	}
+	for {
+		select {
+		case result := <-a.confirmCh:
+			var match *event.ConfirmResult
+			for i := range result.ConfirmResults {
+				cr := &result.ConfirmResults[i]
+				if cr.ToolCall.ID == toolCallID {
+					match = cr
+					continue
+				}
+				// Not ours: keep it for the other waiter(s) instead of
+				// dropping it on the floor (also stash entries AFTER our
+				// match — a batch answer must not lose later results).
+				a.stashConfirm(cr)
+			}
+			if match != nil {
+				if match.Confirmed {
 					// Add any user-provided rules to the engine
-					for _, r := range cr.Rules {
+					for _, r := range match.Rules {
 						if rule, ok := r.(permission.Rule); ok {
 							a.engine.AddRule(rule)
 						}
 					}
-					return true, cr.ToolCall
+					return true, match.ToolCall
 				}
-				return false, cr.ToolCall
+				return false, match.ToolCall
 			}
+			// Event answered no known call; keep waiting.
+		case <-ctx.Done():
+			return false, message.ToolCallBlock{}
 		}
-		return false, message.ToolCallBlock{}
-	case <-ctx.Done():
-		return false, message.ToolCallBlock{}
 	}
+}
+
+// stashConfirm parks a confirmation meant for another call so its waiter can
+// pick it up (batch ConfirmResults support).
+func (a *UnifiedAgent) stashConfirm(cr *event.ConfirmResult) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.confirmStash == nil {
+		a.confirmStash = map[string]event.ConfirmResult{}
+	}
+	a.confirmStash[cr.ToolCall.ID] = *cr
+}
+
+// takeStashedConfirm retrieves and removes a parked confirmation.
+func (a *UnifiedAgent) takeStashedConfirm(toolCallID string) (bool, message.ToolCallBlock, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cr, ok := a.confirmStash[toolCallID]
+	if !ok {
+		return false, message.ToolCallBlock{}, false
+	}
+	delete(a.confirmStash, toolCallID)
+	return cr.Confirmed, cr.ToolCall, true
+}
+
+// clearConfirmStash drops leftover parked confirmations; called at the start
+// of every reply so stale events cannot leak across replies.
+func (a *UnifiedAgent) clearConfirmStash() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.confirmStash = nil
 }
 
 func (a *UnifiedAgent) waitForExternalResult(ctx context.Context, toolCallID string) *message.ToolResultBlock {

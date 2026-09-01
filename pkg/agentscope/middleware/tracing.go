@@ -65,6 +65,14 @@ func (m *TracingMiddleware) OnReply(ctx context.Context, input ReplyInput, next 
 		defer close(outCh)
 		defer endSpan()
 		for ev := range innerCh {
+			// Upstream-pattern late correlation (HARNESS_DESIGN A2): the
+			// reply ID is born inside the reply loop, after this span was
+			// opened; attach it as soon as it is observed.
+			if rs, ok := ev.(event.ReplyStartEvent); ok && rs.ReplyID != "" {
+				if la, ok := m.Tracer.(tracing.LateAttributer); ok {
+					la.AddSpanAttr(ctx, tracing.SpanAttribute{Key: "agentscope.reply_id", Value: rs.ReplyID})
+				}
+			}
 			outCh <- ev
 		}
 	}()
@@ -91,6 +99,14 @@ func (m *TracingMiddleware) OnReasoning(ctx context.Context, input ReasoningInpu
 		defer close(outCh)
 		defer endSpan()
 		for ev := range innerCh {
+			// Upstream-pattern late correlation (HARNESS_DESIGN A2): the
+			// reply ID is born inside the reply loop, after this span was
+			// opened; attach it as soon as it is observed.
+			if rs, ok := ev.(event.ReplyStartEvent); ok && rs.ReplyID != "" {
+				if la, ok := m.Tracer.(tracing.LateAttributer); ok {
+					la.AddSpanAttr(ctx, tracing.SpanAttribute{Key: "agentscope.reply_id", Value: rs.ReplyID})
+				}
+			}
 			outCh <- ev
 		}
 	}()

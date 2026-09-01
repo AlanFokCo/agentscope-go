@@ -89,6 +89,9 @@ func (m *DashScopeChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts
 		p := float32(*callOpts.TopP)
 		reqBody.TopP = &p
 	}
+	if callOpts.Seed != nil {
+		reqBody.Seed = callOpts.Seed
+	}
 	if len(callOpts.Tools) > 0 {
 		reqBody.Tools = callOpts.Tools
 	}
@@ -149,6 +152,9 @@ func (m *DashScopeChatModel) ChatStream(ctx context.Context, msgs []*message.Msg
 	if callOpts.TopP != nil {
 		p := float32(*callOpts.TopP)
 		reqBody.TopP = &p
+	}
+	if callOpts.Seed != nil {
+		reqBody.Seed = callOpts.Seed
 	}
 	if len(callOpts.Tools) > 0 {
 		reqBody.Tools = callOpts.Tools
@@ -485,6 +491,7 @@ type openAIChatRequest struct {
 	TopP                *float32     `json:"top_p,omitempty"`
 	Tools               []ToolSchema `json:"tools,omitempty"`
 	ToolChoice          any          `json:"tool_choice,omitempty"`
+	Seed                *int64       `json:"seed,omitempty"`
 	// EnableThinking maps to the OpenAI-compatible enable_thinking toggle
 	// (qwen3 and similar); only DashScope sets it. Thinking on DeepSeek and
 	// Moonshot uses the Thinking object below instead (upstream #2140).

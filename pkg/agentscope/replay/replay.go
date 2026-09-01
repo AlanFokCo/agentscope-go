@@ -3,6 +3,8 @@ package replay
 import (
 	"encoding/json"
 	"time"
+
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 )
 
 // Mode determines whether the middleware records or replays.
@@ -15,15 +17,17 @@ const (
 
 // Entry represents one recorded model call (request + response pair).
 type Entry struct {
-	Index      int             `json:"index"`
-	AgentName  string          `json:"agent_name"`
-	ModelName  string          `json:"model_name"`
-	Messages   json.RawMessage `json:"messages"`
-	Tools      json.RawMessage `json:"tools,omitempty"`
-	Response   json.RawMessage `json:"response"`
-	Error      string          `json:"error,omitempty"`
-	Timestamp  time.Time       `json:"timestamp"`
-	DurationMs int64           `json:"duration_ms"`
+	Index      int              `json:"index"`
+	AgentName  string           `json:"agent_name"`
+	ModelName  string           `json:"model_name"`
+	ReplyID    string           `json:"reply_id,omitempty"`
+	Messages   json.RawMessage  `json:"messages"`
+	Tools      json.RawMessage  `json:"tools,omitempty"`
+	Response   json.RawMessage  `json:"response"`
+	Usage      *model.ChatUsage `json:"usage,omitempty"`
+	Error      string           `json:"error,omitempty"`
+	Timestamp  time.Time        `json:"timestamp"`
+	DurationMs int64            `json:"duration_ms"`
 }
 
 // Tape holds a sequence of recorded entries.

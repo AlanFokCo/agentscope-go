@@ -44,6 +44,16 @@ func (o OTELTracer) StartSpanWithAttrs(ctx context.Context, name string, attrs .
 	}
 }
 
+// AddSpanAttr attaches an attribute to the span stored in ctx (if any).
+// Implements LateAttributer.
+func (o OTELTracer) AddSpanAttr(ctx context.Context, attr SpanAttribute) {
+	span := trace.SpanFromContext(ctx)
+	if span == nil {
+		return
+	}
+	span.SetAttributes(toOTELAttrs([]SpanAttribute{attr})...)
+}
+
 // toOTELAttrs converts framework SpanAttributes to OpenTelemetry key-values,
 // preserving the underlying scalar type where possible.
 func toOTELAttrs(attrs []SpanAttribute) []attribute.KeyValue {

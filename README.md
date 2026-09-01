@@ -512,7 +512,7 @@ pkg/agentscope/
 
 ## Examples
 
-47 examples in `examples/`. Run any with `go run ./examples/<name>`.
+49 examples in `examples/`. Run any with `go run ./examples/<name>`.
 
 | Example | Description |
 |---------|-------------|
@@ -556,6 +556,8 @@ pkg/agentscope/
 | `audit_logging` | Sandbox policy enforcement + structured audit trail |
 | `guardrail` | Output content filtering with block/redact/warn actions |
 | `eval_harness` | Replay-based agent evaluation with scorers |
+| `replayview` | Terminal viewer for RunJSONL run logs (step through events) |
+| `rundiff` | Align two RunJSONL run logs and print where they diverge |
 | `spend_cap` | USD/CNY spend cap with CostTrackerMiddleware |
 | **Deployment** | |
 | `agent_service` | HTTP Agent Service (REST + SSE streaming) |

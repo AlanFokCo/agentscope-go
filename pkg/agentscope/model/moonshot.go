@@ -82,6 +82,9 @@ func (m *MoonshotChatModel) Chat(ctx context.Context, msgs []*message.Msg, opts 
 		p := float32(*callOpts.TopP)
 		reqBody.TopP = &p
 	}
+	if callOpts.Seed != nil {
+		reqBody.Seed = callOpts.Seed
+	}
 	if len(callOpts.Tools) > 0 {
 		reqBody.Tools = callOpts.Tools
 	}
@@ -140,6 +143,9 @@ func (m *MoonshotChatModel) ChatStream(ctx context.Context, msgs []*message.Msg,
 	if callOpts.TopP != nil {
 		p := float32(*callOpts.TopP)
 		reqBody.TopP = &p
+	}
+	if callOpts.Seed != nil {
+		reqBody.Seed = callOpts.Seed
 	}
 	if len(callOpts.Tools) > 0 {
 		reqBody.Tools = callOpts.Tools

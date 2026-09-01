@@ -145,6 +145,7 @@ var (
 	ErrModelContextLimit = &AgentError{Category: CategoryContext, Code: "context.too_long", Message: "context exceeds model limit", Retryable: false}
 	ErrStructuredOutput  = &AgentError{Category: CategoryModel, Code: "model.structured_output", Message: "model did not produce valid structured output", Retryable: false}
 	ErrToolDenied        = &AgentError{Category: CategoryPermission, Code: "tool.denied", Message: "tool execution denied", Retryable: false}
+	ErrToolRepetition    = &AgentError{Category: CategoryTool, Code: "tool.repetition", Message: "tool call repeated without progress", Retryable: false}
 	ErrToolTimeout       = &AgentError{Category: CategoryTool, Code: "tool.timeout", Message: "tool execution timed out", Retryable: false}
 	ErrSandboxDenied     = &AgentError{Category: CategoryPermission, Code: "sandbox.denied", Message: "sandbox execution denied", Retryable: true}
 	ErrLoopInterrupted   = &AgentError{Category: CategoryContext, Code: "loop.interrupted", Message: "loop was interrupted", Retryable: false}

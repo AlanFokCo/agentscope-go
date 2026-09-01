@@ -35,6 +35,7 @@ const (
 type Entry struct {
 	Timestamp  time.Time     `json:"timestamp"`
 	SessionID  string        `json:"session_id,omitempty"`
+	ReplyID    string        `json:"reply_id,omitempty"`
 	AgentID    string        `json:"agent_id,omitempty"`
 	ToolCallID string        `json:"tool_call_id,omitempty"`
 	Action     Action        `json:"action"`
