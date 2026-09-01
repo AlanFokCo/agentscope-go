@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -31,11 +32,18 @@ type AppConfig struct {
 	AgentMiddlewares  []middleware.Middleware
 	AgentFactory      AgentFactory
 	WorkspaceDir      string // base directory for per-session workspaces
-	MessageBus        messagebus.MessageBus
-	OnStartup         []func() // hooks run after server starts
-	OnShutdown        []func() // hooks run before server stops
-	ReadTimeout       time.Duration
-	WriteTimeout      time.Duration
+
+	// WorkspaceAgentFactory, when set, creates agents with the session's
+	// workspace handed in — the hook for filesystem-backed middleware such
+	// as memory.NewAgenticMemory (parity with Python's workspace-aware
+	// agent middleware factories). Requires WorkspaceDir and takes
+	// precedence over AgentFactory.
+	WorkspaceAgentFactory WorkspaceAgentFactory
+	MessageBus            messagebus.MessageBus
+	OnStartup             []func() // hooks run after server starts
+	OnShutdown            []func() // hooks run before server stops
+	ReadTimeout           time.Duration
+	WriteTimeout          time.Duration
 
 	// MetricsHandler, if set, is mounted at GET /metrics. Pass, e.g., a
 	// prometheus provider's Handler(); the app itself stays dependency-free.
@@ -79,6 +87,10 @@ func CreateApp(cfg *AppConfig) (*App, error) {
 		credFact: cfg.CredentialFactory,
 	}
 
+	if cfg.WorkspaceAgentFactory != nil && cfg.WorkspaceDir == "" {
+		return nil, fmt.Errorf("app: WorkspaceAgentFactory requires WorkspaceDir")
+	}
+
 	app.sessionSvc = NewSessionService(cfg.AgentFactory)
 	app.bgManager = NewBackgroundTaskManager()
 	app.cancelDisp = NewCancelDispatcher(app.bgManager)
@@ -88,6 +100,9 @@ func CreateApp(cfg *AppConfig) (*App, error) {
 
 	if cfg.WorkspaceDir != "" {
 		app.wsMgr = NewWorkspaceManager(cfg.WorkspaceDir, "local")
+	}
+	if cfg.WorkspaceAgentFactory != nil {
+		app.sessionSvc.SetWorkspaceFactory(cfg.WorkspaceAgentFactory, app.wsMgr.GetOrCreate)
 	}
 
 	app.registerRoutes()

@@ -1,0 +1,233 @@
+package memory
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/internal/fsutil"
+)
+
+// FileStoreFilename is the JSON Lines file a FileStore persists memories in.
+const FileStoreFilename = "memories.jsonl"
+
+// Compile-time interface check.
+var _ MemoryStore = (*FileStore)(nil)
+
+// FileStore is a MemoryStore persisted as JSON Lines in one directory —
+// the file-based store of the long-term-memory trio (InMemory / Mem0 /
+// Vector / File). Point it at a workspace directory to give an agent
+// durable cross-session memory without external services. One JSON record
+// per line: {"id","text","user_id","agent_id","created_at"}.
+//
+// Search semantics match InMemoryStore (case-insensitive any-word
+// substring match); the persistence format is append-friendly so a crash
+// loses at most the record being written.
+type FileStore struct {
+	path string
+
+	mu       sync.Mutex
+	memories []Memory
+	nextID   int
+	loaded   bool
+}
+
+// NewFileStore creates a store backed by <dir>/memories.jsonl. The
+// directory is created if needed; an existing file is loaded lazily on
+// first use.
+func NewFileStore(dir string) (*FileStore, error) {
+	if dir == "" {
+		return nil, fmt.Errorf("memory: file store directory is required")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("memory: create store dir: %w", err)
+	}
+	return &FileStore{path: filepath.Join(dir, FileStoreFilename)}, nil
+}
+
+type fileRecord struct {
+	ID        string    `json:"id"`
+	Text      string    `json:"text"`
+	UserID    string    `json:"user_id"`
+	AgentID   string    `json:"agent_id"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// loadLocked reads the backing file on first use. Malformed lines are
+// skipped (a torn final line from a crash must not break the store).
+func (s *FileStore) loadLocked() error {
+	if s.loaded {
+		return nil
+	}
+	s.loaded = true
+	s.nextID = 1
+
+	f, err := os.Open(s.path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("memory: open store file: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64<<10), 4<<20)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			continue
+		}
+		var rec fileRecord
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			continue
+		}
+		if rec.ID == "" || rec.Text == "" {
+			continue
+		}
+		s.memories = append(s.memories, Memory(rec))
+		if n, ok := parseMemoryID(rec.ID); ok && n >= s.nextID {
+			s.nextID = n + 1
+		}
+	}
+	return sc.Err()
+}
+
+// parseMemoryID extracts the counter from a "mem_N" id.
+func parseMemoryID(id string) (int, bool) {
+	n, err := strconv.Atoi(strings.TrimPrefix(id, "mem_"))
+	if err != nil || !strings.HasPrefix(id, "mem_") {
+		return 0, false
+	}
+	return n, true
+}
+
+func (s *FileStore) Add(_ context.Context, text string, userID string, agentID string) error {
+	if text == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.loadLocked(); err != nil {
+		return err
+	}
+
+	rec := fileRecord{
+		ID:        fmt.Sprintf("mem_%d", s.nextID),
+		Text:      text,
+		UserID:    userID,
+		AgentID:   agentID,
+		CreatedAt: time.Now(),
+	}
+	line, err := json.Marshal(rec)
+	if err != nil {
+		return fmt.Errorf("memory: marshal record: %w", err)
+	}
+
+	f, err := os.OpenFile(s.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return fmt.Errorf("memory: open store file: %w", err)
+	}
+	if _, err := f.Write(append(line, '\n')); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("memory: append record: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("memory: close store file: %w", err)
+	}
+
+	s.nextID++
+	s.memories = append(s.memories, Memory(rec))
+	return nil
+}
+
+func (s *FileStore) Search(_ context.Context, query string, userID string, opts *SearchOptions) ([]Memory, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.loadLocked(); err != nil {
+		return nil, err
+	}
+
+	topK := 5
+	if opts != nil && opts.TopK > 0 {
+		topK = opts.TopK
+	}
+	queryWords := strings.Fields(strings.ToLower(query))
+
+	var results []Memory
+	for _, m := range s.memories {
+		if m.UserID != userID {
+			continue
+		}
+		if opts != nil && opts.AgentID != "" && m.AgentID != opts.AgentID {
+			continue
+		}
+		if matchesAny(strings.ToLower(m.Text), queryWords) {
+			results = append(results, m)
+			if len(results) >= topK {
+				break
+			}
+		}
+	}
+	return results, nil
+}
+
+func (s *FileStore) List(_ context.Context, userID string) ([]Memory, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.loadLocked(); err != nil {
+		return nil, err
+	}
+	var results []Memory
+	for _, m := range s.memories {
+		if m.UserID == userID {
+			results = append(results, m)
+		}
+	}
+	return results, nil
+}
+
+func (s *FileStore) Delete(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.loadLocked(); err != nil {
+		return err
+	}
+
+	idx := -1
+	for i, m := range s.memories {
+		if m.ID == id {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return fmt.Errorf("memory %q not found", id)
+	}
+	s.memories = append(s.memories[:idx], s.memories[idx+1:]...)
+	return s.rewriteLocked()
+}
+
+// rewriteLocked atomically rewrites the backing file from memory.
+func (s *FileStore) rewriteLocked() error {
+	var b strings.Builder
+	for _, m := range s.memories {
+		line, err := json.Marshal(fileRecord(m))
+		if err != nil {
+			return fmt.Errorf("memory: marshal record: %w", err)
+		}
+		b.Write(line)
+		b.WriteByte('\n')
+	}
+	if err := fsutil.WriteFileAtomic(s.path, []byte(b.String()), 0o644); err != nil {
+		return fmt.Errorf("memory: rewrite store file: %w", err)
+	}
+	return nil
+}

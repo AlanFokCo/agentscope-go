@@ -84,6 +84,7 @@ Recent additions (2026-09) — **harness engineering batch** (evaluation, regres
 - **Channels** (`channel/`, Phase 2): channel gateway + normalised inbound events + confirmation round-trips; `channel/dingtalk` DingTalk robot (official Stream SDK inbound, session-webhook Markdown outbound, text-mode confirmations); `examples/dingtalk_channel`. Dep added: `dingtalk-stream-sdk-go`.
 - **Hub built-in sources** (`hub/`, Phase 3): `GitHubMCPRegistry` (GitHub MCP registry — `runtime_hint`-driven stdio commands, auth-header install inputs, atomic install preserving `${KEY}` placeholders) + `ClawHub` (owner-scoped skill IDs, zip install with zip-slip/zip-bomb protection and slug validation).
 - **Workspace skill isolation** (`skill/`, Phase 3): per-agent skill partitions (`skills/<agent_id>/`, `.seed` template equipped once, idempotent legacy migration) via `skill.Store`; `SkillManager` agent partitions + `PurgeAgent`; `/api/workspace/skill` routes implemented; sessions carry `active_skills`.
+- **Agentic memory** (`middleware/memory/`, Phase 3): `FileStore` (JSONL-persisted `MemoryStore` — crash-tolerant load, atomic delete) + `AgenticMemoryMiddleware` (file-based memory: Auto-Memory instructions + token-budgeted `MEMORY.md` snapshot in the system prompt); app `WorkspaceAgentFactory` hook hands the session workspace to agent factories.
 
 ## Conventions (summary; full list in CLAUDE.md)
 

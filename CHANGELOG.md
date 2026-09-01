@@ -9,6 +9,31 @@ details can be verified with `git log <prev-tag>..<tag> --oneline`.
 
 ## [Unreleased]
 
+### Added — agentic memory (Phase 3)
+- **`memory.FileStore`**: the file-based long-term memory store completing
+  the InMemory / Mem0 / Vector / File store set — memories persist as JSON
+  Lines (`memories.jsonl`) under a directory (workspace-friendly);
+  crash-tolerant loading (a torn final line is skipped), atomic rewrite on
+  delete, append-friendly adds, and the same keyword search semantics as
+  `InMemoryStore`
+- **`memory.AgenticMemoryMiddleware`**: file-backed long-term memory where
+  the LLM decides when and what to save (port of Python's
+  AgenticMemoryMiddleware, #2263) — keeps a workspace-local Markdown memory
+  store (`<workdir>/Memory/MEMORY.md`, directory configurable) and injects
+  the Auto-Memory instructions (faithful port of the Python text,
+  `{memory_dir}` substituted) plus a token-budgeted `MEMORY.md` snapshot
+  (default 4000 tokens; `<<<TRUNCATED>>>` with a Read-offset reminder on
+  overflow, empty-store placeholder otherwise) into the system prompt; the
+  agent maintains the store with its regular file tools. Deliberate delta:
+  the asynchronous LLM-driven relevance retrieval is not ported yet — the
+  selection text is kept as `DefaultAgenticRetrievalInstructions` for the
+  future port
+- **`app.WorkspaceAgentFactory`**: optional workspace-aware agent factory
+  (`AppConfig.WorkspaceAgentFactory`, requires `WorkspaceDir`) that hands
+  the session's workspace to the factory when creating session agents —
+  parity with Python's workspace-aware agent middleware factories, enabling
+  per-session filesystem-backed middleware such as agentic memory
+
 ### Added — workspace skill isolation (Phase 3)
 - **`skill.Store`**: per-agent skill partitions under a workspace
   (`skills/<agent_id>/<skill-dir>/SKILL.md`, Python #2283 semantics) —
