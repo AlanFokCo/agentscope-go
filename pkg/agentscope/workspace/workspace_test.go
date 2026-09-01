@@ -286,3 +286,88 @@ func mustWorkspace(t *testing.T) *LocalWorkspace {
 	}
 	return ws
 }
+
+func TestSiblingPrefixEscapeBlocked(t *testing.T) {
+	// A bare prefix check admits siblings: base <tmp>/ws1 must not admit
+	// <tmp>/ws123/... Craft the pair explicitly.
+	parent := t.TempDir()
+	base := filepath.Join(parent, "ws1")
+	sibling := filepath.Join(parent, "ws123")
+	if err := os.MkdirAll(sibling, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sibling, "secret.txt"), []byte("sibling secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ws, err := NewLocalWorkspace(LocalConfig{BasePath: base})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	if _, err := ws.ReadFile(ctx, "../ws123/secret.txt"); err == nil {
+		t.Fatal("sibling escape via relative path must be blocked")
+	}
+	if _, err := ws.ReadFile(ctx, filepath.Join(sibling, "secret.txt")); err == nil {
+		t.Fatal("sibling escape via absolute path must be blocked")
+	}
+	if err := ws.WriteFile(ctx, "../ws123/pwned.txt", []byte("x")); err == nil {
+		t.Fatal("sibling write escape must be blocked")
+	}
+	if _, err := os.Stat(filepath.Join(sibling, "pwned.txt")); !os.IsNotExist(err) {
+		t.Fatal("no file may land in the sibling")
+	}
+}
+
+func TestSymlinkEscapeBlocked(t *testing.T) {
+	parent := t.TempDir()
+	outside := filepath.Join(parent, "outside")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("outside secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wsDir := filepath.Join(parent, "ws")
+
+	ws, err := NewLocalWorkspace(LocalConfig{BasePath: wsDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	// File symlink pointing out.
+	if err := os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(wsDir, "link")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := ws.ReadFile(ctx, "link"); err == nil {
+		t.Fatal("read through an escaping symlink must be blocked")
+	}
+
+	// Directory symlink pointing out.
+	if err := os.Symlink(outside, filepath.Join(wsDir, "dirlink")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ws.ListFiles(ctx, "dirlink"); err == nil {
+		t.Fatal("listing an escaping symlinked dir must be blocked")
+	}
+	if err := ws.WriteFile(ctx, "dirlink/pwned.txt", []byte("x")); err == nil {
+		t.Fatal("write through an escaping symlinked dir must be blocked")
+	}
+	if _, err := os.Stat(filepath.Join(outside, "pwned.txt")); !os.IsNotExist(err) {
+		t.Fatal("no file may land outside via symlink")
+	}
+
+	// A symlink staying inside the workspace remains usable.
+	if err := os.WriteFile(filepath.Join(wsDir, "real.txt"), []byte("inside"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(wsDir, "real.txt"), filepath.Join(wsDir, "inner")); err != nil {
+		t.Fatal(err)
+	}
+	data, err := ws.ReadFile(ctx, "inner")
+	if err != nil || string(data) != "inside" {
+		t.Errorf("contained symlink must stay usable, got %q %v", data, err)
+	}
+}

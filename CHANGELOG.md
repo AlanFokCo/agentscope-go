@@ -9,6 +9,31 @@ details can be verified with `git log <prev-tag>..<tag> --oneline`.
 
 ## [Unreleased]
 
+### Added — workspace sharing + artifacts (Phase 3)
+- **Workspace sharing** (Python #1951 semantics): `WorkspaceManager` now
+  tracks session↔workspace bindings with refcounts — `GetOrCreate` binds a
+  session to a private workspace named after itself, `Share` rebinds it
+  onto a named workspace other sessions can join (workspace IDs validated
+  against escaping), `BoundWorkspaceID` / `GetByID` / `RefCount` expose
+  the binding state, and a workspace is released from memory when its
+  last session unbinds (files persist on disk; the next reference
+  recreates it over the same directory). The `workspace.Workspace`
+  interface is unchanged — sharing lives entirely in the manager layer
+- **Artifact endpoints** (Python #2187): `POST /api/workspace/share`
+  binds a session onto a shared workspace; `GET /api/workspace/{id}/list_dir`
+  and `GET /api/workspace/{id}/read_file` give read-only artifact access
+  to live workspaces (workspace jail enforced; size checked through the
+  directory listing BEFORE content is read — 10 MiB cap, `413` above;
+  `nosniff` on responses)
+- **`LocalWorkspace` path containment hardened**: the jail check is now
+  separator-aware — the previous bare prefix match admitted sibling
+  directories (`/tmp/ws123/...` passed for base `/tmp/ws1`), a hole the
+  new HTTP-exposed artifact endpoints would have surfaced — and
+  symlink-aware: contained paths are resolved through their links (and
+  the nearest existing ancestor for not-yet-created targets) and
+  re-checked, so a link planted inside the workspace cannot serve or
+  receive content outside it; both covered by regression tests
+
 ### Added — agentic memory (Phase 3)
 - **`memory.FileStore`**: the file-based long-term memory store completing
   the InMemory / Mem0 / Vector / File store set — memories persist as JSON

@@ -219,21 +219,57 @@ func (w *LocalWorkspace) OffloadToolResult(ctx context.Context, content string, 
 // resolve converts a relative path to an absolute path under the workspace,
 // rejecting any traversal outside the base directory.
 func (w *LocalWorkspace) resolve(path string) (string, error) {
+	base := filepath.Clean(w.basePath)
+	var cleaned string
 	if filepath.IsAbs(path) {
-		if !strings.HasPrefix(filepath.Clean(path), w.basePath) {
-			return "", fmt.Errorf("workspace: path %q is outside workspace", path)
-		}
-		return filepath.Clean(path), nil
+		cleaned = filepath.Clean(path)
+	} else {
+		cleaned = filepath.Join(base, path)
 	}
-
-	joined := filepath.Join(w.basePath, path)
-	cleaned := filepath.Clean(joined)
-
-	if !strings.HasPrefix(cleaned, w.basePath) {
-		return "", fmt.Errorf("workspace: path %q escapes workspace (resolved to %q)", path, cleaned)
+	// Separator-aware containment: a bare prefix match would admit sibling
+	// directories (base /tmp/ws1 must not admit /tmp/ws123/...).
+	if cleaned != base && !strings.HasPrefix(cleaned, base+string(os.PathSeparator)) {
+		return "", fmt.Errorf("workspace: path %q escapes workspace", path)
 	}
-
+	// Symlink containment: a lexically contained path can still point
+	// outside through a link planted inside the workspace (e.g. by an
+	// agent's shell). Resolve links — including the base itself, which on
+	// some systems is a symlink — and re-check.
+	baseResolved := base
+	if r, err := filepath.EvalSymlinks(base); err == nil {
+		baseResolved = r
+	}
+	resolved := evalSymlinksLenient(cleaned)
+	if resolved != baseResolved && !strings.HasPrefix(resolved, baseResolved+string(os.PathSeparator)) {
+		return "", fmt.Errorf("workspace: path %q escapes workspace via symlink", path)
+	}
 	return cleaned, nil
+}
+
+// evalSymlinksLenient resolves symlinks for p if it exists, otherwise
+// resolves the longest existing ancestor and rejoins the non-existent
+// remainder (so creating a new file cannot escape via a symlinked parent).
+func evalSymlinksLenient(p string) string {
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		return resolved
+	}
+	dir := p
+	var rest []string
+	for {
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		rest = append([]string{filepath.Base(dir)}, rest...)
+		dir = parent
+		if _, err := os.Stat(dir); err == nil {
+			if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+				return filepath.Join(append([]string{resolved}, rest...)...)
+			}
+			break
+		}
+	}
+	return p
 }
 
 type workspaceContextKey struct{}

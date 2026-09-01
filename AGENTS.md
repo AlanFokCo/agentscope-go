@@ -85,6 +85,7 @@ Recent additions (2026-09) — **harness engineering batch** (evaluation, regres
 - **Hub built-in sources** (`hub/`, Phase 3): `GitHubMCPRegistry` (GitHub MCP registry — `runtime_hint`-driven stdio commands, auth-header install inputs, atomic install preserving `${KEY}` placeholders) + `ClawHub` (owner-scoped skill IDs, zip install with zip-slip/zip-bomb protection and slug validation).
 - **Workspace skill isolation** (`skill/`, Phase 3): per-agent skill partitions (`skills/<agent_id>/`, `.seed` template equipped once, idempotent legacy migration) via `skill.Store`; `SkillManager` agent partitions + `PurgeAgent`; `/api/workspace/skill` routes implemented; sessions carry `active_skills`.
 - **Agentic memory** (`middleware/memory/`, Phase 3): `FileStore` (JSONL-persisted `MemoryStore` — crash-tolerant load, atomic delete) + `AgenticMemoryMiddleware` (file-based memory: Auto-Memory instructions + token-budgeted `MEMORY.md` snapshot in the system prompt); app `WorkspaceAgentFactory` hook hands the session workspace to agent factories.
+- **Workspace sharing + artifacts** (`app/`, Phase 3): session↔workspace bindings with refcounts (`WorkspaceManager.Share`/`BoundWorkspaceID`/`GetByID`/`RefCount`), `POST /api/workspace/share` + read-only artifact routes `GET /api/workspace/{id}/list_dir|read_file` (pre-read size cap, jail-enforced); `LocalWorkspace` jail made separator-aware (sibling-prefix escape closed) and symlink-aware (escaping links rejected).
 
 ## Conventions (summary; full list in CLAUDE.md)
 

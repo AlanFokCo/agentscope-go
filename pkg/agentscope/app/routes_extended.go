@@ -6,12 +6,15 @@ import (
 	"net/http"
 
 	"errors"
+	"os"
+	"path"
 	"strings"
 
 	agentscope "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/skill"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/storage"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tts"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/workspace"
 )
 
 // registerExtendedRoutes adds CRUD routes for agents, credentials, schedules,
@@ -43,6 +46,11 @@ func (a *App) registerExtendedRoutes() {
 	// Session extended
 	a.mux.HandleFunc("PATCH /api/session/{id}", a.handleUpdateSession)
 	a.mux.HandleFunc("GET /api/session/{id}/messages", a.handleListMessages)
+
+	// Workspace sharing + artifacts (read-only file access)
+	a.mux.HandleFunc("POST /api/workspace/share", a.handleShareWorkspace)
+	a.mux.HandleFunc("GET /api/workspace/{id}/list_dir", a.handleWorkspaceListDir)
+	a.mux.HandleFunc("GET /api/workspace/{id}/read_file", a.handleWorkspaceReadFile)
 
 	// Workspace MCP/Skill management
 	a.mux.HandleFunc("GET /api/workspace/mcp", a.handleListWorkspaceMCPs)
@@ -548,6 +556,152 @@ func (a *App) handleRemoveWorkspaceSkill(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Workspace sharing + artifacts ---
+
+// maxArtifactSize caps read_file responses; larger files are refused before
+// their content is read.
+const maxArtifactSize = 10 << 20
+
+// handleShareWorkspace binds a session to a named workspace that multiple
+// sessions can share (Python #1951 semantics).
+func (a *App) handleShareWorkspace(w http.ResponseWriter, r *http.Request) {
+	if a.wsMgr == nil {
+		http.Error(w, "workspace not configured", http.StatusNotImplemented)
+		return
+	}
+	var req struct {
+		SessionID   string `json:"session_id"`
+		WorkspaceID string `json:"workspace_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.SessionID == "" || req.WorkspaceID == "" {
+		http.Error(w, "session_id and workspace_id are required", http.StatusBadRequest)
+		return
+	}
+	ws, err := a.wsMgr.Share(req.SessionID, req.WorkspaceID)
+	if err != nil {
+		if errors.Is(err, errInvalidWorkspaceID) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"workspace_id": req.WorkspaceID,
+		"base_path":    ws.BasePath(),
+	})
+}
+
+// workspaceForArtifact resolves a live workspace by path id.
+func (a *App) workspaceForArtifact(w http.ResponseWriter, r *http.Request) (ws workspace.Workspace, ok bool) {
+	if a.wsMgr == nil {
+		http.Error(w, "workspace not configured", http.StatusNotImplemented)
+		return nil, false
+	}
+	ws = a.wsMgr.GetByID(r.PathValue("id"))
+	if ws == nil {
+		http.Error(w, "workspace not found", http.StatusNotFound)
+		return nil, false
+	}
+	return ws, true
+}
+
+// workspacePathErrorStatus maps workspace path errors onto status codes.
+func workspacePathErrorStatus(err error) int {
+	msg := err.Error()
+	if strings.Contains(msg, "escapes workspace") || strings.Contains(msg, "outside workspace") {
+		return http.StatusBadRequest
+	}
+	if os.IsNotExist(err) {
+		return http.StatusNotFound
+	}
+	return http.StatusInternalServerError
+}
+
+// handleWorkspaceListDir lists a directory inside a live workspace
+// (artifact browsing, Python #2187).
+func (a *App) handleWorkspaceListDir(w http.ResponseWriter, r *http.Request) {
+	ws, ok := a.workspaceForArtifact(w, r)
+	if !ok {
+		return
+	}
+	rel := r.URL.Query().Get("path")
+	if rel == "" {
+		rel = "."
+	}
+	files, err := ws.ListFiles(r.Context(), rel)
+	if err != nil {
+		http.Error(w, err.Error(), workspacePathErrorStatus(err))
+		return
+	}
+	writeJSON(w, http.StatusOK, files)
+}
+
+// handleWorkspaceReadFile reads one file from a live workspace. Read-only;
+// the size is checked via the directory listing BEFORE the content is read.
+func (a *App) handleWorkspaceReadFile(w http.ResponseWriter, r *http.Request) {
+	ws, ok := a.workspaceForArtifact(w, r)
+	if !ok {
+		return
+	}
+	rel := r.URL.Query().Get("path")
+	if rel == "" {
+		http.Error(w, "path query parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	if strings.HasPrefix(rel, "/") {
+		http.Error(w, "path must be workspace-relative", http.StatusBadRequest)
+		return
+	}
+	// Pre-read size check through the interface (no direct filesystem
+	// access at the app layer): list the parent and find the entry.
+	dir, name := path.Split(path.Clean(rel))
+	dir = strings.TrimSuffix(dir, "/")
+	if dir == "" {
+		dir = "."
+	}
+	entries, err := ws.ListFiles(r.Context(), dir)
+	if err != nil {
+		http.Error(w, err.Error(), workspacePathErrorStatus(err))
+		return
+	}
+	var size int64 = -1
+	isDir := false
+	for _, e := range entries {
+		if e.Name == name {
+			size = e.Size
+			isDir = e.IsDir
+			break
+		}
+	}
+	if size < 0 {
+		http.Error(w, "file not found", http.StatusNotFound)
+		return
+	}
+	if isDir {
+		http.Error(w, "path is a directory", http.StatusBadRequest)
+		return
+	}
+	if size > maxArtifactSize {
+		http.Error(w, "file exceeds the read limit", http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	data, err := ws.ReadFile(r.Context(), rel)
+	if err != nil {
+		http.Error(w, err.Error(), workspacePathErrorStatus(err))
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write(data)
 }
 
 // --- TTS models ---
