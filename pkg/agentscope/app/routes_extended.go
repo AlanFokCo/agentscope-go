@@ -5,7 +5,11 @@ import (
 	"fmt"
 	"net/http"
 
+	"errors"
+	"strings"
+
 	agentscope "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/skill"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/storage"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tts"
 )
@@ -342,8 +346,9 @@ func (a *App) handleUpdateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		SystemPrompt *string `json:"system_prompt,omitempty"`
-		ModelName    *string `json:"model_name,omitempty"`
+		SystemPrompt *string   `json:"system_prompt,omitempty"`
+		ModelName    *string   `json:"model_name,omitempty"`
+		ActiveSkills *[]string `json:"active_skills,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -354,6 +359,9 @@ func (a *App) handleUpdateSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ModelName != nil {
 		session.ModelName = *req.ModelName
+	}
+	if req.ActiveSkills != nil {
+		session.ActiveSkills = append([]string(nil), *req.ActiveSkills...)
 	}
 	writeJSON(w, http.StatusOK, session.ToResponse())
 }
@@ -434,23 +442,111 @@ func (a *App) handleRemoveWorkspaceMCP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (a *App) handleListWorkspaceSkills(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, []any{})
+// workspaceSkillStore resolves the session's workspace skill store from
+// the session_id query parameter; agent_id selects the partition (empty
+// means the default one).
+func (a *App) workspaceSkillStore(r *http.Request) (*skill.Store, string, int, error) {
+	if a.wsMgr == nil {
+		return nil, "", http.StatusNotImplemented, fmt.Errorf("workspace not configured")
+	}
+	sessionID := r.URL.Query().Get("session_id")
+	if sessionID == "" {
+		return nil, "", http.StatusBadRequest, fmt.Errorf("session_id query parameter is required")
+	}
+	ws, err := a.wsMgr.GetOrCreate(sessionID)
+	if err != nil {
+		return nil, "", http.StatusInternalServerError, fmt.Errorf("workspace for session %s: %w", sessionID, err)
+	}
+	return skill.NewStore(ws.BasePath()), r.URL.Query().Get("agent_id"), 0, nil
+}
+
+type workspaceSkillView struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Category    string `json:"category,omitempty"`
+	Dir         string `json:"dir"`
+}
+
+// skillErrorStatus maps skill store errors onto HTTP status codes.
+func skillErrorStatus(err error) int {
+	switch {
+	case errors.Is(err, skill.ErrAlreadyExists):
+		return http.StatusConflict
+	case errors.Is(err, skill.ErrNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, skill.ErrInvalidAgentID):
+		return http.StatusBadRequest
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
+func (a *App) handleListWorkspaceSkills(w http.ResponseWriter, r *http.Request) {
+	store, agentID, status, err := a.workspaceSkillStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), status)
+		return
+	}
+	skills, err := store.List(agentID)
+	if err != nil {
+		http.Error(w, err.Error(), skillErrorStatus(err))
+		return
+	}
+	views := make([]workspaceSkillView, 0, len(skills))
+	for _, s := range skills {
+		views = append(views, workspaceSkillView{
+			Name:        s.Name,
+			Description: s.Description,
+			Category:    s.Category,
+			Dir:         s.Dir,
+		})
+	}
+	writeJSON(w, http.StatusOK, views)
 }
 
 func (a *App) handleAddWorkspaceSkill(w http.ResponseWriter, r *http.Request) {
+	store, agentID, status, err := a.workspaceSkillStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), status)
+		return
+	}
 	var req struct {
 		Name         string `json:"name"`
+		Description  string `json:"description"`
+		Category     string `json:"category"`
 		Instructions string `json:"instructions"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]string{"name": req.Name, "status": "added"})
+	dirName, err := store.Add(agentID, req.Name, req.Description, req.Category, req.Instructions)
+	if err != nil {
+		status := skillErrorStatus(err)
+		if status == http.StatusInternalServerError &&
+			(strings.Contains(err.Error(), "name is required") || strings.Contains(err.Error(), "instructions are required")) {
+			status = http.StatusBadRequest
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{
+		"name":   req.Name,
+		"dir":    dirName,
+		"status": "added",
+	})
 }
 
 func (a *App) handleRemoveWorkspaceSkill(w http.ResponseWriter, r *http.Request) {
+	store, agentID, status, err := a.workspaceSkillStore(r)
+	if err != nil {
+		http.Error(w, err.Error(), status)
+		return
+	}
+	if err := store.Remove(agentID, r.PathValue("name")); err != nil {
+		http.Error(w, err.Error(), skillErrorStatus(err))
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

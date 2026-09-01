@@ -9,6 +9,28 @@ details can be verified with `git log <prev-tag>..<tag> --oneline`.
 
 ## [Unreleased]
 
+### Added — workspace skill isolation (Phase 3)
+- **`skill.Store`**: per-agent skill partitions under a workspace
+  (`skills/<agent_id>/<skill-dir>/SKILL.md`, Python #2283 semantics) —
+  first access equips a partition from the `skills/.seed` template
+  exactly once (the partition's existence is the marker, so a deleted
+  seed skill stays deleted), idempotent migration of the pre-partition
+  layout into the seed, content-based `Add` and directory-copy `AddDir`,
+  `Remove` by skill name, `PurgeAgent`; agent IDs are validated against
+  partition escaping (leading dots, separators), and only
+  `<partition>/<dir>/SKILL.md` counts as a skill
+- **`skill.SkillManager` agent partitions**: `RegisterForAgent` /
+  `GetForAgent` / `ListForAgent` / `PurgeAgent` /
+  `LoadAgentFromStore` / `FormatInstructionsForAgent` alongside the
+  unchanged global registry; `skill.FilterByName` for session skill
+  selection
+- **Workspace skill routes implemented** (previously stubs):
+  `GET/POST/DELETE /api/workspace/skill` now read and write the
+  session's workspace partition (`session_id` + optional `agent_id`
+  query parameters); `SessionRecord`/`SessionResponse` carry
+  `active_skills` (settable via `SetActiveSkills` and the session PATCH
+  route) so agent factories can assemble per-session toolkits
+
 ### Added — hub built-in sources (Phase 3)
 - **`hub.GitHubMCPRegistry`**: GitHub's public MCP registry
   (`api.mcp.github.com`, `GET /v0/servers`) as a `hub.Hub` source —

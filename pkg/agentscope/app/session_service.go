@@ -24,6 +24,11 @@ type SessionRecord struct {
 	ModelName    string                 `json:"model_name,omitempty"`
 	Members      map[string]AgentRecord `json:"members,omitempty"`
 	CreatedAt    time.Time              `json:"created_at"`
+
+	// ActiveSkills lists the workspace skills this session equips, by
+	// skill name. Empty means no selection recorded (agent factories may
+	// treat that as "all skills in the partition", Python #2283 style).
+	ActiveSkills []string `json:"active_skills,omitempty"`
 }
 
 // SessionService manages session lifecycle, agent creation, and member tracking.
@@ -162,6 +167,18 @@ func (s *SessionService) ListMembers(sessionID string) ([]AgentRecord, error) {
 	return members, nil
 }
 
+// SetActiveSkills records which workspace skills the session equips.
+func (s *SessionService) SetActiveSkills(sessionID string, names []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	session, ok := s.sessions[sessionID]
+	if !ok {
+		return fmt.Errorf("session %s not found", sessionID)
+	}
+	session.ActiveSkills = append([]string(nil), names...)
+	return nil
+}
+
 // ToResponse converts a SessionRecord to a SessionResponse.
 func (s *SessionRecord) ToResponse() SessionResponse {
 	members := make([]string, 0, len(s.Members))
@@ -175,5 +192,6 @@ func (s *SessionRecord) ToResponse() SessionResponse {
 		ModelName:    s.ModelName,
 		Members:      members,
 		CreatedAt:    s.CreatedAt,
+		ActiveSkills: append([]string(nil), s.ActiveSkills...),
 	}
 }

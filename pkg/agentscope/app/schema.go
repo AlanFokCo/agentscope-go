@@ -20,6 +20,7 @@ type SessionResponse struct {
 	ModelName    string    `json:"model_name,omitempty"`
 	Members      []string  `json:"members,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
+	ActiveSkills []string  `json:"active_skills,omitempty"`
 }
 
 // --- Chat schemas ---

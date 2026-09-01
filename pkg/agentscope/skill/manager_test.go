@@ -147,3 +147,77 @@ func TestSkillManagerConcurrency(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestSkillManager_AgentPartitions(t *testing.T) {
+	m := NewSkillManager()
+
+	// Global registry stays independent of partitions.
+	m.Register(&Skill{Name: "global", Description: "g"})
+
+	m.RegisterForAgent("alice", &Skill{Name: "alpha", Description: "a"})
+	m.RegisterForAgent("alice", &Skill{Name: "beta", Description: "b"})
+	m.RegisterForAgent("bob", &Skill{Name: "gamma", Description: "c"})
+
+	if got := m.List(); len(got) != 1 || got[0].Name != "global" {
+		t.Errorf("global list must not see partitions, got %+v", got)
+	}
+	alice := m.ListForAgent("alice")
+	if len(alice) != 2 || alice[0].Name != "alpha" || alice[1].Name != "beta" {
+		t.Errorf("alice partition wrong: %+v", alice)
+	}
+	if s, ok := m.GetForAgent("alice", "beta"); !ok || s.Description != "b" {
+		t.Errorf("GetForAgent wrong: %v %v", s, ok)
+	}
+	if _, ok := m.GetForAgent("alice", "gamma"); ok {
+		t.Error("partitions must be isolated")
+	}
+
+	// Replace-in-partition.
+	m.RegisterForAgent("alice", &Skill{Name: "alpha", Description: "v2"})
+	if s, _ := m.GetForAgent("alice", "alpha"); s.Description != "v2" {
+		t.Errorf("re-register must replace: %+v", s)
+	}
+
+	m.PurgeAgent("alice")
+	if got := m.ListForAgent("alice"); len(got) != 0 {
+		t.Errorf("purged partition must be empty, got %+v", got)
+	}
+	if got := m.ListForAgent("bob"); len(got) != 1 {
+		t.Errorf("other partitions must survive a purge, got %+v", got)
+	}
+}
+
+func TestSkillManager_LoadAgentFromStore(t *testing.T) {
+	root := t.TempDir()
+	store := NewStore(root)
+	if _, err := store.Add("alice", "loaded", "", "", "instructions"); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewSkillManager()
+	if err := m.LoadAgentFromStore(store, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	skills := m.ListForAgent("alice")
+	if len(skills) != 1 || skills[0].Name != "loaded" {
+		t.Fatalf("load from store wrong: %+v", skills)
+	}
+	if got := m.FormatInstructionsForAgent("alice"); !strings.Contains(got, "loaded") {
+		t.Errorf("agent instructions must list the skill, got %q", got)
+	}
+
+	// Reload replaces the partition content.
+	if err := store.Remove("alice", "loaded"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.LoadAgentFromStore(store, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.ListForAgent("alice"); len(got) != 0 {
+		t.Errorf("reload must reflect removal, got %+v", got)
+	}
+
+	if err := m.LoadAgentFromStore(nil, "alice"); err == nil {
+		t.Error("nil store must error")
+	}
+}
