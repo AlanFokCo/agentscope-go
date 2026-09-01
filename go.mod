@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/google/uuid v1.6.0
+	github.com/open-dingtalk/dingtalk-stream-sdk-go v0.9.1
 	github.com/prometheus/client_golang v1.24.1
 	github.com/qdrant/go-client v1.19.0
 	github.com/sirupsen/logrus v1.9.4

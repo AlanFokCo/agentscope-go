@@ -18,8 +18,9 @@ import "github.com/alanfokco/agentscope-go/v2/pkg/agentscope"
   `agent` (UnifiedAgent), `tool`, `permission`, `formatter`, `errors`.
 - **Experimental** (may change): `runtime`, `loop`, `app`, `service`, `realtime`,
   `tune`, `replay/evalkit`, `event/streamcheck`, `agenttest/faults`,
-  `providercontract` (test-only). These are the newer v3 infrastructure
-  layers and harness tooling.
+  `providercontract` (test-only), `console`, `channel`, `channel/dingtalk`.
+  These are the newer v3 infrastructure layers, harness tooling, and the
+  console/channel frontends.
 - **Internal** (`internal/...`): no compatibility guarantee; do not import.
 
 ## Error handling

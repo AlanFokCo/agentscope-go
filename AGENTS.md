@@ -81,6 +81,7 @@ Recent additions (2026-09) — **harness engineering batch** (evaluation, regres
 - **Crash recovery**: `agent.WithStateSaver` checkpoints at batch boundaries/park points (and right after resumed calls execute); `agent.LoadCheckpoint` resumes and re-drives pending HITL/external handshakes. Contract: a crash mid-batch re-executes the whole batch (not exactly-once).
 - **Fault injection** (`agenttest/faults/`) and **bench v2** (`Battery` + `Baseline` + `CheckBaseline` regression detection); `model.WithSeed` pass-through for OpenAI-family providers.
 - **Console** (`console/`, Phase 1): `Renderer` (event stream → terminal, 3 verbosity levels, `LastMsg`) + `Launch` (interactive chat with tool-call confirmation and Ctrl+C interruption); `examples/console`.
+- **Channels** (`channel/`, Phase 2): channel gateway + normalised inbound events + confirmation round-trips; `channel/dingtalk` DingTalk robot (official Stream SDK inbound, session-webhook Markdown outbound, text-mode confirmations); `examples/dingtalk_channel`. Dep added: `dingtalk-stream-sdk-go`.
 
 ## Conventions (summary; full list in CLAUDE.md)
 

@@ -504,6 +504,7 @@ pkg/agentscope/
 ├── config/                 # Configuration loading
 ├── app/                    # Application bootstrap
 ├── console/                # Terminal renderer + interactive agent console
+├── channel/                # IM channel gateway + DingTalk channel (channel/dingtalk)
 ├── tune/                   # Model tuning utilities
 ├── types/                  # Shared type definitions
 ├── agenttest/              # Test helpers, mocks, and fault injection (agenttest/faults)
@@ -514,7 +515,7 @@ pkg/agentscope/
 
 ## Examples
 
-50 examples in `examples/`. Run any with `go run ./examples/<name>`.
+51 examples in `examples/`. Run any with `go run ./examples/<name>`.
 
 | Example | Description |
 |---------|-------------|
@@ -525,6 +526,7 @@ pkg/agentscope/
 | `react_tool` | UnifiedAgent with custom FunctionTool |
 | `react_builtin_tools` | UnifiedAgent with enhanced built-in toolkit (bash, read, write, edit, glob, grep) |
 | `console` | Interactive terminal chat with an agent (streamed rendering + tool-call confirmation) |
+| `dingtalk_channel` | Connect an agent to DingTalk (Stream SDK inbound, webhook replies, text-mode confirmations) |
 | **Model API** | |
 | `model_call` | Raw model API: streaming + two-round tool calling + structured output |
 | `structured_output` | Force JSON Schema-compliant output via `GenerateStructuredOutput` |

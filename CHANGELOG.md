@@ -9,6 +9,25 @@ details can be verified with `git log <prev-tag>..<tag> --oneline`.
 
 ## [Unreleased]
 
+### Added — channels (Phase 2, DingTalk first)
+- **`channel` package**: `Channel` interface + normalised `Event` /
+  `ConfirmationEvent` inbound types, `Capability`, connection `Status`,
+  and `SplitText` line-aware message splitting; `Gateway` orchestrates
+  inbound events — per-chat session agents, one reply at a time with
+  drop-with-notice for concurrent messages, reply event streams tee'd to
+  the channel's `SendResponse`, and tool-call confirmation round-trips:
+  text-mode answers (y/n/a plus common Chinese equivalents) apply to all
+  parked calls, while native confirmation UIs deliver
+  `ConfirmationEvent`s answered per call; optional `Notifier` for
+  housekeeping notices
+- **`channel/dingtalk` package**: DingTalk enterprise robot channel over
+  the official Stream SDK (long-lived inbound connection, no public
+  endpoint); replies and confirm prompts sent as Markdown through the
+  per-message session webhook (expiry-checked); group chats answered
+  only when @-mentioned by default (`ReplyWithoutAt` to change); v1
+  scope: text/Markdown + text-mode confirmations — AI-card streaming,
+  media, and user search not ported yet (`examples/dingtalk_channel`)
+
 ### Added — console (Phase 1)
 - **`console` package** (port of Python agentscope's `console` module):
   `console.Renderer` turns an agent event stream into line-based terminal
