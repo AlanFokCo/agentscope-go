@@ -46,7 +46,7 @@ Rsync example (single file, preserving path):
 rsync -azR pkg/agentscope/model/model.go root@builder:/opt/Projects/agentscope-go/
 ```
 
-## Current state (2026-08)
+## Current state (2026-09)
 
 Feature-complete Python parity **plus** a large production-hardening pass (see `STABILITY.md` for the full list). Highlights already shipped: bash-redirect safety, workspace jail + Docker/E2B backend routing for file/shell tools, WebFetch SSRF guard, MCP env isolation, per-tool timeout/result caps, 429/Retry-After+jitter retries, ordered fallback chain, single-probe circuit breaker, streaming-error propagation (`ChatResponse.Error`/`StopReason`), ctx-aware event emission (goroutine-leak fixes), atomic file writes, token/duration budget enforcement, HTTP hardening + `/healthz`+`/readyz`+`/metrics`, a Prometheus metrics provider, JSON-Schema tool-input validation, MultiEdit + ApplyPatch tools, and fuzz targets. All green under `-race` and golangci-lint.
 
@@ -69,6 +69,17 @@ Recent additions (2026-08):
 - **K8s cluster tools** (`workspace/k8s_tools.go`): `NewKubectlGetTool` (15 resource types, secrets BLOCKED), `NewKubectlLogTool` (tail/since/container). Read-only, 30s timeout, kubectl shell-out (no client-go dep).
 
 All originally-planned STABILITY.md items are now complete.
+
+Recent additions (2026-09) — **harness engineering batch** (evaluation, regression defense, cost governance, resilience, crash recovery):
+- **Flight recorder** (`replay/`): ring + per-entry size limits, atomic dump-on-error tapes, redaction hook; entries carry `reply_id`/`usage`. Reply IDs correlate through MiddleContext into recorders, audit entries, and tracing spans (`tracing.LateAttributer`).
+- **`event/streamcheck`**: single implementation of event-stream invariants; `agenttest` delegates to it; opt-in `middleware.NewStreamValidator` for development.
+- **Provider contract wall** (`providercontract/`, test-only): 6 provider harnesses asserting usage accounting, streaming lifecycle, truncation surfacing, ctx-cancel, error taxonomy, thinking wire formats.
+- **Golden replay seeds** (`agent/testdata/golden/`): regenerate with `-golden-update`.
+- **Runtime defenses**: `middleware.NewRepetitionBreaker` (tool-call spin detection; per-reply streaks), `middleware.NewReplyWatchdog` (wall-clock + idle timeouts), cost governance (`model.ResolvePrice` overlay, `CostLedger` + `NewCostTracking`, `NewReplyCostBudget` with soft warning + hard `ErrBudgetExceeded` stop).
+- **Evaluation kit** (`replay/evalkit/`): YAML task suites, pinned-sampling runner, scorers incl. LLM judge with caching, multi-turn tasks, Markdown suite reports, A/B `Compare`.
+- **Run logs**: `middleware.NewRunJSONL` + `replay.ParseRunLog`/`DiffRunLogs` (LCS alignment with truncation flag); `examples/replayview` + `examples/rundiff`.
+- **Crash recovery**: `agent.WithStateSaver` checkpoints at batch boundaries/park points (and right after resumed calls execute); `agent.LoadCheckpoint` resumes and re-drives pending HITL/external handshakes. Contract: a crash mid-batch re-executes the whole batch (not exactly-once).
+- **Fault injection** (`agenttest/faults/`) and **bench v2** (`Battery` + `Baseline` + `CheckBaseline` regression detection); `model.WithSeed` pass-through for OpenAI-family providers.
 
 ## Conventions (summary; full list in CLAUDE.md)
 

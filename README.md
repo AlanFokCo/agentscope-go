@@ -449,8 +449,8 @@ a := agent.NewUnifiedAgent("bot", "...", cm,
 ```
 pkg/agentscope/
 ├── agent/                  # Agent interface + UnifiedAgent, UserAgent, A2AAgent
-├── model/                  # ChatModel interface + 9 providers + 78 model cards
-├── tool/                   # Tool interface + FunctionTool + 17 built-in tools + safety analysis
+├── model/                  # ChatModel interface + 9 providers + 78 model cards + price overlay
+├── tool/                   # Tool interface + FunctionTool + 19 built-in tools + safety analysis
 ├── message/                # Msg + ContentBlock (text, thinking, tool_call, tool_result, data, hint)
 ├── event/                  # 30 event types for streaming lifecycle
 ├── middleware/             # 7-hook onion chain + tracing, TTS, budget, memory, metrics, cost, guardrail
@@ -459,7 +459,9 @@ pkg/agentscope/
 ├── pipeline/               # Pipeline (Then/If) + MsgHub (multi-agent routing)
 ├── credential/             # 9 provider credential types + auto-detect from env
 │
-├── replay/                 # Deterministic record/replay of LLM calls + eval harness
+├── replay/                 # Record/replay + flight recorder + run logs/diff
+├── replay/evalkit/         # YAML eval suites: runner, scorers, LLM judge, A/B compare
+├── providercontract/       # Test-only provider contract wall (6 providers × up to 6 contracts)
 ├── runtime/                # AgentPool, SessionEngine, AgentManager, BudgetTracker, Harness
 ├── hotreload/              # Typed generic config reloader with file watching
 ├── wasm/                   # WASM sandbox (wasmtime/wasmer/wasm3 backends)
@@ -503,8 +505,7 @@ pkg/agentscope/
 ├── app/                    # Application bootstrap
 ├── tune/                   # Model tuning utilities
 ├── types/                  # Shared type definitions
-├── agenttest/              # Test helpers and mocks
-├── exception/              # Exception handling
+├── agenttest/              # Test helpers, mocks, and fault injection (agenttest/faults)
 └── internal/               # fsutil (atomic writes), httpsec (SSRF guard), httpx (HTTP+SSE), jsonx (repair)
 ```
 
@@ -625,7 +626,7 @@ Detailed documentation is available in the [`docs/`](docs/) directory:
 - [Model Providers](docs/model-providers.md) — Configure 9 LLM providers with examples
 - [Tools](docs/tools.md) — Built-in tools, custom functions, permissions
 - [Middleware](docs/middleware.md) — 7-hook system, tracing, budget, memory
-- [Examples](docs/examples.md) — Full catalog of 46 runnable examples
+- [Examples](docs/examples.md) — Full catalog of 49 runnable examples
 - [Deployment](docs/deployment.md) — HTTP service, sandboxing, production checklist
 - [Edge Deployment](docs/edge-deployment.md) — Cross-compile, Jetson/RPi quickstart, offline operation
 - [Device Tools](docs/device-tools.md) — Serial/GPIO/CAN/I2C connectors, DeviceTool, Watchdog

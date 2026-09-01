@@ -1,6 +1,6 @@
 # Examples
 
-47 runnable examples in `examples/`. Run any with:
+49 runnable examples in `examples/`. Run any with:
 
 ```bash
 export DASHSCOPE_API_KEY=sk-...  # or ANTHROPIC_API_KEY / OPENAI_API_KEY
@@ -73,6 +73,8 @@ go run ./examples/<name>
 | Example | Description | API Key Required |
 |---------|-------------|------------------|
 | `replay` | Record agent interactions to tape, then replay deterministically | Yes (record) / No (replay) |
+| `replayview` | Terminal viewer for RunJSONL run logs (step through events) | No |
+| `rundiff` | Align two RunJSONL run logs and print where they diverge | No |
 | `agent_pool` | Fan-out agent pool with 8 workers processing batch inputs | Yes |
 | `hotreload` | Watch config file for changes and update agent at runtime | Yes |
 | `wasm_sandbox` | Execute WASM modules in a sandboxed environment | No |

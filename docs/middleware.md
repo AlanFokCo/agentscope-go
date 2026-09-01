@@ -213,6 +213,100 @@ a := agent.NewUnifiedAgent("bot", "...", cm,
 )
 ```
 
+### CostTrackerMiddleware
+
+Pre-flight hard spend cap: before each model call, the estimated cost is
+checked against a USD limit; exceeding it stops the reply with
+`ErrBudgetExceeded`. Multi-currency display via exchange rates.
+
+```go
+ct := middleware.NewCostTrackerMiddleware(
+    prices,                              // map[string]middleware.ModelPrice
+    middleware.WithMaxCostUSD(5.0),
+    middleware.WithExchangeRate("CNY", 7.2),
+)
+```
+
+### RepetitionBreakerMiddleware
+
+Detects identical successful tool-call spins (name + input hash; failed
+calls reset the streak). At the threshold a change-strategy reminder is
+injected into the system prompt; past it the typed `ErrToolRepetition`
+replaces the tool result (the call itself still executes — side effects
+cannot be un-run). Streaks are keyed per reply. Allowlist exempts
+read-only/idempotent tools.
+
+```go
+rb := middleware.NewRepetitionBreaker(
+    middleware.WithRepetitionThreshold(3),
+    middleware.WithRepetitionAllowlist("read_file", "grep"),
+)
+```
+
+### ReplyWatchdogMiddleware
+
+Aborts replies that run too long (wall clock) or stall (maximum gap
+between events). On expiry the reply context is canceled. Zero values
+disable the respective limit.
+
+```go
+wd := middleware.NewReplyWatchdog(
+    middleware.WithReplyWallClock(5*time.Minute),
+    middleware.WithReplyIdleTimeout(60*time.Second),
+)
+```
+
+### CostLedger + CostTrackingMiddleware
+
+Cross-session cost aggregation: `NewCostLedger()` (bounded raw-entry
+retention, default 100k) + `NewCostTracking(ledger, sessionID, agentName,
+prices)` records every model call into the ledger; query with
+`ledger.Summary(filter)`. Use low-cardinality label values only when
+exporting to metrics.
+
+```go
+ledger := middleware.NewCostLedger()
+track := middleware.NewCostTracking(ledger, "sess-1", "bot", prices)
+// ...
+sum := ledger.Summary(middleware.CostFilter{SessionID: "sess-1"})
+```
+
+### ReplyCostBudgetMiddleware
+
+Per-reply cost budget: at the warn ratio (default 80%) a budget hint is
+injected into the system prompt; when the estimate exceeds the cap the
+reply stops with `ErrBudgetExceeded`.
+
+```go
+cb := middleware.NewReplyCostBudget(1.0, // USD per reply
+    middleware.WithCostBudgetWarnRatio(0.8),
+)
+```
+
+### RunJSONL
+
+Writes the full event stream plus middleware-routed model-call records of a
+reply as JSONL — the input for `replay.ParseRunLog` / `replay.DiffRunLogs`
+and `examples/replayview`. Optional redaction hook.
+
+```go
+runlog := middleware.NewRunJSONL(os.Stdout,
+    middleware.WithRunLogRedactor(func(s string) string { return s }),
+)
+```
+
+### StreamValidator
+
+Development-only guard: buffers a reply's event stream and validates the
+event-stream invariants (reply/block/tool-call/tool-result pairing, no
+orphan deltas — the same rules `event/streamcheck` and `agenttest` use)
+when the reply ends, logging any violations. Off in production: it holds
+the whole reply's events in memory.
+
+```go
+sv := middleware.NewStreamValidator("bot")
+```
+
 ### Replay Middleware
 
 Records or replays model calls for deterministic testing. See the `replay` package for details.

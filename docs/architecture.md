@@ -62,15 +62,8 @@ pkg/agentscope/
 │   ├── structured_output.go # GenerateStructuredOutput (JSON Schema via tool call)
 │   ├── wav.go             # PCM-to-WAV conversion for audio streaming
 │   ├── http.go            # ClientOptions, defaultHTTPClient, mergeHeaders
-│   └── models/            # 54 YAML model cards (//go:embed)
-│       ├── anthropic/     # 7 cards (Claude Opus/Sonnet/Haiku 4.x)
-│       ├── dashscope/     # 11 cards (Qwen 3.5–3.7, GLM-5.2, embeddings)
-│       ├── deepseek/      # 4 cards (chat, reasoner, v4-flash, v4-pro)
-│       ├── gemini/        # 6 cards (2.5/3.x, embeddings)
-│       ├── moonshot/      # 6 cards (Kimi K2.5–K3, moonshot-v1)
-│       ├── ollama/        # 4 cards (llama4, qwen3, deepseek-r1)
-│       ├── openai/        # 12 cards (GPT-4o/4.1/5.x, o3/o4-mini, embeddings)
-│       └── xai/           # 4 cards (Grok 3/4.3)
+│   ├── models/            # 78 YAML model cards (//go:embed)
+│   └── pricing/           # Embedded default price card for cost governance
 │
 ├── tool/                  # Tool system
 │   ├── tool.go            # Tool interface, BaseTool, FunctionTool, Toolkit
@@ -90,20 +83,31 @@ pkg/agentscope/
 │   └── append_event.go    # Event-to-message accumulation
 │
 ├── event/                 # Streaming event system
-│   └── event.go           # 30 event types (reply, model, text, thinking, data, tool, HITL, sandbox)
+│   ├── event.go           # 30 event types (reply, model, text, thinking, data, tool, HITL, sandbox)
+│   └── streamcheck/       # Event-stream invariant validator (used by agenttest)
 │
 ├── middleware/             # Agent middleware
 │   ├── middleware.go       # Middleware interface (7 hooks), chain builders
 │   ├── tracing.go         # TracingMiddleware (OpenTelemetry semantic conventions)
 │   ├── tts.go             # TTSMiddleware (text → audio DataBlock injection)
 │   ├── budget.go          # ReplyBudgetControlMiddleware (token budget enforcement)
+│   ├── cost_tracker.go    # CostTrackerMiddleware (hard USD/CNY spend cap)
+│   ├── guardrail.go       # GuardrailMiddleware (Block/Redact/Warn content rules)
+│   ├── repetition.go      # RepetitionBreakerMiddleware (tool-call spin detection)
+│   ├── watchdog.go        # ReplyWatchdogMiddleware (wall-clock + idle timeouts)
+│   ├── cost_ledger.go     # CostLedger/CostTracking/ReplyCostBudget middleware
+│   ├── runlog.go          # RunJSONL (full event stream + model calls as JSONL)
+│   ├── stream_validator.go # StreamValidator (event-stream invariant checks)
 │   └── memory/            # LongTermMemoryMiddleware (3 modes: static/agent/both)
 │
-├── replay/                # Deterministic replay
+├── replay/                # Record/replay + flight recorder + run logs
 │   ├── replay.go          # Tape, Entry — recorded model call sequences
 │   ├── middleware.go       # Middleware — record/replay via OnModelCall hook
-│   ├── store.go           # File-based tape persistence (JSON)
-│   └── replay_test.go
+│   ├── flight.go          # Flight recorder (ring buffer, dump-on-error tapes)
+│   ├── diff.go            # RunJSONL parsing + LCS-aligned run diff
+│   ├── eval.go            # Eval harness (scorers + EvalTape runner)
+│   ├── evalkit/           # YAML eval suites: runner, scorers, LLM judge, A/B
+│   └── store.go           # File-based tape persistence (JSON)
 │
 ├── wasm/                  # WASM sandbox execution
 │   ├── wasm.go            # Runtime interface, ExecRequest, ExecResult
@@ -178,8 +182,8 @@ pkg/agentscope/
 ├── types/                 # Shared type definitions
 ├── config/                # Configuration loading and defaults
 ├── app/                   # Full application bootstrap (CreateApp)
-├── agenttest/             # Test helpers and fixtures
-├── exception/             # Exception handling utilities
+├── agenttest/             # Test helpers, fixtures, fault injection (faults/)
+├── providercontract/      # Test-only provider contract wall (usage, streaming, errors)
 └── internal/              # httpx (HTTP+SSE), jsonx (JSON repair)
 ```
 
