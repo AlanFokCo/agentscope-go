@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/audit"
 	agenterrors "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/errors"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/event"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
@@ -108,4 +109,43 @@ func TestRepetitionBreaker_ResetPerReply(t *testing.T) {
 		t.Fatalf("streak must reset per reply: %v", err)
 	}
 	_ = mc
+}
+
+func TestRepetitionBreaker_ConcurrentRepliesIsolated(t *testing.T) {
+	// HARNESS review L-3: streaks are keyed per (agent, reply) — reply B
+	// starting must neither reset reply A's streak nor inherit it.
+	// Note: in production OnReply runs before the reply ID is minted, so its
+	// reset lands on the fallback bare-agent key; isolation between replies
+	// is provided by the per-reply keys used in OnActing/OnSystemPrompt.
+	// This test drives reply IDs explicitly to exercise the keying itself.
+	m := NewRepetitionBreaker(WithRepetitionThreshold(2))
+	ctxA := audit.WithReplyID(context.Background(), "reply-A")
+	ctxB := audit.WithReplyID(context.Background(), "reply-B")
+	noopReply := func(_ context.Context, _ ReplyInput) <-chan event.Event { return nil }
+
+	// Reply A reaches the threshold (2 passes, 3rd call breaks).
+	for i := 0; i < 2; i++ {
+		if _, err := runActing(m, ctxA, "search", `{"q":"x"}`, false); err != nil {
+			t.Fatalf("reply A call %d should pass: %v", i+1, err)
+		}
+	}
+	// Reply B starts on the same agent.
+	m.OnReply(ctxB, ReplyInput{AgentName: "agent"}, noopReply)
+
+	if _, err := runActing(m, ctxA, "search", `{"q":"x"}`, false); !errors.Is(err, agenterrors.ErrToolRepetition) {
+		t.Fatalf("reply A's streak must survive reply B starting, got %v", err)
+	}
+	// The hint applies to reply A's prompt, not reply B's.
+	if p := m.OnSystemPrompt(ctxA, "agent", "base"); !strings.Contains(p, "different approach") {
+		t.Errorf("hint missing for reply A at threshold: %q", p)
+	}
+	if p := m.OnSystemPrompt(ctxB, "agent", "base"); strings.Contains(p, "different approach") {
+		t.Errorf("hint leaked into reply B: %q", p)
+	}
+	// Reply B's own first calls are unaffected.
+	for i := 0; i < 2; i++ {
+		if _, err := runActing(m, ctxB, "search", `{"q":"x"}`, false); err != nil {
+			t.Fatalf("reply B call %d must not inherit A's streak: %v", i+1, err)
+		}
+	}
 }

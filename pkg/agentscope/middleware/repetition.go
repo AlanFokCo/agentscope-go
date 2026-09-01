@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"sync"
 
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/audit"
 	agenterrors "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/errors"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/event"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tool"
@@ -17,15 +18,19 @@ import (
 // count (a failed call legitimately may be retried and resets the streak).
 // At the threshold a system-prompt hint is injected asking the model to
 // change strategy; the identical call past the threshold still executes
-// (middleware cannot un-run side effects) but its result is discarded and
-// the reply ends with the typed ErrToolRepetition.
+// (middleware cannot un-run side effects) but its result is discarded —
+// the typed ErrToolRepetition becomes the tool result the model sees on
+// the next turn.
 //
 // Known limitation: spins whose inputs vary by timestamps/random values are
 // not detected (hash-based matching).
 //
 // Streak state lives on the middleware instance guarded by a mutex because
 // OnActing runs concurrently for parallel tool batches — MiddleContext is
-// not synchronized and must not be touched from concurrent hooks.
+// not synchronized and must not be touched from concurrent hooks. Streaks
+// are keyed per (agent, reply) via the reply ID attached to ctx
+// (audit.WithReplyID) so concurrent replies of one agent do not reset or
+// contaminate each other (HARNESS review L-3).
 type RepetitionBreakerMiddleware struct {
 	BaseMiddleware
 	threshold int
@@ -33,7 +38,7 @@ type RepetitionBreakerMiddleware struct {
 	allowlist map[string]bool
 
 	mu     sync.Mutex
-	streak map[string]repetitionStreak // per agent name
+	streak map[string]repetitionStreak // per agent name + reply ID
 }
 
 type repetitionStreak struct {
@@ -90,10 +95,24 @@ func NewRepetitionBreaker(opts ...RepetitionBreakerOption) *RepetitionBreakerMid
 	return m
 }
 
-// OnReply resets per-reply streak state.
+// streakMapLimit bounds the per-reply streak map on long-lived middleware
+// instances: one entry per reply would otherwise accumulate unboundedly.
+// Overflow drops all streaks at once — repetition detection is advisory,
+// and the cap only trips after many thousands of replies on one instance.
+const streakMapLimit = 8192
+
+// OnReply resets the fallback (reply-ID-less) streak key. In agent-attached
+// flows the reply ID is minted inside the reply loop — after this hook —
+// so per-reply isolation there comes from the keyed streaks themselves
+// (each reply gets a fresh key); the reset below covers standalone use
+// where ctx carries no reply ID. The map stays bounded via streakMapLimit.
 func (m *RepetitionBreakerMiddleware) OnReply(ctx context.Context, input ReplyInput, next ReplyHandler) <-chan event.Event {
+	key := repetitionStreakKey(ctx, input.AgentName)
 	m.mu.Lock()
-	m.streak[input.AgentName] = repetitionStreak{}
+	if len(m.streak) >= streakMapLimit {
+		m.streak = map[string]repetitionStreak{}
+	}
+	m.streak[key] = repetitionStreak{}
 	m.mu.Unlock()
 	return next(ctx, input)
 }
@@ -108,11 +127,12 @@ func (m *RepetitionBreakerMiddleware) OnActing(ctx context.Context, input *Actin
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	st := m.streak[input.AgentName]
+	streakKey := repetitionStreakKey(ctx, input.AgentName)
+	st := m.streak[streakKey]
 
 	if err != nil {
 		// Failed calls may legitimately be retried; reset the streak.
-		m.streak[input.AgentName] = repetitionStreak{}
+		m.streak[streakKey] = repetitionStreak{}
 		return resp, err
 	}
 
@@ -122,7 +142,7 @@ func (m *RepetitionBreakerMiddleware) OnActing(ctx context.Context, input *Actin
 	} else {
 		st = repetitionStreak{lastKey: key, count: 1}
 	}
-	m.streak[input.AgentName] = st
+	m.streak[streakKey] = st
 
 	if st.count > m.threshold {
 		return nil, agenterrors.ErrToolRepetition
@@ -135,10 +155,20 @@ func (m *RepetitionBreakerMiddleware) OnActing(ctx context.Context, input *Actin
 func (m *RepetitionBreakerMiddleware) OnSystemPrompt(ctx context.Context, agentName string, currentPrompt string) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if st, ok := m.streak[agentName]; ok && st.count >= m.threshold {
+	if st, ok := m.streak[repetitionStreakKey(ctx, agentName)]; ok && st.count >= m.threshold {
 		return currentPrompt + "\n\n" + m.hint
 	}
 	return currentPrompt
+}
+
+// repetitionStreakKey derives the per-reply streak key. The agent attaches
+// the reply ID to ctx (audit.WithReplyID); without one (standalone use) the
+// key falls back to the agent name.
+func repetitionStreakKey(ctx context.Context, agentName string) string {
+	if rid := audit.ReplyIDFromCtx(ctx); rid != "" {
+		return agentName + "\x00" + rid
+	}
+	return agentName
 }
 
 func repetitionKey(name, input string) string {

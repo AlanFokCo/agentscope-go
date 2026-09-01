@@ -188,3 +188,28 @@ func TestRunSuite_MarkdownAndAggregates(t *testing.T) {
 		t.Errorf("markdown report malformed:\n%s", md)
 	}
 }
+
+func TestBudgetScorer_ErrorsWhenModelNotPriceable(t *testing.T) {
+	// HARNESS review L-2: a declared cost budget must not silently pass
+	// when the runner cannot price the model.
+	spec := &TaskSpec{Budget: BudgetSpec{MaxCostUSD: 1.0}}
+
+	if _, err := (budgetScorer{}).Score(context.Background(), spec, &TaskOutcome{}); err == nil {
+		t.Fatal("budget scorer must error when a cost budget is declared but the outcome is unpriced")
+	}
+
+	under := &TaskOutcome{CostPriced: true, CostUSD: 0.5}
+	if score, err := (budgetScorer{}).Score(context.Background(), spec, under); err != nil || score != 1 {
+		t.Fatalf("priced outcome under budget must pass, got score=%v err=%v", score, err)
+	}
+	over := &TaskOutcome{CostPriced: true, CostUSD: 2.0}
+	if score, err := (budgetScorer{}).Score(context.Background(), spec, over); err != nil || score != 0 {
+		t.Fatalf("priced outcome over budget must fail, got score=%v err=%v", score, err)
+	}
+
+	// No cost budget declared: unpriced outcomes pass fine.
+	noBudget := &TaskSpec{Budget: BudgetSpec{MaxIters: 10}}
+	if score, err := (budgetScorer{}).Score(context.Background(), noBudget, &TaskOutcome{Iters: 3}); err != nil || score != 1 {
+		t.Fatalf("no cost budget must not require pricing, got score=%v err=%v", score, err)
+	}
+}

@@ -18,6 +18,7 @@ type TaskOutcome struct {
 	CacheCreateTokens int
 	CacheReadTokens   int
 	CostUSD           float64 // populated when the runner can price the model
+	CostPriced        bool    // true when CostUSD is a real price (not unknown)
 	Events            []event.Event
 	Error             string // non-empty when the reply ended with an error
 }
@@ -184,8 +185,16 @@ func (s budgetScorer) Score(_ context.Context, spec *TaskSpec, out *TaskOutcome)
 	if b.MaxOutTokens > 0 && out.OutputTokens > b.MaxOutTokens {
 		return 0, nil
 	}
-	if b.MaxCostUSD > 0 && out.CostUSD > b.MaxCostUSD {
-		return 0, nil
+	if b.MaxCostUSD > 0 {
+		// A declared cost budget must not silently pass when the runner
+		// cannot price the model — surface the misconfiguration instead
+		// (HARNESS review L-2).
+		if !out.CostPriced {
+			return 0, fmt.Errorf("budget scorer: max_cost_usd declared but the runner cannot price the model (set Runner.ModelName to a model with a known price)")
+		}
+		if out.CostUSD > b.MaxCostUSD {
+			return 0, nil
+		}
 	}
 	return 1, nil
 }

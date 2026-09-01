@@ -33,9 +33,11 @@ details can be verified with `git log <prev-tag>..<tag> --oneline`.
 - **Repetition breaker** (`middleware.NewRepetitionBreaker`): detects
   identical successful tool-call spins (name+input hash; failed calls reset
   the streak), injects a change-strategy reminder at threshold, and past the
-  threshold ends the reply with typed `ErrToolRepetition` (the over-threshold
-  call itself still executes — side effects cannot be un-run — but its
-  result is discarded). Allowlist exempts read-only/idempotent tools.
+  threshold the typed `ErrToolRepetition` replaces the tool result (the
+  over-threshold call itself still executes — side effects cannot be
+  un-run — but its actual result is discarded and the model sees the
+  error). Streaks are keyed per reply, so concurrent replies on one agent
+  do not reset each other. Allowlist exempts read-only/idempotent tools.
   Spins whose inputs vary by timestamps/random values are out of scope
 - **Reply watchdog** (`middleware.NewReplyWatchdog`): wall-clock and idle
   timeouts cancel stalled replies
@@ -74,8 +76,15 @@ details can be verified with `git log <prev-tag>..<tag> --oneline`.
 - Resumed conversations with pending ASKING calls are detected even when a
   fresh user input follows the restored assistant message; a confirmed call
   is executed inline through the normal acting path so resumed HITL work
-  actually runs. Batch confirmations are stashed per call ID so a single
-  `ConfirmResults` event answering several pending calls is never lost
+  actually runs. Batch confirmations AND batched external execution
+  results are stashed per call ID, so a single event answering several
+  pending calls is never lost; the state checkpoint is refreshed right
+  after resumed calls execute, so a crash just after resume cannot
+  re-execute an already-executed tool. Behavior change: a
+  `SubmitExternalResult` event matching no pending call no longer ends
+  the wait — it is stashed, and the affected reply blocks until a
+  matching result arrives or its context ends (previously it
+  fast-errored with a tool-result error)
 
 ### Fixed
 - Reprompted confirmations force the ALLOWED call state regardless of the

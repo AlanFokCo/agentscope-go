@@ -232,3 +232,155 @@ func TestResume_BatchConfirmationNotLost(t *testing.T) {
 		t.Errorf("both confirmed calls must execute, ran %d times", echoExecutions)
 	}
 }
+
+func TestResume_BatchExternalResultsNotLost(t *testing.T) {
+	// HARNESS review M-1: one ExternalExecutionResultEvent carrying BOTH
+	// pending calls must deliver each result — the first waiter may not
+	// eat the second call's result.
+	mock := &mockChatModel{responses: []model.ChatResponse{
+		{Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: "external done"}}, IsLast: true},
+	}}
+	restored := &AgentState{
+		SchemaVersion: StateSchemaVersion,
+		SessionID:     "sess-ext-batch",
+		Context: []*message.Msg{
+			message.UserMsg("user", "run two external things"),
+			message.AssistantMsg("cp-agent", []message.ContentBlock{
+				message.ToolCallBlock{Type: "tool_call", ID: "tc_e1", Name: "ext_tool", Input: `{}`, State: message.ToolCallSubmitted},
+				message.ToolCallBlock{Type: "tool_call", ID: "tc_e2", Name: "ext_tool", Input: `{}`, State: message.ToolCallSubmitted},
+			}),
+		},
+	}
+	a := NewUnifiedAgent("cp-agent", "helpful", mock,
+		WithToolkit(tool.NewToolkit(echoToolFixtureA())),
+		WithPermissionContext(permission.NewContext(permission.ModeDefault)),
+		WithReactConfig(ReactConfig{MaxIters: 4}),
+		WithState(restored),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ch, err := a.ReplyStream(ctx, "continue")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	batched := false
+	for evt := range ch {
+		if _, ok := evt.(event.RequireExternalExecutionEvent); ok && !batched {
+			batched = true
+			// The consumer knows both calls are pending (from the restored
+			// checkpoint state) and answers them with ONE batched event.
+			a.SubmitExternalResult(&event.ExternalExecutionResultEvent{
+				ExecutionResults: []message.ToolResultBlock{
+					{Type: "tool_result", ID: "tc_e1", Name: "ext_tool", Output: "ext-ok-1", State: message.ToolResultSuccess},
+					{Type: "tool_result", ID: "tc_e2", Name: "ext_tool", Output: "ext-ok-2", State: message.ToolResultSuccess},
+				},
+			})
+		}
+	}
+	if !batched {
+		t.Fatal("resume did not re-emit RequireExternalExecutionEvent for submitted calls")
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	got := map[string]string{}
+	for _, msg := range a.state.Context {
+		if msg == nil {
+			continue
+		}
+		for _, b := range msg.GetContentBlocks(message.ContentBlockToolResult) {
+			if tr, ok := b.(message.ToolResultBlock); ok {
+				got[tr.ID] = fmt.Sprint(tr.Output)
+			}
+		}
+	}
+	if got["tc_e1"] != "ext-ok-1" || got["tc_e2"] != "ext-ok-2" {
+		t.Errorf("batched external results not both recorded: %v", got)
+	}
+}
+
+func TestResume_CheckpointAfterRepromptExecution(t *testing.T) {
+	// HARNESS review M-2: after a resumed ASKING call executes inline, the
+	// next checkpoint must capture the executed result — otherwise a crash
+	// before the next batch boundary would resume from the parked snapshot
+	// and re-execute the already-confirmed tool.
+	echoExecutions = 0
+	saver := newFakeStateSaver()
+	mock := &mockChatModel{responses: []model.ChatResponse{
+		{Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: "resumed and done"}}, IsLast: true},
+	}}
+	restored := &AgentState{
+		SchemaVersion: StateSchemaVersion,
+		SessionID:     "sess-resume-cp",
+		Context: []*message.Msg{
+			message.UserMsg("user", "do the thing"),
+			message.AssistantMsg("cp-agent", []message.ContentBlock{
+				message.ToolCallBlock{Type: "tool_call", ID: "tc_ask", Name: "echo_a", Input: `{}`, State: message.ToolCallAsking},
+			}),
+		},
+	}
+	a := NewUnifiedAgent("cp-agent", "helpful", mock,
+		WithToolkit(tool.NewToolkit(echoToolFixtureA())),
+		WithPermissionContext(permission.NewContext(permission.ModeDefault)),
+		WithReactConfig(ReactConfig{MaxIters: 4}),
+		WithState(restored),
+		WithStateSaver(saver),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ch, err := a.ReplyStream(ctx, "continue")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for evt := range ch {
+		if ce, ok := evt.(event.RequireUserConfirmEvent); ok {
+			a.SubmitUserConfirm(&event.UserConfirmResultEvent{
+				ConfirmResults: []event.ConfirmResult{{Confirmed: true, ToolCall: ce.ToolCalls[0]}},
+			})
+		}
+	}
+	if echoExecutions != 1 {
+		t.Fatalf("confirmed call must execute exactly once, ran %d times", echoExecutions)
+	}
+
+	st, err := saver.LoadState(context.Background(), "sess-resume-cp")
+	if err != nil {
+		t.Fatalf("no checkpoint saved: %v", err)
+	}
+	found := false
+	for _, msg := range st.Context {
+		if msg == nil {
+			continue
+		}
+		for _, b := range msg.GetContentBlocks(message.ContentBlockToolResult) {
+			if tr, ok := b.(message.ToolResultBlock); ok && tr.ID == "tc_ask" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatal("final checkpoint still lacks the executed tool result — a crash would re-execute the confirmed call")
+	}
+}
+
+func TestStashes_LimitCapsGrowth(t *testing.T) {
+	// HARNESS review L-4: malformed events with fabricated IDs must not
+	// grow the park stashes unbounded within one reply.
+	a := &UnifiedAgent{}
+	for i := 0; i < stashLimit+100; i++ {
+		a.stashConfirm(&event.ConfirmResult{ToolCall: message.ToolCallBlock{ID: fmt.Sprintf("tc_c_%d", i)}})
+		a.stashExternalResult(&message.ToolResultBlock{ID: fmt.Sprintf("tc_e_%d", i)})
+	}
+	a.mu.Lock()
+	nc, ne := len(a.confirmStash), len(a.externalStash)
+	a.mu.Unlock()
+	if nc > stashLimit {
+		t.Errorf("confirm stash grew past its limit: %d", nc)
+	}
+	if ne > stashLimit {
+		t.Errorf("external stash grew past its limit: %d", ne)
+	}
+}

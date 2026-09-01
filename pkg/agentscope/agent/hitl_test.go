@@ -592,11 +592,12 @@ func TestObserve_RejectsToolResultBlocks(t *testing.T) {
 	}
 }
 
-func TestHITL_ExternalTool_NoDuplicateToolResultStart_OnUnmatchedResult(t *testing.T) {
-	// Upstream #2167 class: a SUBMITTED external call already emitted
-	// ToolResultStart when it was submitted. If the wait ends without a
-	// matching result, the error emission must NOT emit a second
-	// ToolResultStart for the same call.
+func TestHITL_ExternalTool_UnmatchedResultStashedThenMatchCompletes(t *testing.T) {
+	// Upstream #2167 class + HARNESS review M-1: a SUBMITTED external call
+	// already emitted ToolResultStart when it was submitted. A result event
+	// whose ID matches NO pending waiter is stashed for other waiters
+	// instead of ending the wait; a later matching result must complete the
+	// call with exactly ONE ToolResultStart overall.
 	toolCallResp := model.ChatResponse{
 		Content: []message.ContentBlock{
 			message.ToolCallBlock{
@@ -609,9 +610,13 @@ func TestHITL_ExternalTool_NoDuplicateToolResultStart_OnUnmatchedResult(t *testi
 		},
 		IsLast: true,
 	}
+	finalResp := model.ChatResponse{
+		Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: "done"}},
+		IsLast:  true,
+	}
 
 	mock := &mockChatModel{
-		responses: []model.ChatResponse{toolCallResp},
+		responses: []model.ChatResponse{toolCallResp, finalResp},
 	}
 
 	tk := tool.NewToolkit(newHITLMockTool("external_tool", true))
@@ -628,7 +633,7 @@ func TestHITL_ExternalTool_NoDuplicateToolResultStart_OnUnmatchedResult(t *testi
 		t.Fatal(err)
 	}
 
-	starts := 0
+	starts, ends := 0, 0
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -636,10 +641,12 @@ func TestHITL_ExternalTool_NoDuplicateToolResultStart_OnUnmatchedResult(t *testi
 			if se, ok := evt.(event.ToolResultStartEvent); ok && se.ToolCallID == "tc_ext" {
 				starts++
 			}
+			if ee, ok := evt.(event.ToolResultEndEvent); ok && ee.ToolCallID == "tc_ext" {
+				ends++
+			}
 			if _, ok := evt.(event.RequireExternalExecutionEvent); ok {
-				// Submit a result whose ID does not match the pending call:
-				// the wait ends with no matching result (nil path) while the
-				// reply context is still alive.
+				// First a result whose ID matches no pending waiter: it must
+				// be stashed, NOT end the wait.
 				agent.SubmitExternalResult(&event.ExternalExecutionResultEvent{
 					ExecutionResults: []message.ToolResultBlock{
 						{
@@ -647,6 +654,18 @@ func TestHITL_ExternalTool_NoDuplicateToolResultStart_OnUnmatchedResult(t *testi
 							ID:     "tc_other",
 							Name:   "external_tool",
 							Output: "wrong id",
+							State:  message.ToolResultSuccess,
+						},
+					},
+				})
+				// Then the matching one, which must complete the call.
+				agent.SubmitExternalResult(&event.ExternalExecutionResultEvent{
+					ExecutionResults: []message.ToolResultBlock{
+						{
+							Type:   "tool_result",
+							ID:     "tc_ext",
+							Name:   "external_tool",
+							Output: "right id",
 							State:  message.ToolResultSuccess,
 						},
 					},
@@ -663,6 +682,9 @@ func TestHITL_ExternalTool_NoDuplicateToolResultStart_OnUnmatchedResult(t *testi
 
 	if starts != 1 {
 		t.Errorf("expected exactly 1 ToolResultStartEvent for tc_ext, got %d", starts)
+	}
+	if ends != 1 {
+		t.Errorf("expected exactly 1 ToolResultEndEvent for tc_ext, got %d", ends)
 	}
 }
 

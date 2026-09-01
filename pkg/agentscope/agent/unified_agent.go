@@ -51,6 +51,7 @@ type UnifiedAgent struct {
 	offloader      Offloader
 	stateSaver     StateSaver
 	confirmStash   map[string]event.ConfirmResult
+	externalStash  map[string]message.ToolResultBlock
 	hookRunner     *loop.HookRunner
 	stateAwareness bool
 	responseFormat *model.ResponseFormat
@@ -351,7 +352,10 @@ func (a *UnifiedAgent) SubmitUserConfirm(result *event.UserConfirmResultEvent) {
 }
 
 // SubmitExternalResult submits results from external tool execution.
-// Call this after receiving a RequireExternalExecutionEvent from the event stream.
+// Call this after receiving a RequireExternalExecutionEvent from the event
+// stream. Results whose IDs match no pending call are parked for other
+// waiters (batched results); the wait ends only on a matching result or
+// context cancellation.
 func (a *UnifiedAgent) SubmitExternalResult(result *event.ExternalExecutionResultEvent) {
 	if a.externalCh != nil {
 		a.externalCh <- *result
@@ -378,6 +382,7 @@ func (a *UnifiedAgent) replyLoop(ctx context.Context, input string, ch chan<- ev
 
 	replyID := agentscope.GenerateID()
 	a.clearConfirmStash()
+	a.clearExternalStash()
 
 	a.mu.Lock()
 	a.state.ReplyID = replyID
@@ -428,6 +433,12 @@ reactLoop:
 			// external system parked us), fall through to the wait exit.
 			a.Checkpoint(ctx)
 			if a.repromptAwaitingCalls(ctx, ch, replyID, actingHandler) {
+				// Checkpoint again after the inline execution of resumed
+				// calls: the pre-reprompt snapshot still holds the
+				// ASKING/SUBMITTED call, and a crash before the next
+				// batch-boundary checkpoint would re-execute an
+				// already-executed tool on resume (HARNESS review M-2).
+				a.Checkpoint(ctx)
 				continue
 			}
 			// Waiting for external events — emit to consumer, don't save to context
@@ -739,6 +750,13 @@ func (a *UnifiedAgent) waitForConfirmation(ctx context.Context, toolCallID strin
 	}
 }
 
+// stashLimit bounds the parked-event stashes: a stream of malformed
+// SubmitUserConfirm / SubmitExternalResult events with fabricated IDs must
+// not grow a stash unbounded within one reply (HARNESS review L-4).
+// Entries over the limit are dropped with a warning; stashes hold batched
+// answers for concurrent waiters of ONE reply, so the bound is generous.
+const stashLimit = 1024
+
 // stashConfirm parks a confirmation meant for another call so its waiter can
 // pick it up (batch ConfirmResults support).
 func (a *UnifiedAgent) stashConfirm(cr *event.ConfirmResult) {
@@ -746,6 +764,10 @@ func (a *UnifiedAgent) stashConfirm(cr *event.ConfirmResult) {
 	defer a.mu.Unlock()
 	if a.confirmStash == nil {
 		a.confirmStash = map[string]event.ConfirmResult{}
+	}
+	if _, exists := a.confirmStash[cr.ToolCall.ID]; !exists && len(a.confirmStash) >= stashLimit {
+		logrus.WithField("tool_call_id", cr.ToolCall.ID).Warn("agent: confirmation stash limit reached, dropping entry")
+		return
 	}
 	a.confirmStash[cr.ToolCall.ID] = *cr
 }
@@ -774,17 +796,69 @@ func (a *UnifiedAgent) waitForExternalResult(ctx context.Context, toolCallID str
 	if a.externalCh == nil {
 		return nil
 	}
-	select {
-	case result := <-a.externalCh:
-		for _, tr := range result.ExecutionResults {
-			if tr.ID == toolCallID {
-				return &tr
-			}
-		}
-		return nil
-	case <-ctx.Done():
-		return nil
+	// A batched result consumed by an earlier waiter may already carry our
+	// call (HARNESS review M-1): check the stash first.
+	if tr, found := a.takeStashedExternalResult(toolCallID); found {
+		return &tr
 	}
+	for {
+		select {
+		case result := <-a.externalCh:
+			var match *message.ToolResultBlock
+			for i := range result.ExecutionResults {
+				tr := &result.ExecutionResults[i]
+				if tr.ID == toolCallID {
+					match = tr
+					continue
+				}
+				// Not ours: keep it for the other waiter(s) instead of
+				// dropping it on the floor (same mechanism as the
+				// confirmation stash).
+				a.stashExternalResult(tr)
+			}
+			if match != nil {
+				return match
+			}
+			// Event answered no known call; keep waiting.
+		case <-ctx.Done():
+			return nil
+		}
+	}
+}
+
+// stashExternalResult parks an external result meant for another call so its
+// waiter can pick it up (batch ExecutionResults support, HARNESS review M-1).
+func (a *UnifiedAgent) stashExternalResult(tr *message.ToolResultBlock) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.externalStash == nil {
+		a.externalStash = map[string]message.ToolResultBlock{}
+	}
+	if _, exists := a.externalStash[tr.ID]; !exists && len(a.externalStash) >= stashLimit {
+		logrus.WithField("tool_call_id", tr.ID).Warn("agent: external result stash limit reached, dropping entry")
+		return
+	}
+	a.externalStash[tr.ID] = *tr
+}
+
+// takeStashedExternalResult retrieves and removes a parked external result.
+func (a *UnifiedAgent) takeStashedExternalResult(toolCallID string) (message.ToolResultBlock, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	tr, ok := a.externalStash[toolCallID]
+	if !ok {
+		return message.ToolResultBlock{}, false
+	}
+	delete(a.externalStash, toolCallID)
+	return tr, true
+}
+
+// clearExternalStash drops leftover parked external results; called at the
+// start of every reply so stale events cannot leak across replies.
+func (a *UnifiedAgent) clearExternalStash() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.externalStash = nil
 }
 
 func (a *UnifiedAgent) executeTool(

@@ -60,11 +60,14 @@ type RunDiffLine struct {
 // diffMaxProduct bounds the LCS alignment table (HARNESS review M11):
 // RunJSONL records every streaming delta, so long replies would otherwise
 // allocate an O(n×m) table. Beyond the bound both inputs are truncated to
-// the longest equal-size prefixes and the result is flagged.
+// equal-size prefixes and the returned truncated flag is true — callers
+// must surface this, because runs that only diverge AFTER the truncation
+// point compare as identical (HARNESS review L-1).
 const diffMaxProduct = 4_000_000
 
-func DiffRunLogs(a, b []RunEvent) []RunDiffLine {
+func DiffRunLogs(a, b []RunEvent) (lines []RunDiffLine, truncated bool) {
 	if len(a)*len(b) > diffMaxProduct {
+		truncated = true
 		limit := 2000
 		if len(a) > limit {
 			a = a[:limit]
@@ -120,7 +123,7 @@ func DiffRunLogs(a, b []RunEvent) []RunDiffLine {
 	for ; j < m; j++ {
 		out = append(out, RunDiffLine{Op: "b_only", Index: j, Type: nb[j]})
 	}
-	return out
+	return out, truncated
 }
 
 // FormatRunDiff renders the diff human-readable.

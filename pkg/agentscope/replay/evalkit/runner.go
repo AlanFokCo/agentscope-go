@@ -116,8 +116,8 @@ type Runner struct {
 	// DefaultSystem prompt when a task declares none.
 	DefaultSystem string
 	// ModelName enables cost accounting via model.ResolvePrice; leave empty
-	// when the price is unknown (cost stays 0 and budget.max_cost_usd is
-	// not enforced).
+	// only when no task declares budget.max_cost_usd — the budget scorer
+	// errors when a cost budget is declared but the model cannot be priced.
 	ModelName string
 }
 
@@ -265,6 +265,7 @@ func (r *Runner) RunTask(ctx context.Context, task *TaskSpec, m model.ChatModel)
 				CacheInputTokens:         out.CacheReadTokens,
 				CacheCreationInputTokens: out.CacheCreateTokens,
 			})
+			out.CostPriced = true
 			res.CostUSD = out.CostUSD
 		}
 	}
