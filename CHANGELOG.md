@@ -9,6 +9,35 @@ details can be verified with `git log <prev-tag>..<tag> --oneline`.
 
 ## [Unreleased]
 
+### Added — hub built-in sources (Phase 3)
+- **`hub.GitHubMCPRegistry`**: GitHub's public MCP registry
+  (`api.mcp.github.com`, `GET /v0/servers`) as a `hub.Hub` source —
+  cursor pagination, client-side query filter (the registry has no
+  search parameter), cards mapped from remote or package entries with
+  sanitized model-safe names. Stdio commands follow the registry's
+  `runtime_hint` (`npx`/`uvx`/`uv`/`docker`) with per-runtime arguments
+  and `name@version` pinning for npx (Python `_RUNTIMES` parity);
+  remote entries carry their auth headers, with `{TOKEN}` placeholders
+  rewritten to `${TOKEN}` and registered as required install inputs.
+  `Install` atomically writes the MCP client config as
+  `<client-name>.json` (`{"<client-name>": <config>}`) preserving the
+  install-input surface: `${KEY}` placeholders plus per-input specs
+  (description / is_required / is_secret) embedded under `inputs`
+  (Python #2230 semantics). Deliberate shape divergence from
+  `MCPHub.Install`, which persists the upstream registry's raw body as
+  `<cardID>.json` — each hub writes its own upstream's native install
+  shape. Optional token only raises rate limits
+- **`hub.ClawHub`**: the ClawHub skill registry (`clawhub.ai`) as a
+  `hub.Hub` source — catalog (`/api/v1/skills`, cursor-paginated) or
+  search (`/api/v1/search`, single page), owner-scoped card IDs
+  (`owner/slug` whenever the record names an owner, because slugs are
+  not unique — Python #2214). `Install` validates the slug against a
+  safe charset, downloads and unpacks the ZIP archive into
+  `<targetDir>/<slug>/` with zip-slip protection plus zip-bomb
+  defense (64 MiB per-file and 512 MiB aggregate extraction caps,
+  truncation detected rather than silently applied), and removes a
+  freshly created destination directory when unpacking fails
+
 ### Added — reply lifecycle semantics (Phase 3)
 - **`ReplyEndEvent` parity**: `FinishedReason` (completed / interrupted /
   exceed_max_iters / error) plus structured `Error` (`types.ReplyErrorInfo`,
