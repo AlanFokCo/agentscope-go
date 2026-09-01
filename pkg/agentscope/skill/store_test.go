@@ -326,3 +326,31 @@ func TestStore_YAMLRoundTripWithSpecialChars(t *testing.T) {
 		t.Errorf("special chars must round-trip, got %q / %q", skills[0].Name, skills[0].Description)
 	}
 }
+
+func TestStore_AddRejectsInvalidInputSentinel(t *testing.T) {
+	s := NewStore(t.TempDir())
+	if _, err := s.Add("alice", "", "", "", "x"); !errors.Is(err, ErrInvalidInput) {
+		t.Errorf("empty name must be ErrInvalidInput, got %v", err)
+	}
+	if _, err := s.Add("alice", "n", "", "", "  "); !errors.Is(err, ErrInvalidInput) {
+		t.Errorf("empty instructions must be ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestStore_YAMLRoundTripWithC0Controls(t *testing.T) {
+	s := NewStore(t.TempDir())
+	desc := "bell\x07 vt\x0b ff\x0c nul-ish\x1f end"
+	if _, err := s.Add("alice", "ctrl", desc, "", "body"); err != nil {
+		t.Fatal(err)
+	}
+	skills, err := s.List("alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skills) != 1 {
+		t.Fatalf("C0 controls must not break parsing, got %d skills", len(skills))
+	}
+	if skills[0].Description != desc {
+		t.Errorf("C0 description must round-trip, got %q", skills[0].Description)
+	}
+}

@@ -173,3 +173,26 @@ func TestNewFileStore_RequiresDir(t *testing.T) {
 		t.Error("empty dir must error")
 	}
 }
+
+func TestFileStore_OverlongLineFailsWholeLoad(t *testing.T) {
+	dir := t.TempDir()
+	var b strings.Builder
+	b.WriteString(`{"id":"mem_1","text":"good","user_id":"u1"}` + "\n")
+	// One line over the 4 MiB scanner cap.
+	b.WriteString(`{"id":"mem_2","text":"` + strings.Repeat("x", 5<<20) + `"}` + "\n")
+	if err := os.WriteFile(filepath.Join(dir, FileStoreFilename), []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewFileStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := s.List(ctx, "u1"); err == nil {
+		t.Fatal("over-long line must fail the load, not silently drop it")
+	}
+	// Nothing partial may be observable afterwards.
+	if list, err := s.List(ctx, "u1"); err == nil && len(list) != 0 {
+		t.Fatalf("failed load must commit nothing, got %+v", list)
+	}
+}

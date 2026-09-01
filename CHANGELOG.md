@@ -9,6 +9,31 @@ details can be verified with `git log <prev-tag>..<tag> --oneline`.
 
 ## [Unreleased]
 
+### Changed — evaluator-followup hardening (Phase 3 cleanup)
+- **`skill.ErrInvalidInput` sentinel**: `Store.Add` validation failures
+  (missing name / instructions) are typed; the add route maps them to 400
+  via `errors.Is` instead of string matching; escaping `agent_id` now has
+  HTTP-level 400 coverage on all skill routes
+- **`skill.Store` YAML rendering escapes all C0 controls** (`\u00XX`),
+  not just `\n`/`\r`/`\t` — a description with raw controls can no
+  longer produce unparseable frontmatter
+- **`memory.FileStore` atomic load**: an unreadable stream (e.g. an
+  over-long line) fails the whole load and commits nothing instead of
+  leaving partial data; multi-instance sharing caveat documented on the
+  type
+- **`workspace.ErrPathEscape` sentinel**: `LocalWorkspace` and
+  `BubblewrapWorkspace` containment failures are typed; artifact-route
+  status mapping uses `errors.Is`; `BubblewrapWorkspace` containment also
+  became separator-aware (same sibling-prefix class as the Local fix)
+- **`app.WorkspaceInfoResponse` gains `workspace_id`** (additive; the
+  historical `session_id` field still carries the workspace ID)
+- **`WorkspaceManager` does workspace creation outside the manager lock**
+  (concurrent creators of the same ID adopt one instance); covered by a
+  20-goroutine `-race` test
+- **`hub` client-name sanitization collapses invalid-character runs**
+  (exact Python `re.sub` parity: `a..b` → `a-b`)
+
+
 ### Added — workspace sharing + artifacts (Phase 3)
 - **Workspace sharing** (Python #1951 semantics): `WorkspaceManager` now
   tracks session↔workspace bindings with refcounts — `GetOrCreate` binds a

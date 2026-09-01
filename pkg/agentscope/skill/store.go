@@ -39,6 +39,8 @@ var (
 	ErrNotFound = errors.New("skill: not found")
 	// ErrInvalidAgentID signals an agent ID unusable as a partition name.
 	ErrInvalidAgentID = errors.New("skill: agent id cannot be used as a partition name")
+	// ErrInvalidInput signals a malformed Add request (missing name etc.).
+	ErrInvalidInput = errors.New("skill: invalid input")
 )
 
 // rootLocks serializes skill operations per workspace root across Store
@@ -308,10 +310,10 @@ func (s *Store) AddDir(agentID, srcDir string) error {
 // It returns the directory name used.
 func (s *Store) Add(agentID, name, description, category, markdown string) (string, error) {
 	if strings.TrimSpace(name) == "" {
-		return "", fmt.Errorf("skill: name is required")
+		return "", fmt.Errorf("%w: name is required", ErrInvalidInput)
 	}
 	if strings.TrimSpace(markdown) == "" {
-		return "", fmt.Errorf("skill: instructions are required")
+		return "", fmt.Errorf("%w: instructions are required", ErrInvalidInput)
 	}
 	lk := lockForRoot(s.root)
 	lk.Lock()
@@ -458,14 +460,33 @@ func renderSKILLMD(name, description, category, markdown string) ([]byte, error)
 }
 
 // yamlQuote quotes a string for safe inline YAML (double-quoted style).
+// Every C0 control is escaped (\n/\r/\t explicitly, the rest as
+// \u00XX) — raw controls are illegal in YAML double-quoted scalars.
 func yamlQuote(s string) string {
-	return `"` + strings.NewReplacer(
-		`\`, `\\`,
-		`"`, `\"`,
-		"\n", `\n`,
-		"\r", `\r`,
-		"\t", `\t`,
-	).Replace(s) + `"`
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '\\':
+			b.WriteString(`\\`)
+		case '"':
+			b.WriteString(`\"`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		default:
+			if r < 0x20 {
+				b.WriteString(fmt.Sprintf(`\u%04x`, r))
+			} else {
+				b.WriteRune(r)
+			}
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }
 
 // copyDir recursively copies src into dst (created fresh).

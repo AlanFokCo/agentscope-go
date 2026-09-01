@@ -3,6 +3,7 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -233,7 +234,7 @@ func TestBubblewrapPathTraversal_AbsoluteOutside(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for absolute path outside workspace")
 	}
-	if !strings.Contains(err.Error(), "outside workspace") {
+	if !errors.Is(err, ErrPathEscape) {
 		t.Errorf("unexpected error: %v", err)
 	}
 }

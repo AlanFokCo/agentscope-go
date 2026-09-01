@@ -312,3 +312,21 @@ func TestFromPackageRuntimeMatrix(t *testing.T) {
 		t.Errorf("nested input spec not merged: %+v", inputs)
 	}
 }
+
+func TestSanitizeClientNameCollapsesRuns(t *testing.T) {
+	cases := map[string]string{
+		"a..b":            "a-b",      // run collapses (Python re.sub parity)
+		"a/b":             "a-b",      // separators too
+		"my--name":        "my--name", // literal dashes stay
+		"x..-y":           "x--y",     // run dash + literal dash
+		"context7":        "context7",
+		"a..b//c":         "a-b-c",
+		"..lead..trail..": "-lead-trail-", // caller trims the edge dashes
+		"///":             "-",            // exact re.sub parity
+	}
+	for in, want := range cases {
+		if got := sanitizeClientName(in); got != want {
+			t.Errorf("sanitizeClientName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

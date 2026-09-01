@@ -530,12 +530,11 @@ func (a *App) handleAddWorkspaceSkill(w http.ResponseWriter, r *http.Request) {
 	}
 	dirName, err := store.Add(agentID, req.Name, req.Description, req.Category, req.Instructions)
 	if err != nil {
-		status := skillErrorStatus(err)
-		if status == http.StatusInternalServerError &&
-			(strings.Contains(err.Error(), "name is required") || strings.Contains(err.Error(), "instructions are required")) {
-			status = http.StatusBadRequest
+		if errors.Is(err, skill.ErrInvalidInput) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
-		http.Error(w, err.Error(), status)
+		http.Error(w, err.Error(), skillErrorStatus(err))
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]string{
@@ -614,8 +613,7 @@ func (a *App) workspaceForArtifact(w http.ResponseWriter, r *http.Request) (ws w
 
 // workspacePathErrorStatus maps workspace path errors onto status codes.
 func workspacePathErrorStatus(err error) int {
-	msg := err.Error()
-	if strings.Contains(msg, "escapes workspace") || strings.Contains(msg, "outside workspace") {
+	if errors.Is(err, workspace.ErrPathEscape) {
 		return http.StatusBadRequest
 	}
 	if os.IsNotExist(err) {

@@ -8,6 +8,7 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/internal/fsutil"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/platform"
@@ -42,6 +43,10 @@ type ExecResult struct {
 	Stderr   string `json:"stderr"`
 	ExitCode int    `json:"exit_code"`
 }
+
+// ErrPathEscape signals that a path resolves outside the workspace jail.
+// Route layers map it onto client errors via errors.Is.
+var ErrPathEscape = errors.New("workspace: path escapes workspace")
 
 // Offloader converts content into a workspace-stored file, returning its path.
 type Offloader interface {
@@ -229,7 +234,7 @@ func (w *LocalWorkspace) resolve(path string) (string, error) {
 	// Separator-aware containment: a bare prefix match would admit sibling
 	// directories (base /tmp/ws1 must not admit /tmp/ws123/...).
 	if cleaned != base && !strings.HasPrefix(cleaned, base+string(os.PathSeparator)) {
-		return "", fmt.Errorf("workspace: path %q escapes workspace", path)
+		return "", fmt.Errorf("%w: %q", ErrPathEscape, path)
 	}
 	// Symlink containment: a lexically contained path can still point
 	// outside through a link planted inside the workspace (e.g. by an
@@ -241,7 +246,7 @@ func (w *LocalWorkspace) resolve(path string) (string, error) {
 	}
 	resolved := evalSymlinksLenient(cleaned)
 	if resolved != baseResolved && !strings.HasPrefix(resolved, baseResolved+string(os.PathSeparator)) {
-		return "", fmt.Errorf("workspace: path %q escapes workspace via symlink", path)
+		return "", fmt.Errorf("%w via symlink: %q", ErrPathEscape, path)
 	}
 	return cleaned, nil
 }

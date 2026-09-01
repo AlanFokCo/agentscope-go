@@ -76,11 +76,14 @@ type ScheduleResponse struct {
 
 // --- Workspace schemas ---
 
-// WorkspaceInfoResponse describes a session's workspace.
+// WorkspaceInfoResponse describes a managed workspace. SessionID carries
+// the workspace ID (private workspaces are named after their session);
+// WorkspaceID is the explicit field for shared workspaces.
 type WorkspaceInfoResponse struct {
-	SessionID string `json:"session_id"`
-	BasePath  string `json:"base_path"`
-	Type      string `json:"type"` // "local", "docker", "e2b"
+	SessionID   string `json:"session_id"`
+	WorkspaceID string `json:"workspace_id"`
+	BasePath    string `json:"base_path"`
+	Type        string `json:"type"` // "local", "docker", "e2b"
 }
 
 // --- Credential schemas ---

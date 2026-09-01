@@ -115,6 +115,21 @@ func TestWorkspaceSkillRoutes(t *testing.T) {
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("second remove must be 404, got %d", resp.StatusCode)
 	}
+
+	// Escaping agent_id → 400 on every method.
+	for _, u := range []string{
+		srv.URL + "/api/workspace/skill?session_id=s1&agent_id=..",
+		srv.URL + "/api/workspace/skill?session_id=s1&agent_id=a%2Fb",
+	} {
+		resp, _ := doSkillReq(t, http.MethodGet, u, "")
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("escaping agent_id GET %s must be 400, got %d", u, resp.StatusCode)
+		}
+	}
+	resp, _ = doSkillReq(t, http.MethodDelete, srv.URL+"/api/workspace/skill/x?session_id=s1&agent_id=..", "")
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("escaping agent_id DELETE must be 400, got %d", resp.StatusCode)
+	}
 }
 
 func TestWorkspaceSkillRoutes_SessionActiveSkills(t *testing.T) {

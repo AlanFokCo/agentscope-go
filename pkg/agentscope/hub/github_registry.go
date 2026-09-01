@@ -447,18 +447,27 @@ func (h *GitHubMCPRegistry) toCard(entry map[string]any) (Card, bool) {
 	return card, true
 }
 
-// sanitizeClientName replaces every character outside [a-zA-Z0-9_-] with
-// a dash (Python parity: registry names like "io.github.x/context7" must
+// sanitizeClientName replaces every run of characters outside
+// [a-zA-Z0-9_-] with a single dash (Python parity: re.sub collapses runs,
+// so "a..b" → "a-b"; registry names like "io.github.x/context7" must
 // become model-safe client names).
 func sanitizeClientName(s string) string {
 	var b strings.Builder
+	pendingDash := false
 	for _, r := range s {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
+			if pendingDash {
+				b.WriteByte('-')
+			}
+			pendingDash = false
 			b.WriteRune(r)
 		default:
-			b.WriteByte('-')
+			pendingDash = true
 		}
+	}
+	if pendingDash {
+		b.WriteByte('-')
 	}
 	return b.String()
 }

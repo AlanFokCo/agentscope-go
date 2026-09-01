@@ -182,20 +182,17 @@ func (w *BubblewrapWorkspace) bwrapArgs() []string {
 // resolve converts a relative path to an absolute path under the root,
 // rejecting any traversal outside the root directory.
 func (w *BubblewrapWorkspace) resolve(path string) (string, error) {
+	base := filepath.Clean(w.rootDir)
+	var cleaned string
 	if filepath.IsAbs(path) {
-		cleaned := filepath.Clean(path)
-		if !strings.HasPrefix(cleaned, w.rootDir) {
-			return "", fmt.Errorf("workspace: path %q is outside workspace", path)
-		}
-		return cleaned, nil
+		cleaned = filepath.Clean(path)
+	} else {
+		cleaned = filepath.Join(base, path)
 	}
-
-	joined := filepath.Join(w.rootDir, path)
-	cleaned := filepath.Clean(joined)
-
-	if !strings.HasPrefix(cleaned, w.rootDir) {
-		return "", fmt.Errorf("workspace: path %q escapes workspace", path)
+	// Separator-aware containment (a bare prefix match would admit
+	// sibling directories).
+	if cleaned != base && !strings.HasPrefix(cleaned, base+string(os.PathSeparator)) {
+		return "", fmt.Errorf("%w: %q", ErrPathEscape, path)
 	}
-
 	return cleaned, nil
 }

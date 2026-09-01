@@ -3,10 +3,12 @@ package app
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -214,5 +216,88 @@ func TestWorkspaceShareRoutes_SizeCap(t *testing.T) {
 	}
 	if !strings.HasPrefix(srv.URL, "http") {
 		t.Fatal("unreachable")
+	}
+}
+
+func TestWorkspaceManager_ConcurrentAccess(t *testing.T) {
+	m := NewWorkspaceManager(t.TempDir(), "local")
+
+	// Concurrent GetOrCreate of the same session must converge on one
+	// instance with a single reference.
+	results := make([]any, 20)
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			ws, err := m.GetOrCreate("s1")
+			if err == nil {
+				results[n] = ws
+			}
+		}(i)
+	}
+	wg.Wait()
+	if results[0] == nil {
+		t.Fatal("concurrent GetOrCreate failed")
+	}
+	for _, ws := range results {
+		if ws != results[0] {
+			t.Fatal("concurrent creators must adopt one shared instance")
+		}
+	}
+	if got := m.RefCount("s1"); got != 1 {
+		t.Errorf("refcount must be exactly 1, got %d", got)
+	}
+
+	// Concurrent Share onto one workspace from distinct sessions.
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			if _, err := m.Share(fmt.Sprintf("c%d", n), "team"); err != nil {
+				t.Error(err)
+			}
+		}(i)
+	}
+	wg.Wait()
+	if got := m.RefCount("team"); got != 20 {
+		t.Errorf("team refcount must be 20, got %d", got)
+	}
+}
+
+func TestWorkspaceManager_RebindStorm(t *testing.T) {
+	m := NewWorkspaceManager(t.TempDir(), "local")
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(3)
+		go func() {
+			defer wg.Done()
+			_, _ = m.GetOrCreate("hot")
+		}()
+		go func(n int) {
+			defer wg.Done()
+			_, _ = m.Share("hot", fmt.Sprintf("w%d", n%5))
+		}(i)
+		go func() {
+			defer wg.Done()
+			m.Remove("hot")
+		}()
+	}
+	wg.Wait()
+
+	// Quiescence: one more GetOrCreate must leave a consistent state —
+	// the binding points at a live workspace with at least one reference.
+	if _, err := m.GetOrCreate("hot"); err != nil {
+		t.Fatal(err)
+	}
+	id, ok := m.BoundWorkspaceID("hot")
+	if !ok {
+		t.Fatal("hot must be bound after quiescence")
+	}
+	if m.GetByID(id) == nil {
+		t.Fatalf("binding %q must point at a live workspace", id)
+	}
+	if got := m.RefCount(id); got < 1 {
+		t.Errorf("bound workspace %q must have refs >= 1, got %d", id, got)
 	}
 }

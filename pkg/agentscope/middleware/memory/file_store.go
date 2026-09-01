@@ -30,6 +30,12 @@ var _ MemoryStore = (*FileStore)(nil)
 // Search semantics match InMemoryStore (case-insensitive any-word
 // substring match); the persistence format is append-friendly so a crash
 // loses at most the record being written.
+//
+// Concurrency scope: one FileStore instance is safe for concurrent use.
+// Two instances (or two processes) on the SAME file are not: a Delete's
+// atomic rewrite from one instance's snapshot can lose a concurrent
+// append from the other. Memory directories are per-agent by design —
+// do not share one file across stores.
 type FileStore struct {
 	path string
 
@@ -61,23 +67,26 @@ type fileRecord struct {
 }
 
 // loadLocked reads the backing file on first use. Malformed lines are
-// skipped (a torn final line from a crash must not break the store).
+// skipped (a torn final line from a crash must not break the store); an
+// unreadable stream fails the whole load and commits nothing.
 func (s *FileStore) loadLocked() error {
 	if s.loaded {
 		return nil
 	}
-	s.loaded = true
-	s.nextID = 1
 
 	f, err := os.Open(s.path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			s.loaded = true
+			s.nextID = 1
 			return nil
 		}
 		return fmt.Errorf("memory: open store file: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 
+	var memories []Memory
+	nextID := 1
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64<<10), 4<<20)
 	for sc.Scan() {
@@ -92,12 +101,21 @@ func (s *FileStore) loadLocked() error {
 		if rec.ID == "" || rec.Text == "" {
 			continue
 		}
-		s.memories = append(s.memories, Memory(rec))
-		if n, ok := parseMemoryID(rec.ID); ok && n >= s.nextID {
-			s.nextID = n + 1
+		memories = append(memories, Memory(rec))
+		if n, ok := parseMemoryID(rec.ID); ok && n >= nextID {
+			nextID = n + 1
 		}
 	}
-	return sc.Err()
+	// Commit nothing unless the whole scan succeeded: an unreadable
+	// stream (e.g. an over-long line) must leave a consistent state a
+	// retry can rely on, not partial data.
+	if err := sc.Err(); err != nil {
+		return fmt.Errorf("memory: read store file: %w", err)
+	}
+	s.memories = memories
+	s.nextID = nextID
+	s.loaded = true
+	return nil
 }
 
 // parseMemoryID extracts the counter from a "mem_N" id.
