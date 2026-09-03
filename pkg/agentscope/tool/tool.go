@@ -170,6 +170,9 @@ type Toolkit struct {
 func NewToolkit(tools ...Tool) *Toolkit {
 	tk := &Toolkit{groups: make(map[string]*ToolGroup)}
 	if len(tools) > 0 {
+		if err := validateUniqueToolNames(tools); err != nil {
+			panic(err)
+		}
 		tk.groups["basic"] = &ToolGroup{
 			GroupName: "basic",
 			Tools:     tools,
@@ -183,6 +186,9 @@ func NewToolkit(tools ...Tool) *Toolkit {
 func (tk *Toolkit) AddGroup(name string, tools ...Tool) {
 	tk.mu.Lock()
 	defer tk.mu.Unlock()
+	if err := tk.validateGroupToolsLocked(name, tools); err != nil {
+		panic(err)
+	}
 	tk.groups[name] = &ToolGroup{
 		GroupName: name,
 		Tools:     tools,
@@ -242,7 +248,8 @@ func (tk *Toolkit) GetToolSchemas() []model.ToolSchema {
 	defer tk.mu.RUnlock()
 
 	var schemas []model.ToolSchema
-	for _, g := range tk.groups {
+	for _, groupName := range sortedGroupNames(tk.groups) {
+		g := tk.groups[groupName]
 		if !g.Active {
 			continue
 		}
@@ -278,7 +285,13 @@ func (tk *Toolkit) CallTool(ctx context.Context, name string, input map[string]a
 		}
 		return nil, &agenterrors.ToolNotFoundError{ToolName: name}
 	}
+	return tk.callResolvedTool(ctx, name, input, t)
+}
 
+// callResolvedTool executes a previously resolved tool instance. Keeping
+// resolution separate lets callers such as Orchestrator permission-check and
+// execute exactly the same object instead of looking it up twice.
+func (tk *Toolkit) callResolvedTool(ctx context.Context, name string, input map[string]any, t Tool) (*ToolResponse, error) {
 	// Validate input against schema before execution
 	if schema := t.InputSchema(); len(schema) > 0 {
 		if err := ValidateInput(schema, input); err != nil {
@@ -358,7 +371,8 @@ func (tk *Toolkit) findTool(name string) Tool {
 // lowercase names (e.g. "bash") still find the renamed tools (e.g. "Bash").
 func (tk *Toolkit) findToolWithGroup(name string) (Tool, string) {
 	inactiveGroup := ""
-	for _, g := range tk.groups {
+	for _, groupName := range sortedGroupNames(tk.groups) {
+		g := tk.groups[groupName]
 		for _, t := range g.Tools {
 			if t.Name() == name {
 				if g.Active {
@@ -374,7 +388,8 @@ func (tk *Toolkit) findToolWithGroup(name string) (Tool, string) {
 
 	// Case-insensitive fallback: compare lowercased names
 	lowerName := strings.ToLower(name)
-	for _, g := range tk.groups {
+	for _, groupName := range sortedGroupNames(tk.groups) {
+		g := tk.groups[groupName]
 		for _, t := range g.Tools {
 			if strings.ToLower(t.Name()) == lowerName {
 				if g.Active {
@@ -413,7 +428,8 @@ func (tk *Toolkit) GetToolSchemasForGroups(groups ...string) []model.ToolSchema 
 	}
 
 	var schemas []model.ToolSchema
-	for _, g := range tk.groups {
+	for _, groupName := range sortedGroupNames(tk.groups) {
+		g := tk.groups[groupName]
 		if !g.Active || !want[g.GroupName] {
 			continue
 		}
@@ -438,6 +454,58 @@ func (tk *Toolkit) GetToolSchemasForGroups(groups ...string) []model.ToolSchema 
 // AddMiddleware appends a tool-level middleware to the BaseTool.
 func (b *BaseTool) AddMiddleware(mw ToolMiddleware) {
 	b.Middlewares = append(b.Middlewares, mw)
+}
+
+func sortedGroupNames(groups map[string]*ToolGroup) []string {
+	names := make([]string, 0, len(groups))
+	for name := range groups {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func validateUniqueToolNames(tools []Tool) error {
+	seen := make(map[string]string, len(tools))
+	for _, t := range tools {
+		if t == nil {
+			return fmt.Errorf("toolkit: nil tool")
+		}
+		name := strings.TrimSpace(t.Name())
+		if name == "" {
+			return fmt.Errorf("toolkit: tool name must not be empty")
+		}
+		key := strings.ToLower(name)
+		if previous, ok := seen[key]; ok {
+			return fmt.Errorf("toolkit: duplicate tool name %q conflicts with %q", name, previous)
+		}
+		seen[key] = name
+	}
+	return nil
+}
+
+// validateGroupToolsLocked rejects global, case-insensitive name collisions.
+// The caller must hold tk.mu for writing. Replacing a group is allowed as long
+// as its replacement tools do not collide with tools in other groups.
+func (tk *Toolkit) validateGroupToolsLocked(replacingGroup string, tools []Tool) error {
+	if err := validateUniqueToolNames(tools); err != nil {
+		return err
+	}
+	existing := make(map[string]string)
+	for groupName, group := range tk.groups {
+		if groupName == replacingGroup {
+			continue
+		}
+		for _, t := range group.Tools {
+			existing[strings.ToLower(t.Name())] = t.Name()
+		}
+	}
+	for _, t := range tools {
+		if previous, ok := existing[strings.ToLower(t.Name())]; ok {
+			return fmt.Errorf("toolkit: duplicate tool name %q conflicts with %q", t.Name(), previous)
+		}
+	}
+	return nil
 }
 
 // toolMiddlewarer is implemented by tools that carry their own middleware chain.

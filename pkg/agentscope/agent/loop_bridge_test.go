@@ -10,6 +10,7 @@ import (
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/metrics"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/permission"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tool"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tracing"
 )
@@ -85,6 +86,36 @@ func TestUnifiedAgentRunnerWithToolCall(t *testing.T) {
 	}
 	if mock.callCount != 2 {
 		t.Errorf("model called %d times, want 2", mock.callCount)
+	}
+}
+
+func TestUnifiedAgentRunnerFailsClosedWhenToolNeedsConfirmation(t *testing.T) {
+	var executions atomic.Int64
+	dangerous := tool.NewFunctionTool("dangerous", "must be confirmed", nil,
+		func(_ context.Context, _ map[string]any) (any, error) {
+			executions.Add(1)
+			return "executed", nil
+		})
+	mock := &mockChatModel{responses: []model.ChatResponse{
+		{Content: []message.ContentBlock{message.ToolCallBlock{
+			Type: "tool_use", ID: "tc-denied", Name: "dangerous", Input: `{}`,
+		}}, IsLast: true},
+		{Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: "not executed"}}, IsLast: true},
+	}}
+	a := NewUnifiedAgent("bot", "prompt", mock,
+		WithToolkit(tool.NewToolkit(dangerous)),
+		WithPermissionContext(permission.NewContext(permission.ModeDefault)),
+	)
+
+	result, err := loop.New(NewUnifiedAgentRunner(a).LoopOptions()...).RunSync(context.Background(), "run it")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if executions.Load() != 0 {
+		t.Fatalf("dangerous tool executed %d times without confirmation", executions.Load())
+	}
+	if got := result.GetTextContent(); got != "not executed" {
+		t.Fatalf("result = %q, want %q", got, "not executed")
 	}
 }
 
