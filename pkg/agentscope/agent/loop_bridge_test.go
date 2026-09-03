@@ -99,6 +99,7 @@ func TestUnifiedAgentRunnerFailsClosedWhenToolNeedsConfirmation(t *testing.T) {
 	mock := &mockChatModel{responses: []model.ChatResponse{
 		{Content: []message.ContentBlock{message.ToolCallBlock{
 			Type: "tool_use", ID: "tc-denied", Name: "dangerous", Input: `{}`,
+			State: message.ToolCallPending,
 		}}, IsLast: true},
 		{Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: "not executed"}}, IsLast: true},
 	}}

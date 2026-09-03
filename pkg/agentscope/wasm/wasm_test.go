@@ -2,6 +2,7 @@ package wasm
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,6 +40,10 @@ func TestCLIRuntime_CommandConstruction_Wasmtime(t *testing.T) {
 		Function:   "process",
 		Args:       []string{"--input", "data.json"},
 		Env:        map[string]string{"KEY": "value"},
+		Fuel:       42,
+		AllowedPaths: []string{
+			"/tmp/input",
+		},
 	}
 
 	args := rt.BuildArgs(req, 64*1024*1024)
@@ -51,17 +56,17 @@ func TestCLIRuntime_CommandConstruction_Wasmtime(t *testing.T) {
 	joined := strings.Join(args, " ")
 
 	// Should contain fuel flag.
-	if !strings.Contains(joined, "--fuel") {
-		t.Error("expected --fuel flag in wasmtime args")
+	if !strings.Contains(joined, "fuel=42") {
+		t.Error("expected fuel limit in wasmtime args")
 	}
 
-	// Should contain max-wasm-stack.
-	if !strings.Contains(joined, "--max-wasm-stack") {
-		t.Error("expected --max-wasm-stack flag in wasmtime args")
+	// Should contain max-wasm-stack in the grouped -W options.
+	if !strings.Contains(joined, "max-wasm-stack=1048576") {
+		t.Error("expected max-wasm-stack option in wasmtime args")
 	}
 
 	// Should contain memory limit.
-	if !strings.Contains(joined, "max-memory=") {
+	if !strings.Contains(joined, "max-memory-size=") {
 		t.Error("expected max-memory option in wasmtime args")
 	}
 
@@ -73,6 +78,9 @@ func TestCLIRuntime_CommandConstruction_Wasmtime(t *testing.T) {
 	// Should contain the module path.
 	if !strings.Contains(joined, "/tmp/module.wasm") {
 		t.Error("expected module path in args")
+	}
+	if !strings.Contains(joined, "--dir /tmp/input") {
+		t.Errorf("expected configured allowed path in args, got: %s", joined)
 	}
 
 	// Should contain env.
@@ -101,6 +109,41 @@ func TestCLIRuntime_CommandConstruction_Wasmtime(t *testing.T) {
 	// Module args should come after --.
 	if separatorIdx+1 >= len(args) || args[separatorIdx+1] != "--input" {
 		t.Error("expected module args after --")
+	}
+}
+
+func TestSandboxPassesAllLimitsToRuntime(t *testing.T) {
+	module := filepath.Join(t.TempDir(), "module.wasm")
+	if err := os.WriteFile(module, []byte("wasm"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rt := &mockRuntime{result: &ExecResult{}}
+	s := NewSandbox(SandboxConfig{
+		Runtime:        rt,
+		AllowedPaths:   []string{"/safe/input"},
+		MaxMemory:      32 * 1024 * 1024,
+		MaxDuration:    2 * time.Second,
+		MaxFuel:        1234,
+		MaxOutputBytes: 4096,
+	})
+	if _, err := s.Run(context.Background(), module, nil); err != nil {
+		t.Fatal(err)
+	}
+	if rt.lastReq.Fuel != 1234 || rt.lastReq.MaxOutputBytes != 4096 {
+		t.Fatalf("request limits not propagated: %#v", rt.lastReq)
+	}
+	if len(rt.lastReq.AllowedPaths) != 1 || rt.lastReq.AllowedPaths[0] != "/safe/input" {
+		t.Fatalf("allowed paths not propagated: %#v", rt.lastReq.AllowedPaths)
+	}
+}
+
+func TestCLIRuntimeRejectsUnsupportedStrictLimits(t *testing.T) {
+	for _, runtimeName := range []string{"wasm3", "wasmer"} {
+		rt := &CLIRuntime{runtimeName: runtimeName}
+		err := rt.validateLimits(&ExecRequest{Fuel: 1, MemoryMax: 1024})
+		if !errors.Is(err, ErrUnsupportedLimits) {
+			t.Errorf("%s: expected ErrUnsupportedLimits, got %v", runtimeName, err)
+		}
 	}
 }
 

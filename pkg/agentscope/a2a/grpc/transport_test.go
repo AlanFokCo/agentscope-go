@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -236,6 +237,39 @@ func TestServerShutdownStopsAccepting(t *testing.T) {
 	_, err = NewClient(addr)
 	if err == nil {
 		t.Fatal("expected error connecting to closed server")
+	}
+}
+
+func TestServerCloseUnblocksIdleConnections(t *testing.T) {
+	srv := startTestServer(t, nil)
+	conn, err := net.Dial("tcp", srv.Addr())
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	done := make(chan error, 1)
+	go func() { done <- srv.Close() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Close blocked on an idle connection")
+	}
+}
+
+func TestConnTransportReceiveHonorsContextCancellation(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer func() { _ = serverConn.Close() }()
+	defer func() { _ = clientConn.Close() }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := newConnTransport(clientConn).Receive(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Receive error = %v, want context.Canceled", err)
 	}
 }
 
