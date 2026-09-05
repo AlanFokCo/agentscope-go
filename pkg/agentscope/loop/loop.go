@@ -347,6 +347,10 @@ func (l *Loop) prependSystemPrompt() {
 	}
 	sysMsg := message.SystemMsg("system", l.cfg.SystemPrompt)
 	dcm.mu.Lock()
+	if len(dcm.messages) > 0 && dcm.messages[0].Role == message.RoleSystem {
+		dcm.mu.Unlock()
+		return
+	}
 	dcm.messages = append([]*message.Msg{sysMsg}, dcm.messages...)
 	dcm.mu.Unlock()
 }

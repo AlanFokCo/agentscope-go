@@ -261,7 +261,11 @@ func (t *bashTool) runCommand(ctx context.Context, cmdStr string, timeoutMs int)
 		if max := t.maxOutputBytes; max > 0 && len(out) > max {
 			out = out[:max] + "\n... [output truncated]"
 		}
-		return NewTextResponse(out), nil
+		resp := NewTextResponse(out)
+		if res.ExitCode != 0 {
+			resp.State = message.ToolResultError
+		}
+		return resp, nil
 	}
 
 	args := platform.Detect().DeriveExecArgs(cmdStr)
@@ -342,7 +346,11 @@ func (t *bashTool) runCommand(ctx context.Context, cmdStr string, timeoutMs int)
 	}
 
 	b, _ := json.Marshal(result)
-	return NewTextResponse(string(b)), nil
+	resp := NewTextResponse(string(b))
+	if exitCode != 0 || waitErr != nil {
+		resp.State = message.ToolResultError
+	}
+	return resp, nil
 }
 
 // CheckPermissions implements a 7-step permission chain:

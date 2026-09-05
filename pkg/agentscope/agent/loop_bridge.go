@@ -2,9 +2,11 @@ package agent
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/loop"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/middleware"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tool"
 )
@@ -28,9 +30,16 @@ func NewUnifiedAgentRunner(agent *UnifiedAgent, hooks ...loop.Hook) *UnifiedAgen
 // LoopOptions returns loop.Option values for configuring a loop.Loop that
 // delegates model calls and tool execution to the underlying UnifiedAgent.
 func (r *UnifiedAgentRunner) LoopOptions() []loop.Option {
+	executor := &toolExecutorAdapter{
+		agent: r.agent,
+		orchestrator: tool.NewOrchestrator(tool.OrchestratorConfig{
+			Toolkit:    r.agent.toolkit,
+			PermEngine: r.agent.engine,
+		}),
+	}
 	opts := []loop.Option{
 		loop.WithModelCaller(&modelCallerAdapter{agent: r.agent}),
-		loop.WithToolExecutor(&toolExecutorAdapter{agent: r.agent}),
+		loop.WithToolExecutor(executor),
 		loop.WithSchemaProvider(r.agent.toolkit),
 		loop.WithMaxIters(r.agent.reactCfg.MaxIters),
 		loop.WithSystemPrompt(r.agent.systemPrompt),
@@ -55,16 +64,28 @@ func (m *modelCallerAdapter) Call(ctx context.Context, msgs []*message.Msg, tool
 	return m.agent.callModel(ctx, msgs, opts)
 }
 
-// toolExecutorAdapter implements loop.ToolExecutor by delegating to the
-// agent's toolkit. This is a simplified path without permission checks or
-// HITL — those features stay in UnifiedAgent.ReplyStream for the full
-// experience.
+// toolExecutorAdapter implements loop.ToolExecutor through the same permission
+// and acting-middleware layers used by UnifiedAgent. The loop protocol has no
+// HITL event channel, so confirmation-required and external tools fail closed;
+// callers that need interactive approval must use UnifiedAgent.ReplyStream.
 type toolExecutorAdapter struct {
-	agent *UnifiedAgent
+	agent        *UnifiedAgent
+	orchestrator *tool.Orchestrator
 }
 
 func (t *toolExecutorAdapter) Execute(ctx context.Context, call message.ToolCallBlock) (*tool.ToolResponse, error) { //nolint:gocritic // interface
-	return t.agent.toolkit.CallToolFromBlock(ctx, &call)
+	core := func(ctx context.Context, input *middleware.ActingInput) (*tool.ToolResponse, error) {
+		resolved := t.agent.toolkit.Get(input.ToolCall.Name)
+		if resolved != nil && resolved.IsExternalTool() {
+			return tool.NewErrorResponse(fmt.Errorf("tool %q requires external execution; use UnifiedAgent.ReplyStream", input.ToolCall.Name)), nil
+		}
+		return t.orchestrator.Execute(ctx, input.ToolCall)
+	}
+	handler := core
+	if len(t.agent.middlewares) > 0 {
+		handler = middleware.BuildActingChain(t.agent.middlewares, core)
+	}
+	return handler(ctx, &middleware.ActingInput{AgentName: t.agent.name, ToolCall: call})
 }
 
 func (t *toolExecutorAdapter) BatchExecute(ctx context.Context, calls []message.ToolCallBlock) []*loop.ToolResult {

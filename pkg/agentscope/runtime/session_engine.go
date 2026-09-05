@@ -21,15 +21,17 @@ type SessionEngineConfig struct {
 // BudgetTracker, SessionHookManager, and SessionStore to manage the full
 // lifecycle of a user session.
 type SessionEngine struct {
-	mu         sync.RWMutex
-	id         string
-	loopOpts   []loop.Option
-	budget     *BudgetTracker
-	hooks      *SessionHookManager
-	agents     *AgentManager
-	store      SessionStore
-	cancelFunc context.CancelFunc
-	state      *SessionState
+	mu             sync.RWMutex
+	turnMu         sync.Mutex
+	id             string
+	loop           *loop.Loop
+	contextManager loop.ContextManager
+	budget         *BudgetTracker
+	hooks          *SessionHookManager
+	agents         *AgentManager
+	store          SessionStore
+	cancelFunc     context.CancelFunc
+	state          *SessionState
 }
 
 // NewSessionEngine creates a new SessionEngine with a unique ID and the given
@@ -45,14 +47,26 @@ func NewSessionEngine(cfg SessionEngineConfig) *SessionEngine {
 
 	bt := NewBudgetTracker(cfg.Budget)
 	hooks := NewSessionHookManager()
+	// Resolve options once and retain the configured manager across turns.
+	// In particular, preserve restored history and custom compression managers.
+	var contextManager loop.ContextManager
+	loopOpts := append([]loop.Option(nil), cfg.LoopOptions...)
+	loopOpts = append(loopOpts, func(c *loop.Config) {
+		if c.ContextManager == nil {
+			c.ContextManager = loop.NewDefaultContextManager()
+		}
+		contextManager = c.ContextManager
+	})
+	sessionLoop := loop.New(loopOpts...)
 
 	se := &SessionEngine{
-		id:       id,
-		loopOpts: cfg.LoopOptions,
-		budget:   bt,
-		hooks:    hooks,
-		agents:   NewAgentManager(bt, hooks),
-		store:    store,
+		id:             id,
+		loop:           sessionLoop,
+		contextManager: contextManager,
+		budget:         bt,
+		hooks:          hooks,
+		agents:         NewAgentManager(bt, hooks),
+		store:          store,
 		state: &SessionState{
 			ID:        id,
 			Metadata:  make(map[string]any),
@@ -79,22 +93,31 @@ func (se *SessionEngine) Agents() *AgentManager { return se.agents }
 // channel. The channel is closed when the turn finishes. Session hooks are
 // fired around the turn execution, and state is persisted afterwards.
 func (se *SessionEngine) SubmitMessage(ctx context.Context, input string) <-chan event.Event {
-	se.mu.Lock()
-	sessionCtx, cancel := context.WithCancel(ctx)
-	se.cancelFunc = cancel
-	se.mu.Unlock()
-
-	l := loop.New(se.loopOpts...)
-	turn := NewTurn(TurnConfig{
-		Loop:   l,
-		Hooks:  se.hooks,
-		Budget: se.budget,
-	})
-
 	out := make(chan event.Event, 64)
 	go func() {
 		defer close(out)
+
+		// A ContextManager is mutable. Serialize turns so concurrent submissions
+		// cannot interleave user/assistant messages in the shared history.
+		se.turnMu.Lock()
+		defer se.turnMu.Unlock()
+
+		sessionCtx, cancel := context.WithCancel(ctx)
+		se.mu.Lock()
+		se.cancelFunc = cancel
+		se.mu.Unlock()
 		defer cancel()
+		defer func() {
+			se.mu.Lock()
+			se.cancelFunc = nil
+			se.mu.Unlock()
+		}()
+
+		turn := NewTurn(TurnConfig{
+			Loop:   se.loop,
+			Hooks:  se.hooks,
+			Budget: se.budget,
+		})
 
 		_ = se.hooks.Fire(HookSessionStart, map[string]any{"session_id": se.id})
 
@@ -104,6 +127,7 @@ func (se *SessionEngine) SubmitMessage(ctx context.Context, input string) <-chan
 
 		se.mu.Lock()
 		se.state.UpdatedAt = time.Now()
+		se.state.Messages = se.contextManager.Messages()
 		se.mu.Unlock()
 
 		se.saveState()
@@ -128,13 +152,12 @@ func (se *SessionEngine) Interrupt() {
 func (se *SessionEngine) State() *SessionState {
 	se.mu.RLock()
 	defer se.mu.RUnlock()
-	cp := *se.state
-	return &cp
+	return cloneSessionState(se.state)
 }
 
 func (se *SessionEngine) saveState() {
 	se.mu.RLock()
-	state := se.state
+	state := cloneSessionState(se.state)
 	se.mu.RUnlock()
 
 	if se.store != nil {

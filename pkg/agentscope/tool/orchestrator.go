@@ -177,7 +177,7 @@ func (o *Orchestrator) Execute(ctx context.Context, call message.ToolCallBlock) 
 		execCtx, cancel = context.WithTimeout(execCtx, o.defaultToolTimeout)
 		defer cancel()
 	}
-	resp, err := o.toolkit.CallTool(execCtx, call.Name, input)
+	resp, err := o.toolkit.callResolvedTool(execCtx, call.Name, input, t)
 	elapsed := time.Since(start)
 
 	// 6. Audit the execution result.
@@ -354,30 +354,7 @@ func policyDeniedResponse(msg string) *ToolResponse {
 	}
 }
 
-// toolExecutorAdapter wraps an Orchestrator with method signatures matching
-// loop.ToolExecutor. Since the tool package cannot import loop (circular
-// dependency), this adapter is structurally compatible but does not reference
-// loop types directly. The loop package can assign it via interface assertion.
-type toolExecutorAdapter struct {
-	o *Orchestrator
-}
-
-// Execute delegates to the underlying Orchestrator. The signature matches
-// loop.ToolExecutor.Execute.
-func (a *toolExecutorAdapter) Execute(ctx context.Context, call message.ToolCallBlock) (*ToolResponse, error) { //nolint:gocritic // interface
-	return a.o.Execute(ctx, call)
-}
-
-// BatchExecute delegates to the underlying Orchestrator. Returns
-// []*OrchestratorResult which has the same fields as loop.ToolResult.
-func (a *toolExecutorAdapter) BatchExecute(ctx context.Context, calls []message.ToolCallBlock) []*OrchestratorResult {
-	return a.o.BatchExecute(ctx, calls)
-}
-
-// AsToolExecutor returns an adapter whose Execute and BatchExecute methods
-// match the loop.ToolExecutor interface signatures (modulo return types for
-// BatchExecute due to circular import constraints). Use a type assertion in
-// the loop package to satisfy the interface.
-func (o *Orchestrator) AsToolExecutor() *toolExecutorAdapter {
-	return &toolExecutorAdapter{o: o}
-}
+// AsToolExecutor returns the orchestrator itself. loop.ToolResult aliases
+// OrchestratorResult, so the orchestrator satisfies loop.ToolExecutor without
+// a circular import or a signature-changing adapter.
+func (o *Orchestrator) AsToolExecutor() *Orchestrator { return o }

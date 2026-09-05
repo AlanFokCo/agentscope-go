@@ -74,7 +74,8 @@ func (t *Turn) run(ctx context.Context, input string, out chan<- event.Event) {
 	// and MaxDuration were dead config on this path).
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	for ev := range t.cfg.Loop.Run(runCtx, input) {
+	loopEvents := t.cfg.Loop.Run(runCtx, input)
+	for ev := range loopEvents {
 		emitEvent(ctx, out, ev)
 		if t.cfg.Budget == nil {
 			continue
@@ -89,6 +90,10 @@ func (t *Turn) run(ctx context.Context, input string, out chan<- event.Event) {
 			emitEvent(ctx, out, event.NewCustomEvent("", "turn.budget_exceeded",
 				map[string]any{"error": "budget exceeded (tokens or duration)"}))
 			cancel()
+			// Wait for the loop to stop mutating history before the session
+			// persists it or starts the next turn.
+			for range loopEvents {
+			}
 			break
 		}
 	}

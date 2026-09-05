@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/event"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/loop"
@@ -146,6 +147,69 @@ func TestTurnNilLoop(t *testing.T) {
 	if !hasError {
 		t.Error("expected turn.error event when loop is nil")
 	}
+}
+
+func TestTurnBudgetWaitsForHistoryMutation(t *testing.T) {
+	cm := &gatedContextManager{
+		DefaultContextManager: loop.NewDefaultContextManager(),
+		entered:               make(chan struct{}),
+		release:               make(chan struct{}),
+	}
+	mc := &turnMockModelCaller{resp: &model.ChatResponse{
+		Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: "response"}},
+		Usage:   &model.ChatUsage{InputTokens: 10},
+	}}
+	turn := NewTurn(TurnConfig{
+		Loop:   loop.New(loop.WithModelCaller(mc), loop.WithContextManager(cm)),
+		Budget: NewBudgetTracker(Budget{MaxTokens: 1}),
+	})
+	done := make(chan struct{})
+	budgetExceeded := make(chan struct{})
+	go func() {
+		defer close(done)
+		for ev := range turn.Run(context.Background(), "test") {
+			if ce, ok := ev.(event.CustomEvent); ok && ce.Name == "turn.budget_exceeded" {
+				close(budgetExceeded)
+			}
+		}
+	}()
+	defer func() {
+		close(cm.release)
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Error("turn did not stop after releasing history mutation")
+		}
+	}()
+	select {
+	case <-cm.entered:
+	case <-time.After(time.Second):
+		t.Fatal("loop did not reach history mutation")
+	}
+	select {
+	case <-budgetExceeded:
+	case <-time.After(time.Second):
+		t.Fatal("token budget did not stop the turn")
+	}
+	select {
+	case <-done:
+		t.Fatal("turn returned while the loop was still mutating shared history")
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+type gatedContextManager struct {
+	*loop.DefaultContextManager
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (m *gatedContextManager) Append(msg *message.Msg) {
+	if msg.Role == message.RoleAssistant {
+		close(m.entered)
+		<-m.release
+	}
+	m.DefaultContextManager.Append(msg)
 }
 
 // --- Mock ---

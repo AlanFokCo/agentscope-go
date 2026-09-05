@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -87,9 +89,20 @@ func (r *CLIRuntime) Execute(ctx context.Context, req *ExecRequest) (*ExecResult
 	if memMax == 0 {
 		memMax = DefaultMemoryMax
 	}
+	effective := *req
+	effective.MemoryMax = memMax
+	if effective.Fuel == 0 {
+		effective.Fuel = DefaultFuel
+	}
+	if effective.MaxOutputBytes == 0 {
+		effective.MaxOutputBytes = DefaultOutputMax
+	}
+	if err := r.validateLimits(&effective); err != nil {
+		return nil, err
+	}
 
 	// Build the command.
-	args := r.buildArgs(req, memMax)
+	args := r.buildArgs(&effective, memMax)
 
 	// Apply timeout to context.
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -98,19 +111,21 @@ func (r *CLIRuntime) Execute(ctx context.Context, req *ExecRequest) (*ExecResult
 	cmd := exec.CommandContext(ctx, r.binaryPath, args...)
 
 	// Set environment variables.
-	if len(req.Env) > 0 {
+	if len(effective.Env) > 0 {
 		cmd.Env = os.Environ()
-		for k, v := range req.Env {
+		for k, v := range effective.Env {
 			cmd.Env = append(cmd.Env, k+"="+v)
 		}
 	}
 
 	// Pipe stdin.
-	if len(req.Stdin) > 0 {
-		cmd.Stdin = bytes.NewReader(req.Stdin)
+	if len(effective.Stdin) > 0 {
+		cmd.Stdin = bytes.NewReader(effective.Stdin)
 	}
 
-	var stdout, stderr bytes.Buffer
+	outputBudget := newOutputBudget(effective.MaxOutputBytes)
+	stdout := newCappedBuffer(outputBudget)
+	stderr := newCappedBuffer(outputBudget)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -119,9 +134,10 @@ func (r *CLIRuntime) Execute(ctx context.Context, req *ExecRequest) (*ExecResult
 	duration := time.Since(start)
 
 	result := &ExecResult{
-		Stdout:   stdout.Bytes(),
-		Stderr:   stderr.Bytes(),
-		Duration: duration,
+		Stdout:          stdout.Bytes(),
+		Stderr:          stderr.Bytes(),
+		Duration:        duration,
+		OutputTruncated: stdout.Truncated() || stderr.Truncated(),
 	}
 
 	if err != nil {
@@ -171,15 +187,18 @@ func (r *CLIRuntime) buildArgs(req *ExecRequest, memMax uint64) []string {
 func (r *CLIRuntime) buildWasmtimeArgs(req *ExecRequest, memMax uint64) []string {
 	args := []string{"run"}
 
-	// Fuel limit for bounded execution.
-	args = append(args, "--fuel", fmt.Sprintf("%d", DefaultFuel), "--max-wasm-stack", "1048576")
-
-	// Memory limit.
-	memMB := memMax / (1024 * 1024)
-	if memMB == 0 {
-		memMB = 64
+	// Wasmtime's current CLI groups semantic limits under -W/--wasm.
+	fuel := req.Fuel
+	if fuel == 0 {
+		fuel = DefaultFuel
 	}
-	args = append(args, fmt.Sprintf("-O max-memory=%d", memMB*1024*1024))
+	args = append(args, "-W", fmt.Sprintf("fuel=%d,max-memory-size=%d,max-wasm-stack=1048576", fuel, memMax))
+
+	// WASI has no host filesystem access unless directories are explicitly
+	// pre-opened. Each allowed path is passed before the module path.
+	for _, allowed := range req.AllowedPaths {
+		args = append(args, "--dir", filepath.Clean(allowed))
+	}
 
 	// Function to invoke (if not _start).
 	if req.Function != "" && req.Function != "_start" {
@@ -238,6 +257,60 @@ func (r *CLIRuntime) buildWasmerArgs(req *ExecRequest, memMax uint64) []string {
 	}
 
 	return args
+}
+
+// validateLimits fails closed for CLI runtimes that cannot enforce the
+// configured instruction, memory, or filesystem limits consistently.
+func (r *CLIRuntime) validateLimits(req *ExecRequest) error {
+	if r.runtimeName == "wasmtime" {
+		return nil
+	}
+	if req.Fuel > 0 || req.MemoryMax > 0 || len(req.AllowedPaths) > 0 {
+		return fmt.Errorf("%w: %s", ErrUnsupportedLimits, r.runtimeName)
+	}
+	return nil
+}
+
+type cappedBuffer struct {
+	buf    bytes.Buffer
+	budget *outputBudget
+}
+
+type outputBudget struct {
+	mu        sync.Mutex
+	remaining int64
+	truncated bool
+}
+
+func newOutputBudget(max int64) *outputBudget { return &outputBudget{remaining: max} }
+
+func newCappedBuffer(budget *outputBudget) cappedBuffer { return cappedBuffer{budget: budget} }
+
+func (b *cappedBuffer) Write(p []byte) (int, error) {
+	originalLen := len(p)
+	b.budget.mu.Lock()
+	defer b.budget.mu.Unlock()
+	if b.budget.remaining <= 0 {
+		b.budget.truncated = b.budget.truncated || originalLen > 0
+		return originalLen, nil
+	}
+	if int64(len(p)) > b.budget.remaining {
+		p = p[:b.budget.remaining]
+		b.budget.truncated = true
+	}
+	_, _ = b.buf.Write(p)
+	b.budget.remaining -= int64(len(p))
+	return originalLen, nil
+}
+
+func (b *cappedBuffer) Bytes() []byte { return b.buf.Bytes() }
+
+func (b *cappedBuffer) String() string { return b.buf.String() }
+
+func (b *cappedBuffer) Truncated() bool {
+	b.budget.mu.Lock()
+	defer b.budget.mu.Unlock()
+	return b.budget.truncated
 }
 
 // runtimeNameFromPath extracts the runtime name from a binary path.

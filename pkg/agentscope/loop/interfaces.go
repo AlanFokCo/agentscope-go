@@ -32,12 +32,10 @@ type ToolExecutor interface {
 	BatchExecute(ctx context.Context, calls []message.ToolCallBlock) []*ToolResult
 }
 
-// ToolResult pairs a tool call with its execution result or error.
-type ToolResult struct {
-	Call     message.ToolCallBlock
-	Response *tool.ToolResponse
-	Err      error
-}
+// ToolResult pairs a tool call with its execution result or error. It aliases
+// tool.OrchestratorResult so tool.Orchestrator can implement ToolExecutor
+// without introducing a tool -> loop import cycle.
+type ToolResult = tool.OrchestratorResult
 
 // ContextManager manages the conversation message history.
 type ContextManager interface {

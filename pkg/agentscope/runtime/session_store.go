@@ -7,14 +7,33 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/internal/fsutil"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 )
 
 // SessionState represents the persisted state of a session.
 type SessionState struct {
 	ID        string         `json:"id"`
 	Metadata  map[string]any `json:"metadata,omitempty"`
+	Messages  []*message.Msg `json:"messages,omitempty"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
+}
+
+func cloneSessionState(state *SessionState) *SessionState {
+	if state == nil {
+		return nil
+	}
+	cp := *state
+	cp.Messages = append([]*message.Msg(nil), state.Messages...)
+	if state.Metadata != nil {
+		cp.Metadata = make(map[string]any, len(state.Metadata))
+		for key, value := range state.Metadata {
+			cp.Metadata[key] = value
+		}
+	}
+	return &cp
 }
 
 // SessionStore defines the interface for session persistence.
@@ -41,8 +60,7 @@ func NewInMemorySessionStore() *InMemorySessionStore {
 func (s *InMemorySessionStore) Save(_ string, state *SessionState) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	cp := *state
-	s.store[state.ID] = &cp
+	s.store[state.ID] = cloneSessionState(state)
 	return nil
 }
 
@@ -54,8 +72,7 @@ func (s *InMemorySessionStore) Load(id string) (*SessionState, error) {
 	if !ok {
 		return nil, fmt.Errorf("session %q not found", id)
 	}
-	cp := *state
-	return &cp, nil
+	return cloneSessionState(state), nil
 }
 
 // Delete removes the session state by ID.
@@ -99,7 +116,7 @@ func (s *FileSessionStore) Save(_ string, state *SessionState) error {
 		return fmt.Errorf("session store: marshal: %w", err)
 	}
 	path := filepath.Join(dir, "session.json")
-	return os.WriteFile(path, data, 0o644)
+	return fsutil.WriteFileAtomic(path, data, 0o644)
 }
 
 // Load reads the session state from disk.

@@ -48,14 +48,27 @@ func newConnTransport(conn net.Conn) *connTransport {
 	}
 }
 
-func (t *connTransport) Send(_ context.Context, msg *Message) error {
+func (t *connTransport) Send(ctx context.Context, msg *Message) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.encoder.Encode(msg)
+	restore := armContextDeadline(ctx, t.conn.SetWriteDeadline)
+	defer restore()
+	if err := t.encoder.Encode(msg); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		return err
+	}
+	return nil
 }
 
-func (t *connTransport) Receive(_ context.Context) (*Message, error) {
+func (t *connTransport) Receive(ctx context.Context) (*Message, error) {
+	restore := armContextDeadline(ctx, t.conn.SetReadDeadline)
+	defer restore()
 	if !t.scanner.Scan() {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		if err := t.scanner.Err(); err != nil {
 			return nil, fmt.Errorf("transport: read: %w", err)
 		}
@@ -66,6 +79,25 @@ func (t *connTransport) Receive(_ context.Context) (*Message, error) {
 		return nil, fmt.Errorf("transport: unmarshal: %w", err)
 	}
 	return &msg, nil
+}
+
+func armContextDeadline(ctx context.Context, setDeadline func(time.Time) error) func() {
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = setDeadline(deadline)
+	} else {
+		_ = setDeadline(time.Time{})
+	}
+	callbackDone := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		_ = setDeadline(time.Now())
+		close(callbackDone)
+	})
+	return func() {
+		if !stop() {
+			<-callbackDone
+		}
+		_ = setDeadline(time.Time{})
+	}
 }
 
 func (t *connTransport) Close() error {
@@ -141,8 +173,15 @@ func (s *Server) Listen(ctx context.Context) error {
 			}
 		}
 		s.mu.Lock()
+		select {
+		case <-s.done:
+			s.mu.Unlock()
+			_ = conn.Close()
+			return nil
+		default:
+		}
 		s.conns = append(s.conns, conn)
-		s.wg.Add(1) // must be inside the lock to avoid racing with Close's wg.Wait
+		s.wg.Add(1)
 		s.mu.Unlock()
 
 		go s.handleConn(conn)
@@ -152,6 +191,7 @@ func (s *Server) Listen(ctx context.Context) error {
 func (s *Server) handleConn(conn net.Conn) {
 	defer s.wg.Done()
 	defer func() { _ = conn.Close() }()
+	defer s.removeConn(conn)
 
 	t := newConnTransport(conn)
 	for {
@@ -175,6 +215,17 @@ func (s *Server) handleConn(conn net.Conn) {
 	}
 }
 
+func (s *Server) removeConn(conn net.Conn) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, tracked := range s.conns {
+		if tracked == conn {
+			s.conns = append(s.conns[:i], s.conns[i+1:]...)
+			return
+		}
+	}
+}
+
 // Close shuts down the server and all active connections.
 // It is safe to call Close concurrently or multiple times.
 func (s *Server) Close() error {
@@ -187,39 +238,34 @@ func (s *Server) Close() error {
 		s.mu.Unlock()
 		s.closeErr = ln.Close()
 
-		// After ln.Close(), Accept will fail and the for-loop exits.
-		// However, a conn may have been accepted just before ln.Close().
-		// Its wg.Add(1) is under s.mu. Acquire+release the lock to
-		// ensure any in-flight wg.Add(1) completes before we Wait.
-		s.mu.Lock() //nolint:gocritic // sync barrier
-		//nolint:staticcheck // intentional lock-unlock to synchronize
-		s.mu.Unlock() //nolint:gocritic // intentional: sync barrier for wg.Add
-
-		// Now safe: no new wg.Add(1) can happen.
-		s.wg.Wait()
-
-		// Close all tracked connections.
+		// Closing active connections unblocks handlers waiting in Receive. Listen
+		// checks s.done while holding this same lock before every wg.Add, so after
+		// this snapshot no new handler can be registered.
 		s.mu.Lock()
-		for _, c := range s.conns {
-			_ = c.Close()
-		}
+		conns := append([]net.Conn(nil), s.conns...)
 		s.conns = nil
 		s.mu.Unlock()
+		for _, c := range conns {
+			_ = c.Close()
+		}
+		s.wg.Wait()
 	})
 	return s.closeErr
 }
 
 // Client connects to a remote agent server.
 type Client struct {
-	addr      string
-	conn      net.Conn
-	t         *connTransport
-	mu        sync.Mutex
-	pending   map[string]chan *Message
-	streams   map[string]chan *Message
-	closed    chan struct{}
-	closeOnce sync.Once
-	readWg    sync.WaitGroup
+	addr       string
+	conn       net.Conn
+	t          *connTransport
+	mu         sync.Mutex
+	pending    map[string]chan *Message
+	streams    map[string]chan *Message
+	closed     chan struct{}
+	readClosed bool
+	closeOnce  sync.Once
+	closeErr   error
+	readWg     sync.WaitGroup
 }
 
 // NewClient connects to the remote server at addr.
@@ -243,58 +289,83 @@ func NewClient(addr string) (*Client, error) {
 
 func (c *Client) readLoop() {
 	defer c.readWg.Done()
+	defer c.closeResponseChannels()
 	for {
 		msg, err := c.t.Receive(context.Background())
 		if err != nil {
-			select {
-			case <-c.closed:
-				return
-			default:
-				// Connection error: close all pending channels
-				c.mu.Lock()
-				for _, ch := range c.pending {
-					close(ch)
-				}
-				c.pending = make(map[string]chan *Message)
-				for _, ch := range c.streams {
-					close(ch)
-				}
-				c.streams = make(map[string]chan *Message)
-				c.mu.Unlock()
-				return
-			}
+			return
 		}
 
 		c.mu.Lock()
-		// Check if it is a streaming response
-		if ch, ok := c.streams[msg.ID]; ok {
-			if msg.StreamEnd {
-				ch <- msg
-				close(ch)
-				delete(c.streams, msg.ID)
-			} else {
-				ch <- msg
-			}
-		} else if ch, ok := c.pending[msg.ID]; ok {
-			ch <- msg
-			close(ch)
+		streamCh, isStream := c.streams[msg.ID]
+		pendingCh, isPending := c.pending[msg.ID]
+		// Claim this response while holding the registry lock. A canceled
+		// request may be replaced as soon as the lock is released.
+		if isPending && !isStream {
 			delete(c.pending, msg.ID)
 		}
 		c.mu.Unlock()
+
+		// Never hold c.mu while sending to a consumer-controlled channel.
+		if isStream {
+			select {
+			case streamCh <- msg:
+			case <-c.closed:
+				return
+			}
+			if msg.StreamEnd {
+				c.mu.Lock()
+				if c.streams[msg.ID] == streamCh {
+					delete(c.streams, msg.ID)
+				}
+				c.mu.Unlock()
+				close(streamCh)
+			}
+		} else if isPending {
+			pendingCh <- msg
+			close(pendingCh)
+		}
+	}
+}
+
+func (c *Client) closeResponseChannels() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.readClosed = true
+	for id, ch := range c.pending {
+		close(ch)
+		delete(c.pending, id)
+	}
+	for id, ch := range c.streams {
+		close(ch)
+		delete(c.streams, id)
 	}
 }
 
 // Send sends a request and waits for a single response (request-response pattern).
 func (c *Client) Send(ctx context.Context, msg *Message) (*Message, error) {
+	if msg == nil {
+		return nil, errors.New("client: nil message")
+	}
 	ch := make(chan *Message, 1)
 
 	c.mu.Lock()
+	if c.readClosed {
+		c.mu.Unlock()
+		return nil, errors.New("client: connection closed")
+	}
+	if c.pending[msg.ID] != nil || c.streams[msg.ID] != nil {
+		c.mu.Unlock()
+		return nil, fmt.Errorf("client: duplicate request ID %q", msg.ID)
+	}
 	c.pending[msg.ID] = ch
 	c.mu.Unlock()
 
 	if err := c.t.Send(ctx, msg); err != nil {
 		c.mu.Lock()
-		delete(c.pending, msg.ID)
+		if c.pending[msg.ID] == ch {
+			delete(c.pending, msg.ID)
+		}
 		c.mu.Unlock()
 		return nil, fmt.Errorf("client: send: %w", err)
 	}
@@ -302,7 +373,9 @@ func (c *Client) Send(ctx context.Context, msg *Message) (*Message, error) {
 	select {
 	case <-ctx.Done():
 		c.mu.Lock()
-		delete(c.pending, msg.ID)
+		if c.pending[msg.ID] == ch {
+			delete(c.pending, msg.ID)
+		}
 		c.mu.Unlock()
 		return nil, ctx.Err()
 	case resp, ok := <-ch:
@@ -316,16 +389,30 @@ func (c *Client) Send(ctx context.Context, msg *Message) (*Message, error) {
 // Stream sends a message and returns a channel that receives streaming responses.
 // The channel is closed after a message with StreamEnd=true is received.
 func (c *Client) Stream(ctx context.Context, msg *Message) (<-chan *Message, error) {
+	if msg == nil {
+		return nil, errors.New("client: nil message")
+	}
 	ch := make(chan *Message, 64)
 
 	c.mu.Lock()
+	if c.readClosed {
+		c.mu.Unlock()
+		return nil, errors.New("client: connection closed")
+	}
+	if c.streams[msg.ID] != nil || c.pending[msg.ID] != nil {
+		c.mu.Unlock()
+		return nil, fmt.Errorf("client: duplicate stream ID %q", msg.ID)
+	}
 	c.streams[msg.ID] = ch
 	c.mu.Unlock()
 
-	msg.IsStream = true
-	if err := c.t.Send(ctx, msg); err != nil {
+	request := *msg
+	request.IsStream = true
+	if err := c.t.Send(ctx, &request); err != nil {
 		c.mu.Lock()
-		delete(c.streams, msg.ID)
+		if c.streams[msg.ID] == ch {
+			delete(c.streams, msg.ID)
+		}
 		c.mu.Unlock()
 		return nil, fmt.Errorf("client: stream send: %w", err)
 	}
@@ -338,8 +425,8 @@ func (c *Client) Stream(ctx context.Context, msg *Message) (<-chan *Message, err
 func (c *Client) Close() error {
 	c.closeOnce.Do(func() {
 		close(c.closed)
+		c.closeErr = c.conn.Close()
+		c.readWg.Wait()
 	})
-	err := c.conn.Close()
-	c.readWg.Wait()
-	return err
+	return c.closeErr
 }

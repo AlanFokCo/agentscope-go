@@ -70,3 +70,32 @@ func TestFunctionTool_CustomSchemaHonored(t *testing.T) {
 		t.Errorf("tool schema parameters = %s, want the custom schema verbatim", schemas[0].Function.Parameters)
 	}
 }
+
+func TestToolkitRejectsDuplicateToolNames(t *testing.T) {
+	tk := NewToolkit(NewFunctionTool("search", "first", nil,
+		func(_ context.Context, _ map[string]any) (any, error) { return "first", nil }))
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected AddGroup to reject a case-insensitive duplicate tool name")
+		}
+	}()
+	tk.AddGroup("other", NewFunctionTool("SEARCH", "second", nil,
+		func(_ context.Context, _ map[string]any) (any, error) { return "second", nil }))
+}
+
+func TestToolkitSchemasHaveDeterministicGroupOrder(t *testing.T) {
+	tk := NewToolkit()
+	tk.AddGroup("z-last", NewFunctionTool("z", "z", nil,
+		func(_ context.Context, _ map[string]any) (any, error) { return "z", nil }))
+	tk.AddGroup("a-first", NewFunctionTool("a", "a", nil,
+		func(_ context.Context, _ map[string]any) (any, error) { return "a", nil }))
+
+	schemas := tk.GetToolSchemas()
+	if len(schemas) != 2 {
+		t.Fatalf("expected 2 schemas, got %d", len(schemas))
+	}
+	if schemas[0].Function.Name != "a" || schemas[1].Function.Name != "z" {
+		t.Fatalf("schema order = [%s, %s], want [a, z]", schemas[0].Function.Name, schemas[1].Function.Name)
+	}
+}

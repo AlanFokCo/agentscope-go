@@ -9,11 +9,12 @@ import (
 
 // SandboxConfig configures the WASM sandbox.
 type SandboxConfig struct {
-	Runtime      Runtime
-	AllowedPaths []string      // paths the module can access (if WASI enabled)
-	MaxMemory    uint64        // default: 64MB
-	MaxDuration  time.Duration // default: 30s
-	MaxFuel      int64         // instruction count limit (wasmtime-specific)
+	Runtime        Runtime
+	AllowedPaths   []string      // paths the module can access (if WASI enabled)
+	MaxMemory      uint64        // default: 64MB
+	MaxDuration    time.Duration // default: 30s
+	MaxFuel        int64         // instruction count limit (wasmtime-specific)
+	MaxOutputBytes int64         // combined stdout/stderr capture limit (default: 1MB)
 }
 
 // Sandbox provides a safe execution environment for WASM modules.
@@ -31,6 +32,9 @@ func NewSandbox(cfg SandboxConfig) *Sandbox {
 	}
 	if cfg.MaxFuel == 0 {
 		cfg.MaxFuel = DefaultFuel
+	}
+	if cfg.MaxOutputBytes == 0 {
+		cfg.MaxOutputBytes = DefaultOutputMax
 	}
 	return &Sandbox{cfg: cfg}
 }
@@ -52,12 +56,15 @@ func (s *Sandbox) RunWithArgs(ctx context.Context, modulePath string, args []str
 	}
 
 	req := &ExecRequest{
-		ModulePath: modulePath,
-		Function:   "_start",
-		Stdin:      input,
-		Args:       args,
-		Timeout:    s.cfg.MaxDuration,
-		MemoryMax:  s.cfg.MaxMemory,
+		ModulePath:     modulePath,
+		Function:       "_start",
+		Stdin:          input,
+		Args:           args,
+		AllowedPaths:   append([]string(nil), s.cfg.AllowedPaths...),
+		Timeout:        s.cfg.MaxDuration,
+		MemoryMax:      s.cfg.MaxMemory,
+		Fuel:           s.cfg.MaxFuel,
+		MaxOutputBytes: s.cfg.MaxOutputBytes,
 	}
 
 	return s.cfg.Runtime.Execute(ctx, req)

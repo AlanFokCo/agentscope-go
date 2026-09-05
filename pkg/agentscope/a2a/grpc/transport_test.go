@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -236,6 +237,112 @@ func TestServerShutdownStopsAccepting(t *testing.T) {
 	_, err = NewClient(addr)
 	if err == nil {
 		t.Fatal("expected error connecting to closed server")
+	}
+}
+
+func TestServerCloseUnblocksIdleConnections(t *testing.T) {
+	srv := startTestServer(t, nil)
+	conn, err := net.Dial("tcp", srv.Addr())
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	done := make(chan error, 1)
+	go func() { done <- srv.Close() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Close blocked on an idle connection")
+	}
+}
+
+func TestConnTransportReceiveHonorsContextCancellation(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer func() { _ = serverConn.Close() }()
+	defer func() { _ = clientConn.Close() }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := newConnTransport(clientConn).Receive(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Receive error = %v, want context.Canceled", err)
+	}
+}
+
+func TestResponseClaimDoesNotDeleteReplacement(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer func() { _ = serverConn.Close() }()
+	// An unbuffered old receiver pauses delivery after the response is claimed,
+	// making replacement of its registry entry deterministic.
+	old := make(chan *Message)
+	c := &Client{
+		conn:    clientConn,
+		t:       newConnTransport(clientConn),
+		pending: map[string]chan *Message{"retry": old},
+		streams: make(map[string]chan *Message),
+		closed:  make(chan struct{}),
+	}
+	c.readWg.Add(1)
+	go c.readLoop()
+	t.Cleanup(func() {
+		// Release a blocked old delivery even when an assertion fails.
+		go func() {
+			for range old {
+			}
+		}()
+		_ = c.Close()
+	})
+	encoder := json.NewEncoder(serverConn)
+	if err := encoder.Encode(&Message{ID: "retry", Method: "old"}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		c.mu.Lock()
+		claimed := c.pending["retry"] == nil
+		c.mu.Unlock()
+		if claimed {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("response must be removed from the registry before delivery")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	replacement := make(chan *Message, 1)
+	c.mu.Lock()
+	c.pending["retry"] = replacement
+	c.mu.Unlock()
+	<-old
+	if err := encoder.Encode(&Message{ID: "retry", Method: "new"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case resp := <-replacement:
+		if resp == nil || resp.Method != "new" {
+			t.Fatalf("wrong retry response: %v", resp)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("old response removed the replacement request")
+	}
+}
+
+func TestClientRejectsCrossModeDuplicateIDs(t *testing.T) {
+	c := &Client{
+		pending: make(map[string]chan *Message),
+		streams: map[string]chan *Message{"shared": make(chan *Message, 1)},
+	}
+	if _, err := c.Send(context.Background(), &Message{ID: "shared"}); err == nil {
+		t.Fatal("Send accepted an active stream ID")
+	}
+	delete(c.streams, "shared")
+	c.pending["shared"] = make(chan *Message, 1)
+	if _, err := c.Stream(context.Background(), &Message{ID: "shared"}); err == nil {
+		t.Fatal("Stream accepted an active request ID")
 	}
 }
 

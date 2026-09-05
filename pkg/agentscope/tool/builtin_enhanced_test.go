@@ -684,6 +684,24 @@ func TestBashTool_StreamingNonZeroExit(t *testing.T) {
 	}
 }
 
+func TestBashTool_SynchronousNonZeroExit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix shell")
+	}
+	resp, err := BashTool().Execute(context.Background(), map[string]any{
+		"command": "echo fail; exit 7",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.State != message.ToolResultError {
+		t.Fatalf("state = %s, want error for non-zero exit", resp.State)
+	}
+	if text := getResponseText(resp); !strings.Contains(text, `"exit_code":7`) {
+		t.Fatalf("response should preserve the exit code, got %q", text)
+	}
+}
+
 func TestBashTool_CollectStream(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("requires Unix shell")

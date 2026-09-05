@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -40,6 +42,70 @@ func TestSessionEngineSubmitMessage(t *testing.T) {
 	}
 	if !hasReplyEnd {
 		t.Error("missing ReplyEnd event")
+	}
+}
+
+func TestSessionEnginePreservesHistoryAcrossTurns(t *testing.T) {
+	mc := &historyModelCaller{}
+	se := NewSessionEngine(SessionEngineConfig{
+		LoopOptions: []loop.Option{
+			loop.WithModelCaller(mc),
+			loop.WithMaxIters(1),
+			loop.WithSystemPrompt("stay concise"),
+		},
+	})
+
+	for range se.SubmitMessage(context.Background(), "first") {
+	}
+	for range se.SubmitMessage(context.Background(), "second") {
+	}
+
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+	if len(mc.calls) != 2 {
+		t.Fatalf("model calls = %d, want 2", len(mc.calls))
+	}
+	got := mc.calls[1]
+	wantRoles := []message.Role{
+		message.RoleSystem,
+		message.RoleUser,
+		message.RoleAssistant,
+		message.RoleUser,
+	}
+	if len(got) != len(wantRoles) {
+		t.Fatalf("second-turn history has %d messages, want %d", len(got), len(wantRoles))
+	}
+	for i, want := range wantRoles {
+		if got[i].Role != want {
+			t.Errorf("history[%d].Role = %q, want %q", i, got[i].Role, want)
+		}
+	}
+	if state := se.State(); len(state.Messages) != 5 {
+		t.Fatalf("persisted history has %d messages, want 5", len(state.Messages))
+	}
+}
+
+func TestSessionEngineUsesConfiguredContextManager(t *testing.T) {
+	cm := loop.NewDefaultContextManager()
+	cm.Append(message.UserMsg("user", "restored history"))
+	mc := &historyModelCaller{}
+	se := NewSessionEngine(SessionEngineConfig{
+		LoopOptions: []loop.Option{
+			loop.WithModelCaller(mc),
+			loop.WithContextManager(cm),
+		},
+	})
+	for range se.SubmitMessage(context.Background(), "first") {
+	}
+	for range se.SubmitMessage(context.Background(), "second") {
+	}
+	if got := len(cm.Messages()); got != 5 {
+		t.Fatalf("configured manager has %d messages, want restored history and two turns", got)
+	}
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+	if len(mc.calls) != 2 || len(mc.calls[0]) != 2 || len(mc.calls[1]) != 4 {
+		t.Fatalf("model did not receive restored and accumulated history: %v", mc.calls)
 	}
 }
 
@@ -181,6 +247,22 @@ type seMockModelCaller struct {
 
 func (m *seMockModelCaller) Call(_ context.Context, _ []*message.Msg, _ []model.ToolSchema) (*model.ChatResponse, error) {
 	return m.resp, nil
+}
+
+type historyModelCaller struct {
+	mu    sync.Mutex
+	calls [][]*message.Msg
+}
+
+func (m *historyModelCaller) Call(_ context.Context, messages []*message.Msg, _ []model.ToolSchema) (*model.ChatResponse, error) {
+	m.mu.Lock()
+	m.calls = append(m.calls, append([]*message.Msg(nil), messages...))
+	n := len(m.calls)
+	m.mu.Unlock()
+	return &model.ChatResponse{
+		Content: []message.ContentBlock{message.TextBlock{Type: "text", Text: fmt.Sprintf("response %d", n)}},
+		IsLast:  true,
+	}, nil
 }
 
 type blockingModelCaller struct {
