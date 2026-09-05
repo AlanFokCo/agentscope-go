@@ -283,7 +283,7 @@ func TestResponseClaimDoesNotDeleteReplacement(t *testing.T) {
 		conn:    clientConn,
 		t:       newConnTransport(clientConn),
 		pending: map[string]chan *Message{"retry": old},
-		streams: make(map[string]chan *Message),
+		streams: make(map[string]*clientStream),
 		closed:  make(chan struct{}),
 	}
 	c.readWg.Add(1)
@@ -334,7 +334,7 @@ func TestResponseClaimDoesNotDeleteReplacement(t *testing.T) {
 func TestClientRejectsCrossModeDuplicateIDs(t *testing.T) {
 	c := &Client{
 		pending: make(map[string]chan *Message),
-		streams: map[string]chan *Message{"shared": make(chan *Message, 1)},
+		streams: map[string]*clientStream{"shared": {messages: make(chan *Message, 1)}},
 	}
 	if _, err := c.Send(context.Background(), &Message{ID: "shared"}); err == nil {
 		t.Fatal("Send accepted an active stream ID")

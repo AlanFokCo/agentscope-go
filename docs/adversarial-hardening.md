@@ -18,6 +18,14 @@ This batch tightens the execution, WASM, TCP, and experimental runtime paths.
 - `a2a/grpc` uses newline-delimited JSON over TCP. It is not the gRPC wire
   protocol. Transport I/O observes context cancellation, and client/server close
   releases idle connections. Active request and stream IDs share one namespace.
+  Stream cancellation retires the local registration and closes its channel.
+  A full 64-message stream buffer closes that stream without blocking other
+  requests on the connection. Buffered messages remain readable after closure;
+  consumers must receive `StreamEnd` to treat the stream as successfully complete.
+  Closure without `StreamEnd` means interruption (cancellation, disconnect, or
+  overflow). Cancellation does not send a remote cancellation frame.
+  Send cancellation also applies while waiting for another writer. Failed
+  writes close the connection because a partial JSON frame cannot be reused.
   Use a fresh ID when retrying a canceled request: late responses cannot be
   distinguished from a new request using the same ID on this wire protocol.
 - `runtime.SessionEngine` serializes turns and preserves the context manager
@@ -31,8 +39,9 @@ This batch tightens the execution, WASM, TCP, and experimental runtime paths.
 
 This batch does not establish a complete isolation boundary for arbitrary
 custom tools. Configure a workspace backend for isolated shell/file execution.
-The TCP stream consumer must continue draining its channel or close its client;
-stream-context cancellation alone does not retire an established stream.
+TCP consumers must handle stream interruption and choose an application-level
+retry policy using fresh request IDs. A closed stream channel does not by itself
+mean that the remote work succeeded or stopped.
 Session-state snapshots copy the message slice but share message objects, and
 session-store saves do not provide an automatic restore/resume constructor.
 

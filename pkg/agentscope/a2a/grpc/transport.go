@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -32,28 +33,48 @@ type Transport interface {
 
 // connTransport implements Transport over a single TCP connection using newline-delimited JSON.
 type connTransport struct {
-	conn    net.Conn
-	encoder *json.Encoder
-	scanner *bufio.Scanner
-	mu      sync.Mutex // protects encoder writes
+	conn      net.Conn
+	scanner   *bufio.Scanner
+	writeGate chan struct{} // serializes frame writes, with cancelable admission
 }
 
 func newConnTransport(conn net.Conn) *connTransport {
 	scanner := bufio.NewScanner(conn)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1MB max message
 	return &connTransport{
-		conn:    conn,
-		encoder: json.NewEncoder(conn),
-		scanner: scanner,
+		conn:      conn,
+		scanner:   scanner,
+		writeGate: make(chan struct{}, 1),
 	}
 }
 
 func (t *connTransport) Send(ctx context.Context, msg *Message) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	select {
+	case t.writeGate <- struct{}{}:
+		defer func() { <-t.writeGate }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Serialize before touching the connection. Invalid local message data
+	// must not interrupt unrelated requests using the same transport.
+	frame, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("transport: marshal: %w", err)
+	}
+	frame = append(frame, '\n')
 	restore := armContextDeadline(ctx, t.conn.SetWriteDeadline)
 	defer restore()
-	if err := t.encoder.Encode(msg); err != nil {
+	n, err := t.conn.Write(frame)
+	if err == nil && n != len(frame) {
+		err = io.ErrShortWrite
+	}
+	if err != nil {
+		// A failed write may leave a partial JSON frame on the wire. Further
+		// requests cannot safely reuse that connection.
+		_ = t.conn.Close()
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return ctxErr
 		}
@@ -260,7 +281,7 @@ type Client struct {
 	t          *connTransport
 	mu         sync.Mutex
 	pending    map[string]chan *Message
-	streams    map[string]chan *Message
+	streams    map[string]*clientStream
 	closed     chan struct{}
 	readClosed bool
 	closeOnce  sync.Once
@@ -279,7 +300,7 @@ func NewClient(addr string) (*Client, error) {
 		conn:    conn,
 		t:       newConnTransport(conn),
 		pending: make(map[string]chan *Message),
-		streams: make(map[string]chan *Message),
+		streams: make(map[string]*clientStream),
 		closed:  make(chan struct{}),
 	}
 	c.readWg.Add(1)
@@ -297,31 +318,26 @@ func (c *Client) readLoop() {
 		}
 
 		c.mu.Lock()
-		streamCh, isStream := c.streams[msg.ID]
+		stream, isStream := c.streams[msg.ID]
+		if isStream {
+			// Delivery never blocks. Keep removal and channel closure under
+			// the registry lock so observing a closed channel also permits
+			// a subsequent registration without a stale duplicate entry.
+			if !stream.deliver(msg) {
+				delete(c.streams, msg.ID)
+			}
+			c.mu.Unlock()
+			continue
+		}
 		pendingCh, isPending := c.pending[msg.ID]
 		// Claim this response while holding the registry lock. A canceled
 		// request may be replaced as soon as the lock is released.
-		if isPending && !isStream {
+		if isPending {
 			delete(c.pending, msg.ID)
 		}
 		c.mu.Unlock()
 
-		// Never hold c.mu while sending to a consumer-controlled channel.
-		if isStream {
-			select {
-			case streamCh <- msg:
-			case <-c.closed:
-				return
-			}
-			if msg.StreamEnd {
-				c.mu.Lock()
-				if c.streams[msg.ID] == streamCh {
-					delete(c.streams, msg.ID)
-				}
-				c.mu.Unlock()
-				close(streamCh)
-			}
-		} else if isPending {
+		if isPending {
 			pendingCh <- msg
 			close(pendingCh)
 		}
@@ -336,10 +352,18 @@ func (c *Client) closeResponseChannels() {
 		close(ch)
 		delete(c.pending, id)
 	}
-	for id, ch := range c.streams {
-		close(ch)
+	for id, stream := range c.streams {
+		stream.close()
 		delete(c.streams, id)
 	}
+}
+
+func (c *Client) removeStream(id string, stream *clientStream) {
+	c.mu.Lock()
+	if c.streams[id] == stream {
+		delete(c.streams, id)
+	}
+	c.mu.Unlock()
 }
 
 // Send sends a request and waits for a single response (request-response pattern).
@@ -387,12 +411,19 @@ func (c *Client) Send(ctx context.Context, msg *Message) (*Message, error) {
 }
 
 // Stream sends a message and returns a channel that receives streaming responses.
-// The channel is closed after a message with StreamEnd=true is received.
+// The channel closes on StreamEnd, context cancellation, connection loss, or
+// overflow of its 64-message buffer. Buffered messages remain readable after
+// closure. Completion is successful only if the consumer receives StreamEnd;
+// closure without it indicates interruption. Cancellation retires the local
+// stream; this protocol has no remote cancellation frame.
 func (c *Client) Stream(ctx context.Context, msg *Message) (<-chan *Message, error) {
 	if msg == nil {
 		return nil, errors.New("client: nil message")
 	}
-	ch := make(chan *Message, 64)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	stream := &clientStream{messages: make(chan *Message, 64)}
 
 	c.mu.Lock()
 	if c.readClosed {
@@ -403,21 +434,25 @@ func (c *Client) Stream(ctx context.Context, msg *Message) (<-chan *Message, err
 		c.mu.Unlock()
 		return nil, fmt.Errorf("client: duplicate stream ID %q", msg.ID)
 	}
-	c.streams[msg.ID] = ch
+	c.streams[msg.ID] = stream
+	id := msg.ID
+	// Install cancellation while holding the registry lock. The callback and
+	// reader cannot reach the stream before its stop function is initialized.
+	stream.stop = context.AfterFunc(ctx, func() {
+		c.removeStream(id, stream)
+		stream.close()
+	})
 	c.mu.Unlock()
 
 	request := *msg
 	request.IsStream = true
 	if err := c.t.Send(ctx, &request); err != nil {
-		c.mu.Lock()
-		if c.streams[msg.ID] == ch {
-			delete(c.streams, msg.ID)
-		}
-		c.mu.Unlock()
+		c.removeStream(id, stream)
+		stream.close()
 		return nil, fmt.Errorf("client: stream send: %w", err)
 	}
 
-	return ch, nil
+	return stream.messages, nil
 }
 
 // Close terminates the client connection.
