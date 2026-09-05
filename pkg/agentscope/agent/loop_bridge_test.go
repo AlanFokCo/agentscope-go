@@ -9,6 +9,7 @@ import (
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/loop"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/message"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/metrics"
+	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/middleware"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/model"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/permission"
 	"github.com/alanfokco/agentscope-go/v2/pkg/agentscope/tool"
@@ -118,6 +119,40 @@ func TestUnifiedAgentRunnerFailsClosedWhenToolNeedsConfirmation(t *testing.T) {
 	if got := result.GetTextContent(); got != "not executed" {
 		t.Fatalf("result = %q, want %q", got, "not executed")
 	}
+}
+
+func TestLoopBridgeUsesMiddlewareRewrittenInput(t *testing.T) {
+	var got string
+	echo := tool.NewFunctionTool("echo", "echo", nil,
+		func(_ context.Context, input map[string]any) (any, error) {
+			got, _ = input["text"].(string)
+			return got, nil
+		})
+	a := NewUnifiedAgent("bot", "prompt", &mockChatModel{},
+		WithToolkit(tool.NewToolkit(echo)),
+		WithMiddlewares(&rewriteActingInput{}),
+		WithPermissionContext(permission.NewContext(permission.ModeBypass)),
+	)
+	var cfg loop.Config
+	for _, opt := range NewUnifiedAgentRunner(a).LoopOptions() {
+		opt(&cfg)
+	}
+	_, err := cfg.ToolExecutor.Execute(context.Background(), message.ToolCallBlock{
+		Type: "tool_use", ID: "rewrite", Name: "echo", Input: `{"text":"original"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "sanitized" {
+		t.Fatalf("tool received %q, want middleware-rewritten input", got)
+	}
+}
+
+type rewriteActingInput struct{ middleware.BaseMiddleware }
+
+func (m *rewriteActingInput) OnActing(ctx context.Context, input *middleware.ActingInput, next middleware.ActingHandler) (*tool.ToolResponse, error) {
+	input.ToolCall.Input = `{"text":"sanitized"}`
+	return next(ctx, input)
 }
 
 // --- In-memory metrics provider for testing ---

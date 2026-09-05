@@ -273,6 +273,79 @@ func TestConnTransportReceiveHonorsContextCancellation(t *testing.T) {
 	}
 }
 
+func TestResponseClaimDoesNotDeleteReplacement(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer func() { _ = serverConn.Close() }()
+	// An unbuffered old receiver pauses delivery after the response is claimed,
+	// making replacement of its registry entry deterministic.
+	old := make(chan *Message)
+	c := &Client{
+		conn:    clientConn,
+		t:       newConnTransport(clientConn),
+		pending: map[string]chan *Message{"retry": old},
+		streams: make(map[string]chan *Message),
+		closed:  make(chan struct{}),
+	}
+	c.readWg.Add(1)
+	go c.readLoop()
+	t.Cleanup(func() {
+		// Release a blocked old delivery even when an assertion fails.
+		go func() {
+			for range old {
+			}
+		}()
+		_ = c.Close()
+	})
+	encoder := json.NewEncoder(serverConn)
+	if err := encoder.Encode(&Message{ID: "retry", Method: "old"}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		c.mu.Lock()
+		claimed := c.pending["retry"] == nil
+		c.mu.Unlock()
+		if claimed {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("response must be removed from the registry before delivery")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	replacement := make(chan *Message, 1)
+	c.mu.Lock()
+	c.pending["retry"] = replacement
+	c.mu.Unlock()
+	<-old
+	if err := encoder.Encode(&Message{ID: "retry", Method: "new"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case resp := <-replacement:
+		if resp == nil || resp.Method != "new" {
+			t.Fatalf("wrong retry response: %v", resp)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("old response removed the replacement request")
+	}
+}
+
+func TestClientRejectsCrossModeDuplicateIDs(t *testing.T) {
+	c := &Client{
+		pending: make(map[string]chan *Message),
+		streams: map[string]chan *Message{"shared": make(chan *Message, 1)},
+	}
+	if _, err := c.Send(context.Background(), &Message{ID: "shared"}); err == nil {
+		t.Fatal("Send accepted an active stream ID")
+	}
+	delete(c.streams, "shared")
+	c.pending["shared"] = make(chan *Message, 1)
+	if _, err := c.Stream(context.Background(), &Message{ID: "shared"}); err == nil {
+		t.Fatal("Stream accepted an active request ID")
+	}
+}
+
 func TestStreaming(t *testing.T) {
 	// Create a server that manually streams responses
 	ln, err := listenAndServeStreaming(t)

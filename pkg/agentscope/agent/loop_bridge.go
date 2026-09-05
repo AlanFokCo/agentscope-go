@@ -74,12 +74,12 @@ type toolExecutorAdapter struct {
 }
 
 func (t *toolExecutorAdapter) Execute(ctx context.Context, call message.ToolCallBlock) (*tool.ToolResponse, error) { //nolint:gocritic // interface
-	resolved := t.agent.toolkit.Get(call.Name)
-	if resolved != nil && resolved.IsExternalTool() {
-		return tool.NewErrorResponse(fmt.Errorf("tool %q requires external execution; use UnifiedAgent.ReplyStream", call.Name)), nil
-	}
-	core := func(ctx context.Context, _ *middleware.ActingInput) (*tool.ToolResponse, error) {
-		return t.orchestrator.Execute(ctx, call)
+	core := func(ctx context.Context, input *middleware.ActingInput) (*tool.ToolResponse, error) {
+		resolved := t.agent.toolkit.Get(input.ToolCall.Name)
+		if resolved != nil && resolved.IsExternalTool() {
+			return tool.NewErrorResponse(fmt.Errorf("tool %q requires external execution; use UnifiedAgent.ReplyStream", input.ToolCall.Name)), nil
+		}
+		return t.orchestrator.Execute(ctx, input.ToolCall)
 	}
 	handler := core
 	if len(t.agent.middlewares) > 0 {

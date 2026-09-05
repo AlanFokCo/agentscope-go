@@ -14,7 +14,7 @@ type SandboxConfig struct {
 	MaxMemory      uint64        // default: 64MB
 	MaxDuration    time.Duration // default: 30s
 	MaxFuel        int64         // instruction count limit (wasmtime-specific)
-	MaxOutputBytes int64       // combined stdout/stderr capture limit (default: 1MB)
+	MaxOutputBytes int64         // combined stdout/stderr capture limit (default: 1MB)
 }
 
 // Sandbox provides a safe execution environment for WASM modules.

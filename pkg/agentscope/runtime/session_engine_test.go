@@ -85,6 +85,30 @@ func TestSessionEnginePreservesHistoryAcrossTurns(t *testing.T) {
 	}
 }
 
+func TestSessionEngineUsesConfiguredContextManager(t *testing.T) {
+	cm := loop.NewDefaultContextManager()
+	cm.Append(message.UserMsg("user", "restored history"))
+	mc := &historyModelCaller{}
+	se := NewSessionEngine(SessionEngineConfig{
+		LoopOptions: []loop.Option{
+			loop.WithModelCaller(mc),
+			loop.WithContextManager(cm),
+		},
+	})
+	for range se.SubmitMessage(context.Background(), "first") {
+	}
+	for range se.SubmitMessage(context.Background(), "second") {
+	}
+	if got := len(cm.Messages()); got != 5 {
+		t.Fatalf("configured manager has %d messages, want restored history and two turns", got)
+	}
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+	if len(mc.calls) != 2 || len(mc.calls[0]) != 2 || len(mc.calls[1]) != 4 {
+		t.Fatalf("model did not receive restored and accumulated history: %v", mc.calls)
+	}
+}
+
 func TestSessionEngineID(t *testing.T) {
 	se := NewSessionEngine(SessionEngineConfig{})
 	if se.ID() == "" {

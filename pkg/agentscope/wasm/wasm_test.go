@@ -79,7 +79,7 @@ func TestCLIRuntime_CommandConstruction_Wasmtime(t *testing.T) {
 	if !strings.Contains(joined, "/tmp/module.wasm") {
 		t.Error("expected module path in args")
 	}
-	if !strings.Contains(joined, "--dir /tmp/input") {
+	if !strings.Contains(joined, "--dir "+filepath.Clean("/tmp/input")) {
 		t.Errorf("expected configured allowed path in args, got: %s", joined)
 	}
 

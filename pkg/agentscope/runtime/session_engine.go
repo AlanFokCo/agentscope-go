@@ -12,10 +12,9 @@ import (
 
 // SessionEngineConfig holds the configuration for creating a SessionEngine.
 type SessionEngineConfig struct {
-	LoopOptions    []loop.Option
-	ContextManager loop.ContextManager
-	Budget         Budget
-	Store          SessionStore
+	LoopOptions []loop.Option
+	Budget      Budget
+	Store       SessionStore
 }
 
 // SessionEngine orchestrates a multi-turn session. It wires together a Loop,
@@ -25,7 +24,7 @@ type SessionEngine struct {
 	mu             sync.RWMutex
 	turnMu         sync.Mutex
 	id             string
-	loopOpts       []loop.Option
+	loop           *loop.Loop
 	contextManager loop.ContextManager
 	budget         *BudgetTracker
 	hooks          *SessionHookManager
@@ -48,14 +47,21 @@ func NewSessionEngine(cfg SessionEngineConfig) *SessionEngine {
 
 	bt := NewBudgetTracker(cfg.Budget)
 	hooks := NewSessionHookManager()
-	contextManager := cfg.ContextManager
-	if contextManager == nil {
-		contextManager = loop.NewDefaultContextManager()
-	}
+	// Resolve options once and retain the configured manager across turns.
+	// In particular, preserve restored history and custom compression managers.
+	var contextManager loop.ContextManager
+	loopOpts := append([]loop.Option(nil), cfg.LoopOptions...)
+	loopOpts = append(loopOpts, func(c *loop.Config) {
+		if c.ContextManager == nil {
+			c.ContextManager = loop.NewDefaultContextManager()
+		}
+		contextManager = c.ContextManager
+	})
+	sessionLoop := loop.New(loopOpts...)
 
 	se := &SessionEngine{
 		id:             id,
-		loopOpts:       append([]loop.Option(nil), cfg.LoopOptions...),
+		loop:           sessionLoop,
 		contextManager: contextManager,
 		budget:         bt,
 		hooks:          hooks,
@@ -107,10 +113,8 @@ func (se *SessionEngine) SubmitMessage(ctx context.Context, input string) <-chan
 			se.mu.Unlock()
 		}()
 
-		loopOpts := append([]loop.Option(nil), se.loopOpts...)
-		loopOpts = append(loopOpts, loop.WithContextManager(se.contextManager))
 		turn := NewTurn(TurnConfig{
-			Loop:   loop.New(loopOpts...),
+			Loop:   se.loop,
 			Hooks:  se.hooks,
 			Budget: se.budget,
 		})

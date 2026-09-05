@@ -255,16 +255,17 @@ func (s *Server) Close() error {
 
 // Client connects to a remote agent server.
 type Client struct {
-	addr      string
-	conn      net.Conn
-	t         *connTransport
-	mu        sync.Mutex
-	pending   map[string]chan *Message
-	streams   map[string]chan *Message
-	closed    chan struct{}
-	closeOnce sync.Once
-	closeErr  error
-	readWg    sync.WaitGroup
+	addr       string
+	conn       net.Conn
+	t          *connTransport
+	mu         sync.Mutex
+	pending    map[string]chan *Message
+	streams    map[string]chan *Message
+	closed     chan struct{}
+	readClosed bool
+	closeOnce  sync.Once
+	closeErr   error
+	readWg     sync.WaitGroup
 }
 
 // NewClient connects to the remote server at addr.
@@ -298,6 +299,11 @@ func (c *Client) readLoop() {
 		c.mu.Lock()
 		streamCh, isStream := c.streams[msg.ID]
 		pendingCh, isPending := c.pending[msg.ID]
+		// Claim this response while holding the registry lock. A canceled
+		// request may be replaced as soon as the lock is released.
+		if isPending && !isStream {
+			delete(c.pending, msg.ID)
+		}
 		c.mu.Unlock()
 
 		// Never hold c.mu while sending to a consumer-controlled channel.
@@ -309,16 +315,15 @@ func (c *Client) readLoop() {
 			}
 			if msg.StreamEnd {
 				c.mu.Lock()
-				delete(c.streams, msg.ID)
+				if c.streams[msg.ID] == streamCh {
+					delete(c.streams, msg.ID)
+				}
 				c.mu.Unlock()
 				close(streamCh)
 			}
 		} else if isPending {
 			pendingCh <- msg
 			close(pendingCh)
-			c.mu.Lock()
-			delete(c.pending, msg.ID)
-			c.mu.Unlock()
 		}
 	}
 }
@@ -326,6 +331,7 @@ func (c *Client) readLoop() {
 func (c *Client) closeResponseChannels() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.readClosed = true
 	for id, ch := range c.pending {
 		close(ch)
 		delete(c.pending, id)
@@ -338,10 +344,17 @@ func (c *Client) closeResponseChannels() {
 
 // Send sends a request and waits for a single response (request-response pattern).
 func (c *Client) Send(ctx context.Context, msg *Message) (*Message, error) {
+	if msg == nil {
+		return nil, errors.New("client: nil message")
+	}
 	ch := make(chan *Message, 1)
 
 	c.mu.Lock()
-	if _, exists := c.pending[msg.ID]; exists {
+	if c.readClosed {
+		c.mu.Unlock()
+		return nil, errors.New("client: connection closed")
+	}
+	if c.pending[msg.ID] != nil || c.streams[msg.ID] != nil {
 		c.mu.Unlock()
 		return nil, fmt.Errorf("client: duplicate request ID %q", msg.ID)
 	}
@@ -350,7 +363,9 @@ func (c *Client) Send(ctx context.Context, msg *Message) (*Message, error) {
 
 	if err := c.t.Send(ctx, msg); err != nil {
 		c.mu.Lock()
-		delete(c.pending, msg.ID)
+		if c.pending[msg.ID] == ch {
+			delete(c.pending, msg.ID)
+		}
 		c.mu.Unlock()
 		return nil, fmt.Errorf("client: send: %w", err)
 	}
@@ -358,7 +373,9 @@ func (c *Client) Send(ctx context.Context, msg *Message) (*Message, error) {
 	select {
 	case <-ctx.Done():
 		c.mu.Lock()
-		delete(c.pending, msg.ID)
+		if c.pending[msg.ID] == ch {
+			delete(c.pending, msg.ID)
+		}
 		c.mu.Unlock()
 		return nil, ctx.Err()
 	case resp, ok := <-ch:
@@ -372,20 +389,30 @@ func (c *Client) Send(ctx context.Context, msg *Message) (*Message, error) {
 // Stream sends a message and returns a channel that receives streaming responses.
 // The channel is closed after a message with StreamEnd=true is received.
 func (c *Client) Stream(ctx context.Context, msg *Message) (<-chan *Message, error) {
+	if msg == nil {
+		return nil, errors.New("client: nil message")
+	}
 	ch := make(chan *Message, 64)
 
 	c.mu.Lock()
-	if _, exists := c.streams[msg.ID]; exists {
+	if c.readClosed {
+		c.mu.Unlock()
+		return nil, errors.New("client: connection closed")
+	}
+	if c.streams[msg.ID] != nil || c.pending[msg.ID] != nil {
 		c.mu.Unlock()
 		return nil, fmt.Errorf("client: duplicate stream ID %q", msg.ID)
 	}
 	c.streams[msg.ID] = ch
 	c.mu.Unlock()
 
-	msg.IsStream = true
-	if err := c.t.Send(ctx, msg); err != nil {
+	request := *msg
+	request.IsStream = true
+	if err := c.t.Send(ctx, &request); err != nil {
 		c.mu.Lock()
-		delete(c.streams, msg.ID)
+		if c.streams[msg.ID] == ch {
+			delete(c.streams, msg.ID)
+		}
 		c.mu.Unlock()
 		return nil, fmt.Errorf("client: stream send: %w", err)
 	}

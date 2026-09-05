@@ -25,7 +25,7 @@ type ExecRequest struct {
 	Timeout        time.Duration     // execution timeout (default: 30s)
 	MemoryMax      uint64            // max memory in bytes (default: 64MB)
 	Fuel           int64             // instruction fuel limit
-	MaxOutputBytes int64            // combined stdout/stderr capture bound
+	MaxOutputBytes int64             // combined stdout/stderr capture bound
 }
 
 // ExecResult holds the output of a WASM execution.

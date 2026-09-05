@@ -304,7 +304,9 @@ func (b *cappedBuffer) Write(p []byte) (int, error) {
 }
 
 func (b *cappedBuffer) Bytes() []byte { return b.buf.Bytes() }
+
 func (b *cappedBuffer) String() string { return b.buf.String() }
+
 func (b *cappedBuffer) Truncated() bool {
 	b.budget.mu.Lock()
 	defer b.budget.mu.Unlock()
