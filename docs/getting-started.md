@@ -107,7 +107,7 @@ Optional: `DASHSCOPE_BASE_URL` to override the DashScope endpoint.
 
 ## Running Examples
 
-The project includes 47 examples. Run any of them:
+The project includes 54 examples. Run any of them:
 
 ```bash
 export DASHSCOPE_API_KEY=sk-...
@@ -128,4 +128,4 @@ See [examples.md](examples.md) for the full list.
 - [Tools](tools.md) — Built-in tools, custom function tools, and document parsers
 - [Middleware](middleware.md) — Intercept and extend agent behavior (7 hooks)
 - [Deployment](deployment.md) — Run as an HTTP service, workspace sandboxing, agent pools
-- [Go-Exclusive Features](go-exclusive.md) — Deterministic replay, fan-out pool, hot-reload, WASM sandbox, TCP mesh, load testing
+- [Go Runtime Features](go-exclusive.md) — Deterministic replay, fan-out pool, hot-reload, WASM sandbox, TCP mesh, load testing

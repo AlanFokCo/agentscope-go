@@ -34,16 +34,16 @@ AgentScope Go es la implementación en Go del framework multi-agente para LLMs [
 
 | Propiedad | Qué significa para ti |
 |----------|----------------------|
-| **Despliegue como binario único** | `go build` genera un único binario estático. Sin pip, sin venv, sin capas de Docker para dependencias de Python. Despliega en una VM, un contenedor o un dispositivo edge con `scp`. |
-| **Concurrencia real** | Goroutines y canales, no `async/await`. Procesa miles de sesiones de agentes concurrentes en un solo nodo con memoria acotada. El `AgentPool` aplica backpressure automáticamente. |
+| **Despliegue como binario único** | Compila un ejecutable Go para la plataforma elegida. El enlace estático depende de CGO y de las dependencias; los backends opcionales como Wasmtime o Docker requieren su propio runtime. |
+| **Ejecución concurrente** | Goroutines y canales permiten trabajo paralelo. `AgentPool` limita trabajadores y trabajos en cola; dimensiona memoria y concurrencia mediante pruebas de carga. |
 | **Biblioteca integrable** | `go get` e importa en cualquier servicio Go existente. Sin procesos separados, sin sidecar, sin sobrecarga de IPC. Tu servidor HTTP, servicio gRPC o herramienta CLI gana capacidades de agente dentro del mismo proceso. |
-| **Endurecido para producción** | Seguridad de tipos en tiempo de compilación. Sin `None` en tiempo de ejecución, sin `AttributeError` en producción. Las interfaces hacen cumplir los contratos. Los genéricos eliminan el casting. El sistema de tipos detecta errores de integración antes del despliegue. |
+| **Contratos explícitos** | Las interfaces detectan incompatibilidades de tipos al compilar. Los errores de ejecución, valores nil, problemas de concurrencia y límites de aislamiento todavía requieren validación; consulta [estabilidad y limitaciones](STABILITY.md). |
 
 ---
 
-## Características Exclusivas de Go
+## Capacidades del runtime Go
 
-Estas capacidades existen únicamente en la implementación de Go. Aprovechan los primitivos de concurrencia, el sistema de tipos y el modelo de compilación de Go.
+Estas secciones describen capacidades de este repositorio Go; no constituyen una comparación entre versiones del proyecto Python.
 
 ### Estudio Web UI (`webui/`)
 
@@ -58,21 +58,26 @@ http.ListenAndServe(":8080", handler)
 
 ### Reproducción Determinista (`replay/`)
 
-Graba cada llamada a LLM durante una sesión. Reproduce la secuencia exacta en CI sin costos de API ni dependencia de red.
+Graba respuestas del modelo y reprodúcelas en el orden de la cinta sin llamar a su API. No se valida la igualdad de los prompts ni se reproducen los efectos de las herramientas: usa herramientas simuladas o aisladas. `NewUnifiedAgent` requiere un modelo no nil; el ejemplo usa `agenttest` de `pkg/agentscope/agenttest`.
 
 ```go
-// Record
+// cm is an initialized, non-nil ChatModel used for recording.
 recorder := replay.NewRecorder()
 a := agent.NewUnifiedAgent("bot", "...", cm, agent.WithMiddlewares(recorder))
-a.Reply(ctx, "plan a trip to Tokyo")
-tape := recorder.Tape()
-replay.SaveTape(tape, "testdata/trip.json")
+if _, err := a.Reply(ctx, "plan a trip to Tokyo"); err != nil {
+    log.Fatal(err)
+}
+store, err := replay.NewFileStore("testdata")
+if err != nil { log.Fatal(err) }
+if err := store.Save(ctx, "trip", recorder.Tape()); err != nil { log.Fatal(err) }
 
-// Replay in CI (zero API calls)
-tape, _ := replay.LoadTape("testdata/trip.json")
+// Replay model responses with an offline, non-nil model placeholder.
+tape, err := store.Load(ctx, "trip")
+if err != nil { log.Fatal(err) }
 replayer := replay.NewReplayer(tape)
-a := agent.NewUnifiedAgent("bot", "...", cm, agent.WithMiddlewares(replayer))
-a.Reply(ctx, "plan a trip to Tokyo") // returns recorded response instantly
+placeholder := agenttest.NewMockModel()
+replayed := agent.NewUnifiedAgent("bot", "...", placeholder, agent.WithMiddlewares(replayer))
+if _, err := replayed.Reply(ctx, "plan a trip to Tokyo"); err != nil { log.Fatal(err) }
 ```
 
 ### Piscina de Agentes con Fan-out (`runtime/`)
@@ -119,35 +124,51 @@ cfg := reloader.Get()
 
 ### Sandbox WASM (`wasm/`)
 
-Ejecuta código de herramientas no confiable en un sandbox WASM. Inicio en frío subsegundo (vs. la sobrecarga de varios segundos de Docker). Memoria limitada, duración acotada, sistema de archivos aislado.
+Ejecuta módulos WASM con límites de combustible, memoria lineal, tiempo, directorios y captura de salida mediante Wasmtime. Wasmer y wasm3 pueden detectarse, pero la ejecución con los límites predeterminados devuelve `ErrUnsupportedLimits`. El inicio y la compatibilidad dependen del runtime instalado.
 
 ```go
-rt, _ := wasm.AutoDiscover() // finds wasmtime/wasmer/wasm3 in PATH
+rt, err := wasm.NewCLIRuntime("wasmtime")
+if err != nil { log.Fatal(err) }
 sandbox := wasm.NewSandbox(wasm.SandboxConfig{
-    Runtime:     rt,
-    MaxMemory:   64 * 1024 * 1024, // 64MB
-    MaxDuration: 5 * time.Second,
+    Runtime:        rt,
+    MaxMemory:      64 * 1024 * 1024,
+    MaxDuration:    5 * time.Second,
+    MaxOutputBytes: 1024 * 1024,
 })
-
-result, _ := sandbox.Run(ctx, "tools/transform.wasm", inputJSON)
+result, err := sandbox.Run(ctx, "tools/transform.wasm", inputJSON)
+if err != nil { log.Fatal(err) }
+if result.ExitCode != 0 || result.OutputTruncated {
+    log.Fatalf("WASM exit=%d, output truncated=%v", result.ExitCode, result.OutputTruncated)
+}
 fmt.Println(string(result.Stdout))
 ```
 
 ### Malla de Agentes por TCP (`a2a/grpc/`)
 
-Comunicación bidireccional de baja latencia entre agentes sobre TCP con JSON delimitado por líneas. Los agentes se conectan a un servidor de malla e intercambian mensajes tipados con soporte de streaming.
+Comunicación TCP con JSON delimitado por líneas; este paquete no implementa el protocolo gRPC. La respuesta debe conservar el ID de la solicitud. En `Client.Stream`, solo recibir `StreamEnd` confirma éxito: la cancelación, desconexión o saturación del búfer puede cerrar el canal sin completar la respuesta.
 
 ```go
-server := grpc.NewServer(":9090", func(msg *grpc.Message) *grpc.Message {
-    // Route or process inter-agent messages
-    return &grpc.Message{From: "router", To: msg.From, Payload: responseJSON}
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+server, err := grpc.NewServer("127.0.0.1:0")
+if err != nil { log.Fatal(err) }
+defer server.Close()
+server.OnMessage(func(msg *grpc.Message) *grpc.Message {
+    return &grpc.Message{ID: msg.ID, From: "router", To: msg.From, Payload: msg.Payload}
 })
-server.Start(ctx)
+go func() {
+    if err := server.Listen(ctx); err != nil { log.Print(err) }
+}()
 
-// Client side
-client := grpc.NewClient("localhost:9090", "agent-alpha")
-client.Send(ctx, &grpc.Message{To: "agent-beta", Method: "analyze", Payload: data})
-resp, _ := client.Receive(ctx)
+client, err := grpc.NewClient(server.Addr())
+if err != nil { log.Fatal(err) }
+defer client.Close()
+resp, err := client.Send(ctx, &grpc.Message{
+    ID: "request-1", From: "agent-alpha", To: "agent-beta", Method: "analyze",
+    Payload: json.RawMessage(`{"task":"analyze"}`),
+})
+if err != nil { log.Fatal(err) }
+fmt.Println(string(resp.Payload))
 ```
 
 ### Pruebas de Carga para Agentes (`bench/`)
@@ -189,7 +210,7 @@ Todos los proveedores soportan `Chat`, `ChatStream` (SSE), `CountTokens` y llama
 | **Moonshot** | `model.NewMoonshotChatModel` | kimi-k2.6, moonshot-v1-128k |
 | **xAI** | `model.NewXAIChatModel` | grok-3, grok-4.3 |
 
-54 fichas de modelo con tamaños de contexto, capacidades y estado se incluyen mediante `//go:embed`.
+78 fichas de modelo con tamaños de contexto, capacidades y estado se incluyen mediante `//go:embed`.
 
 Características adicionales de modelos: `FallbackChatModel` (conmutación automática primario→respaldo), `ClientOptions` (timeout/headers/transporte HTTP personalizados), pensamiento extendido con tokens de presupuesto, streaming de subtítulos de audio (PCM→WAV).
 
@@ -269,7 +290,7 @@ Arquitectura en cadena de cebolla: cada gancho envuelve al siguiente en la caden
 | `OnActing` | Envuelve cada ejecución de herramienta |
 | `OnSystemPrompt` | Transforma el prompt del sistema (modo pipeline) |
 | `OnCompressContext` | Envuelve la compresión de contexto |
-| `OnCheckPermission` | Envuelve las verificaciones de permiso para llamadas a herramientas |
+| `OnCheckPermission` | Wrapper de permisos; requiere integrar explícitamente `BuildCheckPermissionChain` |
 
 Middlewares integrados: TracingMiddleware, TTSMiddleware, ReplyBudgetControlMiddleware, LongTermMemoryMiddleware, CostTrackerMiddleware, MetricsMiddleware.
 
@@ -420,7 +441,7 @@ a := agent.NewUnifiedAgent("bot", "...", cm,
 ```
 pkg/agentscope/
 ├── agent/                  # Interfaz de Agente + UnifiedAgent, UserAgent, A2AAgent
-├── model/                  # Interfaz ChatModel + 9 proveedores + 54 fichas de modelo
+├── model/                  # Interfaz ChatModel + 9 proveedores + 78 fichas de modelo
 ├── tool/                   # Interfaz de Herramienta + FunctionTool + 17 herramientas integradas + análisis de seguridad
 ├── message/                # Msg + ContentBlock (texto, pensamiento, tool_call, tool_result, datos, pista)
 ├── event/                  # 30 tipos de evento para el ciclo de vida en streaming
@@ -431,9 +452,9 @@ pkg/agentscope/
 ├── credential/             # 9 tipos de credenciales de proveedor + detección automática desde env
 │
 ├── replay/                 # Grabación/reproducción determinista de llamadas a LLM
-├── runtime/                # AgentPool, SessionEngine, AgentManager, BudgetTracker, Harness
+├── runtime/                # AgentPool, SessionEngine, AgentManager, BudgetTracker, Run
 ├── hotreload/              # Recargador de configuración genérico tipado con observación de archivos
-├── wasm/                   # Sandbox WASM (backends wasmtime/wasmer/wasm3)
+├── wasm/                   # Sandbox WASM (límites mediante Wasmtime)
 ├── bench/                  # Framework de pruebas de carga con informes P50/P95/P99
 ├── a2a/                    # Tipos de protocolo A2A + cliente HTTP
 ├── a2a/grpc/               # Transporte TCP: malla de agentes bidireccional
@@ -465,7 +486,7 @@ pkg/agentscope/
 ├── sandbox/                # Políticas de ejecución (Allow/Deny/AskUser)
 ├── platform/               # Detección de shell multiplataforma + seguridad
 ├── logging/                # Manejadores de registro estructurado
-├── protocol/               # LoopState, LoopEvent — tipos compartidos
+├── protocol/               # LoopState, ApprovalPolicy, PermissionProfile
 ├── errors/                 # Jerarquía de errores tipados (Retriable, Throttled, PermissionDenied)
 ├── config/                 # Carga de configuración
 ├── app/                    # Bootstrap de aplicación
@@ -480,7 +501,7 @@ pkg/agentscope/
 
 ## Ejemplos
 
-47 ejemplos en `examples/`. Ejecuta cualquiera con `go run ./examples/<nombre>`.
+54 ejemplos en `examples/`. Ejecuta cualquiera con `go run ./examples/<nombre>`.
 
 | Ejemplo | Descripción |
 |---------|-------------|
@@ -511,7 +532,7 @@ pkg/agentscope/
 | `agent_team` | Equipo Líder/Trabajador con enrutamiento de mensajes |
 | `mcp` | Cliente MCP: descubrimiento de herramientas + ejecución remota |
 | `a2a_http` | Agente-a-Agente sobre HTTP |
-| **Go-Exclusive** | |
+| **Runtime Go** | |
 | `replay` | Graba llamadas a LLM, reproduce en CI sin costos de API |
 | `agent_pool` | Piscina de agentes con fan-out y backpressure |
 | `hotreload` | Actualizaciones de configuración sin downtime con `Reloader[T]` tipado |
@@ -545,52 +566,22 @@ pkg/agentscope/
 
 ---
 
-## Comparación con Python
+## Relación con Python
 
-Comparación factual de características disponibles en cada implementación:
-
-| Capacidad | Go | Python |
-|------------|:--:|:------:|
-| **Despliegue** | Binario estático único | pip + venv + dependencias |
-| **Modelo de concurrencia** | Goroutines (multiplexadas por hilos del SO) | asyncio (bucle de eventos de un solo hilo) |
-| **Seguridad de tipos** | Tiempo de compilación (interfaces + genéricos) | Tiempo de ejecución (pistas de tipo opcionales) |
-| **Reproducción determinista** | Sí (`replay/`) | No |
-| **Piscina de agentes con backpressure** | Sí (`runtime/AgentPool`) | No |
-| **Configuración con hot-reload** | Sí (`hotreload/Reloader[T]`) | No |
-| **Sandbox de herramientas WASM** | Sí (`wasm/`) | No |
-| **Malla de agentes TCP** | Sí (`a2a/grpc/`) | No |
-| **Pruebas de carga integradas** | Sí (`bench/`) | No |
-| **Interfaz Web UI integrada** | Sí (`webui/`) | No |
-| **Sistema de Hub (MCP + Skill)** | Sí (`hub/`) | Parcial (solo registro) |
-| **Control de acceso** | Sí (`access/`) | No |
-| **Analizadores de documentos** | 5 formatos (Texto/PDF/Word/Excel/PPT) | Externo (cargadores de LangChain) |
-| **Backends de espacio de trabajo** | 8 | 3 (Local/Docker/E2B) |
-| **Almacenes vectoriales** | 5 (InMemory/Qdrant/ES/MongoDB/Milvus) | 3 (InMemory/Qdrant/ChromaDB) |
-| **Backends de almacenamiento** | 4 (InMemory/File/Redis/SQL) | 2 (InMemory/File) |
-| **Proveedores de TTS** | 3 (DashScope/OpenAI/Gemini) | 1 (DashScope) |
-| **Proveedores de modelos** | 9 | 9 |
-| **Soporte MCP** | Cliente + Servidor | Cliente + Servidor |
-| **Protocolo A2A** | HTTP + malla TCP | Solo HTTP |
-| **Ganchos de middleware** | 7 | 5 |
-| **Tracing OpenTelemetry** | Sí | Sí |
-| **Breaker de circuito / limitador de tasa** | Sí (`resilience/`) | No |
-| **Multiplataforma (Windows)** | Sí (`platform/`) | Parcial |
-| **Soporte de embedding** | 4 proveedores | 4 proveedores |
-| **Equipos de agentes** | Sí | Sí |
-| **Pipeline / MsgHub** | Sí | Sí |
-
----
+Este repositorio documenta sus propias API y limitaciones. Las comparaciones con Python requieren versiones o commits explícitos; no se mantiene aquí una tabla de ausencias de funciones sin versiones.
 
 ## Documentación
 
 La documentación detallada está disponible en el directorio [`docs/`](docs/):
 
+- [Estabilidad y límites pendientes](STABILITY.md) — Garantías de API y trabajo de endurecimiento abierto
+- [Endurecimiento de ejecución y sesiones](docs/adversarial-hardening.md) — Comportamiento tras los PR #4 y #5
 - [Primeros Pasos](docs/getting-started.md) — Instalación, primer agente, configuración del entorno
 - [Arquitectura](docs/architecture.md) — Estructura de paquetes, conceptos centrales, flujo de datos
 - [Proveedores de Modelos](docs/model-providers.md) — Configura 9 proveedores de LLM con ejemplos
 - [Herramientas](docs/tools.md) — Herramientas integradas, funciones personalizadas, permisos
 - [Middleware](docs/middleware.md) — Sistema de 7 ganchos, tracing, presupuesto, memoria
-- [Ejemplos](docs/examples.md) — Catálogo completo de 47 ejemplos ejecutables
+- [Ejemplos](docs/examples.md) — Catálogo completo de 54 ejemplos ejecutables
 - [Despliegue](docs/deployment.md) — Servicio HTTP, sandboxing, checklist de producción
 
 ## Contribuir

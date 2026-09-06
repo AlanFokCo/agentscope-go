@@ -57,7 +57,10 @@ Landed:
   `permission.Engine` and `pipeline.MsgHub` are mutex-guarded.
 - **Streaming:** long streams are no longer truncated by the client's whole-request
   timeout; `ChatResponse` carries `Error` and `StopReason`.
-- **Durability:** all file-backed writes are atomic (temp + fsync + rename).
+- **Durability:** `storage.FileStorage`, runtime file-session saves, and selected
+  write paths use `fsutil.WriteFileAtomic` (temp + file fsync + rename). This is
+  not universal: replay FileStore, embedding cache, local backend writes, and
+  local Edit/MultiEdit/ApplyPatch still use `os.WriteFile`.
 - **Budgets:** token and duration budgets are enforced on the loop path.
 - **Ops:** HTTP servers set `ReadHeaderTimeout`/`IdleTimeout`/`MaxHeaderBytes` and
   cap request bodies; `/healthz` + `/readyz`; graceful `Shutdown`; reference
@@ -67,16 +70,21 @@ Landed:
 - **Audit:** structured `audit.Logger` interface with InMemory/File/Multi/Nop
   implementations; the orchestrator records every tool execution, permission
   denial, and sandbox policy decision.
-- **Process isolation:** child processes run in a dedicated process group
-  (`Setpgid`); timeout kills the entire group, preventing orphans and fork-bombs.
+- **Process isolation:** on Unix, child processes run in a dedicated process group
+  (`Setpgid`); timeout kills that group, reducing orphaned children. This is not a
+  process-count limit, and Windows does not use this process-group mechanism.
 - **Interpreter attack detection:** `CheckInterpreterAttack` detects dangerous
   API calls hidden inside `python -c`, `node -e`, `perl -e`, etc. (8 languages,
   20+ dangerous API patterns).
-- **Sandbox policy enforcement:** `sandbox.Policy` is now actually enforced by
-  the orchestrator — FSReadOnly blocks writes, AllowExec=false blocks bash,
-  NetDisabled blocks WebFetch, DenyPaths blocks file access.
-- **Write hardening:** 10 MB write-size cap, atomic writes via `fsutil.WriteFileAtomic`,
-  executable-extension bypass-immune ASK (.sh/.py/.exe etc.).
+- **Sandbox policy checks:** the orchestrator applies selected name-based checks
+  for built-in tools. These checks are not a complete isolation boundary:
+  custom tools, alternate call-name casing, shell/network behavior, and resource
+  limits need separate enforcement. Policy configuration alone does not route
+  execution through `Sandbox.Execute`; use and validate a workspace backend.
+- **Write hardening:** the local Write tool has a 10 MB input-size cap, atomic
+  replacement via `fsutil.WriteFileAtomic`, and executable-extension
+  bypass-immune ASK (.sh/.py/.exe etc.). Other file tools and backend paths
+  have different persistence behavior.
 - **Testing:** fuzzers for the safety parsers and JSON decoder; CI fuzz smoke +
   coverage.
 
@@ -92,14 +100,16 @@ Recently landed (since initial hardening):
   `tool.WithBackend(ctx, workspace.NewToolBackend(ws))` for real Docker/E2B
   isolation; the rich local path (streaming/cwd/read-cache) is the default.
 - ~~Prometheus exporter + `/metrics` + trace-context propagation~~ **Done:**
-  `metrics/prometheus` provider; `ctx` threaded through `loop.Hook` so spans
-  nest under the caller.
+  `metrics/prometheus` provider; trace integration through middleware/hooks. The current `loop.Hook` methods
+  do not accept `context.Context`; caller-context propagation is API-specific.
 - ~~JSON-Schema input validation~~ **Done:** `tool.ValidateInput` with fuzz target.
 - ~~Module `/v2` decision~~ **Done:** module path is now `/v2`.
 
-- ~~USD/CNY spend cap~~ **Done:** `CostTrackerMiddleware` now supports
-  `WithMaxCostUSD` hard cap (pre-flight budget check, returns `ErrBudgetExceeded`)
-  and `WithExchangeRate("CNY", 7.2)` for display-currency conversion.
+- **USD/CNY cost tracking:** `WithMaxCostUSD` rejects subsequent calls after
+  already-accounted cost reaches the threshold (`ErrBudgetExceeded`). It does
+  not reserve or estimate the next call's cost; individual or concurrent calls
+  may overshoot. Missing usage/prices prevent complete accounting.
+  `WithExchangeRate("CNY", 7.2)` converts the tracked total for display.
 - ~~Record/replay eval harness~~ **Done:** `replay.Scorer` interface with 5
   built-in scorers (ExactMatch, Contains, JSONField, TextContains, Composite),
   `EvalTape()` runner producing `EvalReport`, and `AssertTape(t, ...)` go-test
@@ -110,7 +120,7 @@ Recently landed (since initial hardening):
 - ~~`exception`→`errors` migration (Phase 1)~~ **Done:** Tool error types
   (`ToolNotFoundError`, `ToolJSONDecodeError`, etc.) moved to `errors/`;
   `errors.AgentError` gained `AgentMsg`/`AgentMessage()` for LLM-facing messages;
-  `exception` package is now type aliases with deprecation notices.
+  `exception` aliases were a transitional step; the package has since been deleted.
 - ~~`SecretStr.UnmarshalJSON`~~ **Done:** `SecretStr` can now be populated from
   JSON config files; value is stored internally, never re-exposed via Marshal.
 
@@ -121,12 +131,11 @@ Recently landed (since initial hardening):
 - ~~`SecretStr` dual-field (Phase 2)~~ **Done:** all 8 model provider configs
   now carry `SecretAPIKey SecretStr` alongside deprecated `APIKey string`.
   Constructors use `ResolveAPIKey()` to prefer the secret field. TTS/embedding/
-  workspace configs deferred to v3 (lower sensitivity).
+  workspace configs were added in a later adoption pass listed below.
 - ~~`exception` package removal (Phase 2)~~ **Done:** all 4 importing packages
   (`agent`, `tool`, `tool/orchestrator`, `tool/orchestrator_test`) migrated to
   `errors/`. Zero imports of `exception` remain outside the alias package itself.
-  The `exception` package still exists as a backward-compatible alias layer and
-  will be removed after the next minor version.
+  The temporary alias layer was removed in the final deletion step below.
 - ~~OTLP setup helper~~ **Done:** shipped as `examples/tracing_otlp/` with a
   documented wiring pattern. No OTel SDK dependency added to the library.
 
@@ -150,4 +159,14 @@ Recently landed (since initial hardening):
   `BubblewrapWorkspace` containment is separator-aware.
   All code batches passed evaluator adversarial review (no HIGH findings).
 
-All originally-planned production hardening items are now complete.
+## Open hardening work
+
+- Complete sandbox enforcement across custom tools, call-name aliases, shell
+  execution, network allowlists, and resource limits.
+- Isolate nested session-state objects and provide an explicit restore lifecycle.
+- Extend atomic persistence to the remaining direct-write paths.
+- Define cost reservation/accounting if a strict monetary ceiling is required.
+
+See [execution and session hardening](docs/adversarial-hardening.md) for the
+changes and limits established by PRs #4 and #5. Historical completed entries
+above describe individual features, not a claim that these open items are solved.

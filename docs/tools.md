@@ -195,18 +195,23 @@ results, _ := rerankedIdx.Query(ctx, "search query", 5)
 
 ## WASM Sandbox
 
-Execute untrusted code as WebAssembly modules. The `wasm` package provides a `Sandbox` that enforces memory, time, and instruction-count limits.
+The CLI implementation enforces fuel, linear-memory, timeout, directory-grant, and output-capture settings through Wasmtime. Wasmer and wasm3 may be discovered, but execution with the default resource limits returns `ErrUnsupportedLimits`. Select Wasmtime explicitly and check both errors and result status. Empty `AllowedPaths` grants no host directories.
 
 ```go
-rt, _ := wasm.NewCLIRuntime("")  // auto-discover wasmtime/wasmer/wasm3
+rt, err := wasm.NewCLIRuntime("wasmtime")
+if err != nil { log.Fatal(err) }
 sandbox := wasm.NewSandbox(wasm.SandboxConfig{
-    Runtime:     rt,
-    MaxMemory:   64 * 1024 * 1024,
-    MaxDuration: 10 * time.Second,
-    MaxFuel:     1_000_000,
+    Runtime:        rt,
+    MaxMemory:      64 * 1024 * 1024,
+    MaxDuration:    5 * time.Second,
+    MaxOutputBytes: 1024 * 1024,
 })
-
-result, _ := sandbox.Run(ctx, "plugin.wasm", inputData)
+result, err := sandbox.Run(ctx, "tools/transform.wasm", []byte(`{"text":"hello"}`))
+if err != nil { log.Fatal(err) }
+if result.ExitCode != 0 || result.OutputTruncated {
+    log.Fatalf("WASM exit=%d, output truncated=%v", result.ExitCode, result.OutputTruncated)
+}
+fmt.Println(string(result.Stdout))
 ```
 
 This is complementary to workspace sandboxing (Docker, K8s, etc.) — WASM provides lighter-weight isolation without requiring container infrastructure. See [Deployment](deployment.md) for more sandbox options.
@@ -250,4 +255,4 @@ myTool.AddMiddleware(&AuditMiddleware{})
 - [Architecture](architecture.md) — Tool system in the broader design
 - [Middleware](middleware.md) — Agent-level middleware (including OnActing hook)
 - [Deployment](deployment.md) — Workspace sandboxing for tool execution
-- [Go-Exclusive Features](go-exclusive.md) — WASM sandbox details
+- [Go Runtime Features](go-exclusive.md) — WASM sandbox details

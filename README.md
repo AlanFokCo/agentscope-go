@@ -32,16 +32,16 @@ AgentScope Go is the Go implementation of the [AgentScope](https://github.com/ag
 
 | Property | What it means for you |
 |----------|----------------------|
-| **Single binary deployment** | `go build` produces one static binary. No pip, no venv, no Docker layer for Python dependencies. Deploy to a VM, a container, or an edge device with `scp`. |
-| **True concurrency** | Goroutines and channels — not `async/await`. Process thousands of concurrent agent sessions on a single node with bounded memory. The `AgentPool` applies backpressure automatically. |
+| **Single binary deployment** | Build a Go executable for your target platform. Static linking depends on CGO and dependencies; optional backends such as Wasmtime or Docker still need their runtime. |
+| **Concurrent execution** | Goroutines and channels support parallel work. `AgentPool` bounds workers and the queued job count; load-test your workload to size memory and concurrency. |
 | **Embeddable library** | `go get` and import into any existing Go service. No separate process, no sidecar, no IPC overhead. Your HTTP server, gRPC service, or CLI tool gains agent capabilities in-process. |
-| **Production-hardened** | Compile-time type safety. No `None` at runtime, no `AttributeError` in production. Interfaces enforce contracts. Generics eliminate casting. The type system catches integration bugs before deployment. |
+| **Explicit contracts** | Go interfaces catch type mismatches at compile time. Runtime errors, nil values, concurrency bugs, and isolation boundaries still require validation; see [stability and limitations](STABILITY.md). |
 
 ---
 
-## Go-Exclusive Features
+## Go Runtime Features
 
-These capabilities exist only in the Go implementation. They leverage Go's concurrency primitives, type system, and compilation model.
+These sections describe capabilities provided by this Go repository. They are not a version-by-version comparison with the Python project.
 
 ### Web UI Studio (`webui/`)
 
@@ -56,26 +56,31 @@ http.ListenAndServe(":8080", handler)
 
 ### Deterministic Replay (`replay/`)
 
-Record every LLM call during a session. Replay the exact sequence in CI without API costs or network dependency.
+Record model responses and replay them in tape order without calling the model API. The replayer does not validate prompt equality or replay tool side effects; use mock or isolated tools for offline tests. `NewUnifiedAgent` still requires a non-nil model. The snippet uses `agenttest` from `pkg/agentscope/agenttest`.
 
 ```go
-// Record
+// cm is an initialized, non-nil ChatModel used for recording.
 recorder := replay.NewRecorder()
 a := agent.NewUnifiedAgent("bot", "...", cm, agent.WithMiddlewares(recorder))
-a.Reply(ctx, "plan a trip to Tokyo")
-tape := recorder.Tape()
-replay.SaveTape(tape, "testdata/trip.json")
+if _, err := a.Reply(ctx, "plan a trip to Tokyo"); err != nil {
+    log.Fatal(err)
+}
+store, err := replay.NewFileStore("testdata")
+if err != nil { log.Fatal(err) }
+if err := store.Save(ctx, "trip", recorder.Tape()); err != nil { log.Fatal(err) }
 
-// Replay in CI (zero API calls)
-tape, _ := replay.LoadTape("testdata/trip.json")
+// Replay model responses with an offline, non-nil model placeholder.
+tape, err := store.Load(ctx, "trip")
+if err != nil { log.Fatal(err) }
 replayer := replay.NewReplayer(tape)
-a := agent.NewUnifiedAgent("bot", "...", cm, agent.WithMiddlewares(replayer))
-a.Reply(ctx, "plan a trip to Tokyo") // returns recorded response instantly
+placeholder := agenttest.NewMockModel()
+replayed := agent.NewUnifiedAgent("bot", "...", placeholder, agent.WithMiddlewares(replayer))
+if _, err := replayed.Reply(ctx, "plan a trip to Tokyo"); err != nil { log.Fatal(err) }
 ```
 
 ### Fan-out Agent Pool (`runtime/`)
 
-Process N concurrent sessions with bounded worker goroutines and backpressure. Each worker owns its own agent instance — no shared mutable state.
+Process N concurrent sessions with bounded worker goroutines and backpressure. Each worker owns its own agent instance. Dependencies captured by the factory, such as a model or toolkit, remain shared unless the factory creates separate instances.
 
 ```go
 pool := runtime.NewAgentPool(
@@ -117,35 +122,51 @@ cfg := reloader.Get()
 
 ### WASM Sandbox (`wasm/`)
 
-Execute untrusted tool code in a WASM sandbox. Sub-second cold start (vs Docker's multi-second overhead). Memory-limited, time-bounded, filesystem-isolated.
+Run WASM modules with Wasmtime fuel, linear-memory, timeout, directory-grant, and output-capture limits. Wasmer and wasm3 may be discovered, but execution with the default resource limits returns `ErrUnsupportedLimits`. Startup time and compatibility depend on the installed runtime.
 
 ```go
-rt, _ := wasm.AutoDiscover() // finds wasmtime/wasmer/wasm3 in PATH
+rt, err := wasm.NewCLIRuntime("wasmtime")
+if err != nil { log.Fatal(err) }
 sandbox := wasm.NewSandbox(wasm.SandboxConfig{
-    Runtime:     rt,
-    MaxMemory:   64 * 1024 * 1024, // 64MB
-    MaxDuration: 5 * time.Second,
+    Runtime:        rt,
+    MaxMemory:      64 * 1024 * 1024,
+    MaxDuration:    5 * time.Second,
+    MaxOutputBytes: 1024 * 1024,
 })
-
-result, _ := sandbox.Run(ctx, "tools/transform.wasm", inputJSON)
+result, err := sandbox.Run(ctx, "tools/transform.wasm", inputJSON)
+if err != nil { log.Fatal(err) }
+if result.ExitCode != 0 || result.OutputTruncated {
+    log.Fatalf("WASM exit=%d, output truncated=%v", result.ExitCode, result.OutputTruncated)
+}
 fmt.Println(string(result.Stdout))
 ```
 
 ### TCP Agent Mesh (`a2a/grpc/`)
 
-Low-latency bidirectional agent communication over TCP with newline-delimited JSON. Agents connect to a mesh server and exchange typed messages with streaming support.
+Agent communication over TCP with newline-delimited JSON; this package is not the gRPC wire protocol. Responses must preserve the request ID. For `Client.Stream`, require `StreamEnd` for success: cancellation, disconnect, or buffer overflow can close the channel without successful completion.
 
 ```go
-server := grpc.NewServer(":9090", func(msg *grpc.Message) *grpc.Message {
-    // Route or process inter-agent messages
-    return &grpc.Message{From: "router", To: msg.From, Payload: responseJSON}
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+server, err := grpc.NewServer("127.0.0.1:0")
+if err != nil { log.Fatal(err) }
+defer server.Close()
+server.OnMessage(func(msg *grpc.Message) *grpc.Message {
+    return &grpc.Message{ID: msg.ID, From: "router", To: msg.From, Payload: msg.Payload}
 })
-server.Start(ctx)
+go func() {
+    if err := server.Listen(ctx); err != nil { log.Print(err) }
+}()
 
-// Client side
-client := grpc.NewClient("localhost:9090", "agent-alpha")
-client.Send(ctx, &grpc.Message{To: "agent-beta", Method: "analyze", Payload: data})
-resp, _ := client.Receive(ctx)
+client, err := grpc.NewClient(server.Addr())
+if err != nil { log.Fatal(err) }
+defer client.Close()
+resp, err := client.Send(ctx, &grpc.Message{
+    ID: "request-1", From: "agent-alpha", To: "agent-beta", Method: "analyze",
+    Payload: json.RawMessage(`{"task":"analyze"}`),
+})
+if err != nil { log.Fatal(err) }
+fmt.Println(string(resp.Payload))
 ```
 
 ### Agent Load Testing (`bench/`)
@@ -282,7 +303,7 @@ Onion-chain architecture — each hook wraps the next in the chain:
 | `OnActing` | Wraps each tool execution |
 | `OnSystemPrompt` | Transforms the system prompt (pipeline mode) |
 | `OnCompressContext` | Wraps context compression |
-| `OnCheckPermission` | Wraps permission checks for tool calls |
+| `OnCheckPermission` | Available permission wrapper; requires explicit `BuildCheckPermissionChain` integration |
 
 Built-in middleware: TracingMiddleware, TTSMiddleware, ReplyBudgetControlMiddleware, LongTermMemoryMiddleware, CostTrackerMiddleware, MetricsMiddleware.
 
@@ -315,9 +336,9 @@ Production-ready coding agent toolkit:
 
 - **AST-level Bash Analysis** — `mvdan.cc/sh/v3/syntax`-based analysis: injection risk, dangerous removal, redirect safety, read-only verification, sed constraints, file path extraction
 - **Interpreter Attack Detection** — Blocks dangerous API calls hidden inside `python -c`, `node -e`, `perl -e`, `ruby -e`, `lua -e`, `php -r` (8 languages, 20+ patterns)
-- **Process-group Isolation** — Child processes killed as a group on timeout (`Setpgid` + `SIGKILL` to pgid), preventing orphans and fork-bombs
-- **Sandbox Policy Enforcement** — `sandbox.Policy` controls: FSReadOnly blocks writes, AllowExec=false blocks bash, NetDisabled blocks WebFetch, DenyPaths blocks file access
-- **Write Hardening** — 10 MB size cap, atomic writes (temp+fsync+rename), executable-extension bypass-immune ASK
+- **Process-group Cleanup** — On Unix, timeout cleanup signals the command's process group. This reduces orphaned children; it does not enforce a process-count limit.
+- **Sandbox Policy Checks** — Selected built-in tool names and inputs are checked. This is not a complete security boundary; custom tools, aliases, and shell/network/resource restrictions need backend enforcement. See [current limits](docs/adversarial-hardening.md).
+- **Write Hardening** — The local Write tool has a 10 MB input cap, atomic replacement, and executable-extension bypass-immune ASK. Other file tools and backend paths have different persistence behavior.
 - **SSRF Guard** — Dial-time IP resolution blocks loopback/private/link-local addresses (covers DNS rebinding + redirects)
 - **Workspace Jail** — Symlink-aware path confinement to workspace root
 - **Credential Protection** — 40+ dangerous file paths protected (.kube/config, .aws/credentials, .docker/config.json, SSH keys, .gnupg/*)
@@ -330,7 +351,7 @@ Production-ready coding agent toolkit:
 |----------|-------------|
 | **MCP** | Full MCP client (Stdio + HTTP/SSE) with automatic tool discovery |
 | **A2A HTTP** | Agent-to-Agent over HTTP via `A2AAgent` + `HTTPClient` |
-| **A2A gRPC/TCP** | Low-latency bidirectional mesh (TCP + newline-delimited JSON) |
+| **A2A TCP** | Newline-delimited JSON transport; the `a2a/grpc` package does not implement the gRPC wire protocol |
 | **AG-UI** | Agent service protocol for frontend integration |
 | **Agent Teams** | Leader/Worker coordination with cross-session HITL event projection |
 | **Pipeline & MsgHub** | Sequential `Then`/`If` combinators + multi-agent message routing |
@@ -477,9 +498,9 @@ pkg/agentscope/
 ├── replay/                 # Record/replay + flight recorder + run logs/diff
 ├── replay/evalkit/         # YAML eval suites: runner, scorers, LLM judge, A/B compare
 ├── providercontract/       # Test-only provider contract wall (6 providers × up to 6 contracts)
-├── runtime/                # AgentPool, SessionEngine, AgentManager, BudgetTracker, Harness
+├── runtime/                # AgentPool, SessionEngine, AgentManager, BudgetTracker, Run
 ├── hotreload/              # Typed generic config reloader with file watching
-├── wasm/                   # WASM sandbox (wasmtime/wasmer/wasm3 backends)
+├── wasm/                   # WASM sandbox (Wasmtime limit enforcement)
 ├── bench/                  # Load testing framework with P50/P95/P99 reporting
 ├── a2a/                    # A2A protocol types + HTTP client
 ├── a2a/grpc/               # TCP transport: bidirectional agent mesh
@@ -514,7 +535,7 @@ pkg/agentscope/
 ├── sandbox/                # Execution policies (Allow/Deny/AskUser)
 ├── platform/               # Cross-platform shell detection + safety
 ├── logging/                # Structured logging handlers
-├── protocol/               # LoopState, LoopEvent — shared types
+├── protocol/               # LoopState, ApprovalPolicy, PermissionProfile
 ├── errors/                 # Typed error hierarchy (Retriable, Throttled, PermissionDenied)
 ├── config/                 # Configuration loading
 ├── app/                    # Application bootstrap
@@ -564,7 +585,7 @@ pkg/agentscope/
 | `agent_team` | Leader/Worker team with message routing |
 | `mcp` | MCP client: tool discovery + remote execution |
 | `a2a_http` | Agent-to-Agent over HTTP |
-| **Go-Exclusive** | |
+| **Go Runtime** | |
 | `replay` | Record LLM calls, replay in CI without API costs |
 | `agent_pool` | Fan-out agent pool with backpressure |
 | `hotreload` | Zero-downtime config updates with typed `Reloader[T]` |
@@ -601,54 +622,22 @@ pkg/agentscope/
 
 ---
 
-## Comparison with Python
+## Relationship to Python
 
-Factual comparison of features available in each implementation:
-
-| Capability | Go | Python |
-|------------|:--:|:------:|
-| **Deployment** | Single static binary | pip + venv + dependencies |
-| **Concurrency model** | Goroutines (OS-thread-multiplexed) | asyncio (single-thread event loop) |
-| **Type safety** | Compile-time (interfaces + generics) | Runtime (type hints optional) |
-| **Deterministic replay** | Yes (`replay/`) | No |
-| **Agent pool with backpressure** | Yes (`runtime/AgentPool`) | No |
-| **Hot-reload config** | Yes (`hotreload/Reloader[T]`) | No |
-| **WASM tool sandbox** | Yes (`wasm/`) | No |
-| **TCP agent mesh** | Yes (`a2a/grpc/`) | No |
-| **Built-in load testing** | Yes (`bench/`) | No |
-| **Embedded Web UI** | Yes (`webui/`) | No |
-| **Hub system (MCP + Skill)** | Yes (`hub/`) | Partial (registry only) |
-| **Access control** | Yes (`access/`) | No |
-| **Document parsers** | 5 formats (Text/PDF/Word/Excel/PPT) | External (LangChain loaders) |
-| **Workspace backends** | 8 | 3 (Local/Docker/E2B) |
-| **Vector stores** | 5 (InMemory/Qdrant/ES/MongoDB/Milvus) | 3 (InMemory/Qdrant/ChromaDB) |
-| **Storage backends** | 4 (InMemory/File/Redis/SQL) | 2 (InMemory/File) |
-| **TTS providers** | 3 (DashScope/OpenAI/Gemini) | 1 (DashScope) |
-| **Model providers** | 9 | 9 |
-| **MCP support** | Client + Server | Client + Server |
-| **A2A protocol** | HTTP + TCP mesh | HTTP only |
-| **Middleware hooks** | 7 | 5 |
-| **OpenTelemetry tracing** | Yes | Yes |
-| **Circuit breaker / rate limiter** | Yes (`resilience/`) | No |
-| **Cross-platform (Windows)** | Yes (`platform/`) | Partial |
-| **Embedding support** | 4 providers | 4 providers |
-| **Agent teams** | Yes | Yes |
-| **Pipeline / MsgHub** | Yes | Yes |
-| **Edge/IoT device support** | Yes (`device/` + MQTT PubSub) | No |
-| **Output guardrails** | Yes (`GuardrailMiddleware`) | No |
-
----
+This repository documents its own APIs and limitations. Comparisons with Python need explicit release or commit references; no unversioned feature-absence table is maintained here.
 
 ## Documentation
 
 Detailed documentation is available in the [`docs/`](docs/) directory:
 
+- [Stability and remaining limits](STABILITY.md) — API guarantees and open hardening work
+- [Execution and session hardening](docs/adversarial-hardening.md) — Behaviors established by PRs #4 and #5
 - [Getting Started](docs/getting-started.md) — Installation, first agent, environment setup
 - [Architecture](docs/architecture.md) — Package structure, core concepts, data flow
 - [Model Providers](docs/model-providers.md) — Configure 9 LLM providers with examples
 - [Tools](docs/tools.md) — Built-in tools, custom functions, permissions
 - [Middleware](docs/middleware.md) — 7-hook system, tracing, budget, memory
-- [Examples](docs/examples.md) — Full catalog of 49 runnable examples
+- [Examples](docs/examples.md) — Full catalog of 54 runnable examples
 - [Deployment](docs/deployment.md) — HTTP service, sandboxing, production checklist
 - [Edge Deployment](docs/edge-deployment.md) — Cross-compile, Jetson/RPi quickstart, offline operation
 - [Device Tools](docs/device-tools.md) — Serial/GPIO/CAN/I2C connectors, DeviceTool, Watchdog

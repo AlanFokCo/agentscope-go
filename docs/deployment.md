@@ -20,13 +20,15 @@ svc.ListenAndServe()
 
 ### REST Endpoints
 
+These routes belong to `service.Service`. The separate `app` package has its own route layout.
+
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/session` | Create a new session |
 | GET | `/api/sessions` | List all sessions |
-| POST | `/api/chat/{id}` | Send a message (sync) |
-| GET | `/api/chat/{id}/stream` | Stream chat via SSE |
-| POST | `/api/chat/{id}/confirm` | Confirm HITL request |
+| POST | `/api/chat` | Sync chat; JSON body includes `session_id` and `message` |
+| GET | `/api/chat/stream` | SSE chat; query parameters `session_id` and `message` |
+| POST | `/api/confirm` | HITL confirmation; JSON body includes `session_id` and `tool_calls` |
 | GET | `/api/models` | List available models |
 
 ### Full Application
@@ -50,7 +52,7 @@ For untrusted tool execution, use isolated workspaces:
 |-----------|----------------|----------|
 | `LocalWorkspace` | Directory-scoped | Development, trusted agents |
 | `DockerWorkspace` | Container-level | Production, semi-trusted |
-| `E2BWorkspace` | Cloud sandbox | Full isolation, untrusted code |
+| `E2BWorkspace` | Cloud sandbox | Remote sandbox for tool execution |
 | `K8sWorkspace` | Kubernetes Pod | Production clusters, multi-tenant |
 | `OpenSandboxWorkspace` | Cloud sandbox API | Remote sandbox-as-a-service |
 | `DaytonaWorkspace` | Dev environment | Daytona-managed dev containers |
@@ -60,12 +62,15 @@ For untrusted tool execution, use isolated workspaces:
 ### Docker Workspace
 
 ```go
-ws, _ := workspace.NewDockerWorkspace(ctx, &workspace.DockerWorkspaceConfig{
+ws, err := workspace.NewDockerWorkspace(ctx, &workspace.DockerWorkspaceConfig{
     Image:   "python:3.11-slim",
     WorkDir: "/workspace",
 })
+if err != nil { log.Fatal(err) }
+defer ws.Close(context.Background())
 backend := workspace.NewToolBackend(ws)
-// Use backend with tool context routing
+ctx = tool.WithBackend(ctx, backend)
+// Pass ctx to tool execution; only tools that consume the backend use this workspace.
 ```
 
 ### Kubernetes Workspace
@@ -73,17 +78,19 @@ backend := workspace.NewToolBackend(ws)
 Run agent tool execution inside hardened ephemeral Kubernetes Pods:
 
 ```go
-ws, _ := workspace.NewK8sWorkspace(&workspace.K8sConfig{
+runAsNonRoot := true
+runAsUser := int64(1000)
+ws, err := workspace.NewK8sWorkspace(&workspace.K8sConfig{
     Namespace:             "agent-sandbox",
     PodName:               "agent-workspace",
     Image:                 "ubuntu:22.04",
     APIServer:             "https://kubernetes.default.svc",
     SecretToken:           model.NewSecretStr(os.Getenv("K8S_TOKEN")),
-    PodTTLSeconds:         3600,  // auto-cleanup after 1h
+    PodTTLSeconds:         3600,  // activeDeadlineSeconds: stop after 1h; Close deletes the Pod
     DisableServiceAccount: true,  // no SA token inside pod
     SecurityContext: &workspace.PodSecurityContext{
-        RunAsNonRoot: boolPtr(true),
-        RunAsUser:    int64Ptr(1000),
+        RunAsNonRoot: &runAsNonRoot,
+        RunAsUser:    &runAsUser,
     },
     Resources: &workspace.ResourceRequirements{
         CPULimit:      "2000m",
@@ -95,8 +102,10 @@ ws, _ := workspace.NewK8sWorkspace(&workspace.K8sConfig{
         "app.kubernetes.io/managed-by": "agentscope",
     },
 })
-backend := workspace.NewToolBackend(ws)
+if err != nil { log.Fatal(err) }
 defer ws.Close()
+backend := workspace.NewToolBackend(ws)
+ctx = tool.WithBackend(ctx, backend)
 ```
 
 ### Kubernetes Cluster Tools
@@ -159,27 +168,31 @@ ws, _ := workspace.NewBubblewrapWorkspace(workspace.BubblewrapConfig{
 
 ## WASM Sandbox
 
-Execute untrusted code as WebAssembly modules with strict resource limits. No container runtime needed — just a WASM runtime binary (`wasmtime`, `wasmer`, or `wasm3`).
+The CLI implementation enforces fuel, linear-memory, timeout, directory-grant, and output-capture settings through Wasmtime. Wasmer and wasm3 may be discovered, but execution with the default resource limits returns `ErrUnsupportedLimits`. Select Wasmtime explicitly and check both errors and result status. Empty `AllowedPaths` grants no host directories.
 
 ```go
-rt, _ := wasm.NewCLIRuntime("")  // auto-discover wasmtime/wasmer/wasm3
+rt, err := wasm.NewCLIRuntime("wasmtime")
+if err != nil { log.Fatal(err) }
 sandbox := wasm.NewSandbox(wasm.SandboxConfig{
-    Runtime:     rt,
-    MaxMemory:   64 * 1024 * 1024, // 64MB
-    MaxDuration: 10 * time.Second,
-    MaxFuel:     1_000_000,        // instruction count limit
+    Runtime:        rt,
+    MaxMemory:      64 * 1024 * 1024,
+    MaxDuration:    5 * time.Second,
+    MaxOutputBytes: 1024 * 1024,
 })
-
-result, _ := sandbox.Run(ctx, "plugin.wasm", []byte(`{"input": "hello"}`))
+result, err := sandbox.Run(ctx, "tools/transform.wasm", []byte(`{"text":"hello"}`))
+if err != nil { log.Fatal(err) }
+if result.ExitCode != 0 || result.OutputTruncated {
+    log.Fatalf("WASM exit=%d, output truncated=%v", result.ExitCode, result.OutputTruncated)
+}
 fmt.Println(string(result.Stdout))
 ```
 
 Key properties:
-- **Memory-limited**: Hard cap on heap allocation
+- **Memory limit**: Bounds WASM linear memory; it does not cap all host/runtime process memory
 - **Time-limited**: Execution timeout
 - **CPU-limited**: Fuel (instruction count) budget
-- **Portable**: Same `.wasm` binary runs on any OS/arch
-- **No network by default**: Modules cannot access the network unless explicitly granted WASI permissions
+- **Portability**: Requires a compatible module, WASI imports, and installed runtime on the target
+- **Network settings**: The CLI adapter does not pass flags enabling guest network access
 
 ## Hot-Reload Configuration
 
@@ -254,11 +267,11 @@ for _, item := range workItems {
 }
 ```
 
-Each worker owns its own agent instance — no shared state, no locking overhead.
+Each worker owns an agent instance. Dependencies captured by the factory may still be shared and must support concurrent use. Agent history also persists across jobs handled by the same worker.
 
 ## Deterministic Replay for CI/CD
 
-Record agent interactions once, then replay them deterministically in CI without API keys or network access.
+Record model responses once, then replay them in tape order. Replay skips model API calls but does not validate prompt equality or intercept tool side effects. Use mock or isolated tools for offline CI.
 
 ### Recording
 
@@ -267,35 +280,49 @@ recorder := replay.NewRecorder()
 a := agent.NewUnifiedAgent("bot", "You are a test agent.", cm,
     agent.WithMiddlewares(recorder),
 )
-
-// Run the agent normally — all model calls are recorded
-a.Reply(ctx, "Summarize the Q3 report")
-
-// Save the tape
-data, _ := json.Marshal(recorder.Tape())
-os.WriteFile("testdata/q3_summary.tape.json", data, 0644)
+if _, err := a.Reply(ctx, "Summarize the Q3 report"); err != nil { log.Fatal(err) }
+store, err := replay.NewFileStore("testdata")
+if err != nil { log.Fatal(err) }
+if err := store.Save(ctx, "q3_summary", recorder.Tape()); err != nil { log.Fatal(err) }
 ```
 
 ### Replaying in Tests
 
 ```go
-func TestQ3Summary(t *testing.T) {
-    data, _ := os.ReadFile("testdata/q3_summary.tape.json")
-    var tape replay.Tape
-    json.Unmarshal(data, &tape)
+package example
 
-    replayer := replay.NewReplayer(&tape)
-    a := agent.NewUnifiedAgent("bot", "You are a test agent.", nil,  // no model needed!
+import (
+    "context"
+    "strings"
+    "testing"
+
+    "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/agent"
+    "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/agenttest"
+    "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/replay"
+)
+
+func TestQ3Summary(t *testing.T) {
+    ctx := context.Background()
+    store, err := replay.NewFileStore("testdata")
+    if err != nil { t.Fatal(err) }
+    tape, err := store.Load(ctx, "q3_summary")
+    if err != nil { t.Fatal(err) }
+    placeholder := agenttest.NewMockModel()
+    replayer := replay.NewReplayer(tape)
+    a := agent.NewUnifiedAgent("bot", "You are a test agent.", placeholder,
         agent.WithMiddlewares(replayer),
     )
-
-    reply, err := a.Reply(context.Background(), "Summarize the Q3 report")
-    require.NoError(t, err)
-    assert.Contains(t, *reply.GetTextContent("\n"), "revenue")
+    reply, err := a.Reply(ctx, "Summarize the Q3 report")
+    if err != nil { t.Fatal(err) }
+    text := reply.GetTextContent("\n")
+    if text == nil || !strings.Contains(*text, "revenue") {
+        t.Fatalf("unexpected reply: %v", text)
+    }
+    if len(placeholder.Calls()) != 0 { t.Fatal("replay called the placeholder model") }
 }
 ```
 
-No API keys, no network, fully deterministic.
+The test uses a non-nil offline mock because `NewUnifiedAgent` rejects nil models. Only model responses are replayed; real tools, if configured, can still execute.
 
 ## Scheduled Tasks
 
@@ -319,7 +346,7 @@ scheduler.Schedule(ctx, &schedule.Task{
 - [ ] Use `DockerWorkspace`, `K8sWorkspace`, or `E2BWorkspace` for tool execution
 - [ ] Configure `ClientOptions.Timeout` for your expected response times
 - [ ] Set up `TracingMiddleware` with OpenTelemetry exporter
-- [ ] Use `ReplyBudgetControlMiddleware` to cap token spending; use `CostTrackerMiddleware` with `WithMaxCostUSD` for hard USD spend caps
+- [ ] Use `ReplyBudgetControlMiddleware` to cap token spending; use `CostTrackerMiddleware` with `WithMaxCostUSD` to stop subsequent calls after accounted cost reaches the threshold (single or concurrent calls can overshoot)
 - [ ] Rotate API keys and use `model.SecretStr` to prevent key leakage in logs
 - [ ] Put the Agent Service behind authentication (it has no built-in auth)
 - [ ] Use Redis-backed storage and message bus for multi-instance deployments
@@ -332,5 +359,5 @@ scheduler.Schedule(ctx, &schedule.Task{
 ## See Also
 
 - [Architecture](architecture.md) — Package structure and design
-- [Go-Exclusive Features](go-exclusive.md) — Replay, Pool, Hot-reload, WASM, TCP Mesh, Bench
+- [Go Runtime Features](go-exclusive.md) — Replay, Pool, Hot-reload, WASM, TCP Mesh, Bench
 - [Examples](examples.md) — Runnable demos for all deployment patterns

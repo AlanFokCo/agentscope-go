@@ -20,7 +20,7 @@ Additionally, `ListTools()` lets middleware provide extra tools to the agent.
 
 ### OnCheckPermission
 
-Intercepts permission checks before tool execution. Use this to implement custom authorization logic, audit logging, or dynamic permission policies:
+Defines a wrapper for permission checks. The current UnifiedAgent and loop bridge call the permission engine directly, so adding this middleware with `WithMiddlewares` alone does not intercept their checks. An executor integration must explicitly invoke `middleware.BuildCheckPermissionChain`. The wrapper below is suitable for that integration:
 
 ```go
 type AuditPermissionMiddleware struct {
@@ -215,9 +215,11 @@ a := agent.NewUnifiedAgent("bot", "...", cm,
 
 ### CostTrackerMiddleware
 
-Pre-flight hard spend cap: before each model call, the estimated cost is
-checked against a USD limit; exceeding it stops the reply with
-`ErrBudgetExceeded`. Multi-currency display via exchange rates.
+Before each model call, the tracker checks already-accounted cost. Once that
+cost reaches `WithMaxCostUSD`, subsequent calls return `ErrBudgetExceeded`.
+The next call's cost is not estimated or reserved: a single call or concurrent
+calls can exceed the threshold. Missing usage or prices leave costs unaccounted.
+Exchange rates convert tracked totals for display, not billing enforcement.
 
 ```go
 ct := middleware.NewCostTrackerMiddleware(
@@ -260,7 +262,7 @@ wd := middleware.NewReplyWatchdog(
 
 Cross-session cost aggregation: `NewCostLedger()` (bounded raw-entry
 retention, default 100k) + `NewCostTracking(ledger, sessionID, agentName,
-prices)` records every model call into the ledger; query with
+prices)` records successful model calls that report usage and have a known price; query with
 `ledger.Summary(filter)`. Use low-cardinality label values only when
 exporting to metrics.
 
@@ -323,22 +325,23 @@ a := agent.NewUnifiedAgent("bot", "...", cm,
 tape := recorder.Tape()  // serialize to JSON for storage
 ```
 
-**Replay mode** — returns pre-recorded responses, no model needed:
+**Replay mode** — returns recorded responses; a non-nil model is still required by the constructor and token counter. Import `pkg/agentscope/agenttest` for an offline placeholder:
 
 ```go
 replayer := replay.NewReplayer(tape)
-a := agent.NewUnifiedAgent("bot", "...", nil,  // no model!
+placeholder := agenttest.NewMockModel()
+a := agent.NewUnifiedAgent("bot", "...", placeholder,
     agent.WithMiddlewares(replayer),
 )
 ```
 
-The replay middleware uses the `OnModelCall` hook to intercept calls. In record mode, it passes through to the real model and captures the response. In replay mode, it returns the next entry from the tape without calling any model.
+The replay middleware uses the `OnModelCall` hook to intercept calls. In record mode, it passes through to the real model and captures the response. In replay mode, it returns the next tape entry without invoking the model API. It does not compare prompts or intercept tools; use mock or isolated tools if the test must avoid network calls or other side effects.
 
-See [Go-Exclusive Features](go-exclusive.md) for full replay workflow documentation.
+See [Go Runtime Features](go-exclusive.md) for full replay workflow documentation.
 
 ## Hook Execution Order
 
-When multiple middleware are chained, hooks execute in onion order:
+When a chain is built, middleware enter in configuration order and unwind in reverse. The permission-chain portion below applies only when an integration explicitly calls `BuildCheckPermissionChain`; it is not part of the default UnifiedAgent or loop bridge execution path:
 
 ```
 MW1.OnReply →
@@ -371,5 +374,5 @@ MW1.OnReply ←
 ## See Also
 
 - [Architecture](architecture.md) — Middleware in the broader system design
-- [Go-Exclusive Features](go-exclusive.md) — Replay middleware for CI/CD
+- [Go Runtime Features](go-exclusive.md) — Replay middleware for CI/CD
 - [Tools](tools.md) — Tool-level middleware

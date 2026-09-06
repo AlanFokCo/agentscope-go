@@ -77,8 +77,9 @@ type CostTrackerMiddleware struct {
 	byTurn      []*TurnCost
 	currentTurn *TurnCost
 
-	// maxCostUSD is the hard spend cap. When > 0, model calls that would
-	// push the total past this limit are rejected with ErrBudgetExceeded.
+	// maxCostUSD guards already-accounted cost. When > 0, subsequent calls
+	// are rejected once that cost reaches the limit. In-flight calls are
+	// not reserved and may overshoot it.
 	maxCostUSD float64
 
 	// exchangeRates provides optional currency conversion for display via
@@ -89,8 +90,10 @@ type CostTrackerMiddleware struct {
 // CostTrackerOption configures a CostTrackerMiddleware.
 type CostTrackerOption func(*CostTrackerMiddleware)
 
-// WithMaxCostUSD sets a hard spend cap in US dollars. When the accumulated
-// cost reaches this limit, subsequent model calls return ErrBudgetExceeded.
+// WithMaxCostUSD sets a threshold for already-accounted cost in US dollars.
+// Subsequent calls return ErrBudgetExceeded once that cost reaches the limit.
+// Individual or concurrent calls can overshoot; no cost is reserved in advance.
+// Missing usage or prices prevent complete cost accounting.
 func WithMaxCostUSD(maxUSD float64) CostTrackerOption {
 	return func(m *CostTrackerMiddleware) { m.maxCostUSD = maxUSD }
 }

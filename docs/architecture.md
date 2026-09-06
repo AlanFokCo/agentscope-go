@@ -91,7 +91,7 @@ pkg/agentscope/
 │   ├── tracing.go         # TracingMiddleware (OpenTelemetry semantic conventions)
 │   ├── tts.go             # TTSMiddleware (text → audio DataBlock injection)
 │   ├── budget.go          # ReplyBudgetControlMiddleware (token budget enforcement)
-│   ├── cost_tracker.go    # CostTrackerMiddleware (hard USD/CNY spend cap)
+│   ├── cost_tracker.go    # CostTrackerMiddleware (observed-cost threshold)
 │   ├── guardrail.go       # GuardrailMiddleware (Block/Redact/Warn content rules)
 │   ├── repetition.go      # RepetitionBreakerMiddleware (tool-call spin detection)
 │   ├── watchdog.go        # ReplyWatchdogMiddleware (wall-clock + idle timeouts)
@@ -112,7 +112,7 @@ pkg/agentscope/
 ├── wasm/                  # WASM sandbox execution
 │   ├── wasm.go            # Runtime interface, ExecRequest, ExecResult
 │   ├── sandbox.go         # Sandbox — safe execution environment with resource limits
-│   ├── cli_runtime.go     # CLIRuntime — shells out to wasmtime/wasmer/wasm3
+│   ├── cli_runtime.go     # CLIRuntime — Wasmtime limit enforcement
 │   └── wasm_test.go
 │
 ├── rag/                   # Retrieval-Augmented Generation
@@ -171,12 +171,12 @@ pkg/agentscope/
 ├── realtime/              # Realtime streaming interface + echo client
 ├── logging/               # Structured logging handlers and initialization
 │
-├── protocol/              # Shared loop types: LoopState, LoopEvent
+├── protocol/              # Shared enums: LoopState, ApprovalPolicy, PermissionProfile
 ├── loop/                  # Configurable agent loop (model → inspect → act → iterate)
 ├── runtime/               # SessionEngine, AgentManager, BudgetTracker, AgentPool
 ├── metrics/               # Counter/Histogram interfaces + InMemoryProvider + MetricsHook
 ├── platform/              # Cross-platform shell detection + PowerShell safety checks
-├── sandbox/               # Sandbox execution policies (Allow/Deny/AskUser)
+├── sandbox/               # Filesystem/network/process/resource policy types
 ├── errors/                # Typed error hierarchy (Retriable, Throttled, PermissionDenied, Timeout)
 ├── tune/                  # Fine-tuning utilities
 ├── types/                 # Shared type definitions
@@ -201,9 +201,9 @@ The `Agent` interface defines five methods: `ID()`, `Reply()`, `Observe()`, `Int
 
 ### Model
 
-`ChatModel` provides `Chat()`, `ChatStream()`, `CountTokens()`. Nine provider adapters share common patterns: functional options via `CallOption`, retry logic, `ClientOptions` for HTTP customization. All streaming adapters parse SSE via the shared `internal/httpx` helper.
+`ChatModel` provides `Chat()`, `ChatStream()`, `CountTokens()`. Nine provider adapters share common patterns: functional options via `CallOption`, retry logic, `ClientOptions` for HTTP customization. Streaming wire formats are provider-specific; several adapters use SSE, while Ollama uses newline-delimited JSON.
 
-54 model cards are bundled across 8 provider directories, plus 9 TTS model cards.
+78 model cards are bundled across 8 provider directories, plus 9 TTS model cards.
 
 ### Tool
 
@@ -211,11 +211,11 @@ The `Agent` interface defines five methods: `ID()`, `Reply()`, `Observe()`, `Int
 
 ### Middleware
 
-Seven-hook onion chain: `OnReply` wraps the entire reply, `OnModelCall` wraps each API call, `OnActing` wraps tool execution, `OnSystemPrompt` transforms the system prompt, `OnCompressContext` wraps compression, `OnCheckPermission` wraps permission checks, `OnReasoning` wraps each ReAct iteration. Middleware can also provide additional tools via `ListTools()`.
+The middleware interface defines seven hooks: `OnReply`, `OnReasoning`, `OnModelCall`, `OnActing`, `OnSystemPrompt`, `OnCompressContext`, and `OnCheckPermission`. `ListTools()` provides additional tools. The current UnifiedAgent and loop bridge call the permission engine directly; `OnCheckPermission` requires explicit integration using `BuildCheckPermissionChain` and is not automatically invoked on those paths.
 
 ### Deterministic Replay
 
-The `replay` package records model call request/response pairs into a `Tape` (JSON-serializable sequence of `Entry` records). In replay mode, the middleware intercepts `OnModelCall` and returns pre-recorded responses instead of calling the LLM. This enables deterministic CI/CD testing without API keys or network access.
+The `replay` package records model call request/response pairs into a `Tape` (JSON-serializable sequence of `Entry` records). In replay mode, the middleware intercepts `OnModelCall` and returns pre-recorded responses instead of calling the LLM. Use a non-nil mock model and mock or isolated tools for offline tests: replay consumes tape entries in order, does not validate prompt equality, and does not intercept tool execution.
 
 ### Agent Loop (v3)
 
@@ -227,13 +227,13 @@ The `replay` package records model call request/response pairs into a `Tape` (JS
 - **`ToolSchemaProvider`** — provides tool schemas for model calls
 - **`Hook`** — lifecycle notifications (before/after model call, before/after tool exec, state transitions, loop start/end)
 
-`Run()` returns `<-chan event.Event` for streaming; `RunSync()` blocks and returns the final `ChatResponse`. `UnifiedAgentRunner` bridges `UnifiedAgent` to `loop.Loop` via adapter types.
+`Run()` returns `<-chan event.Event` for streaming; `RunSync()` blocks and returns the final `ChatResponse`. `UnifiedAgentRunner` bridges `UnifiedAgent` to `loop.Loop` via adapter types. The tool adapter uses the agent permission engine and acting middleware. Confirmation-required and external calls return tool errors; use `UnifiedAgent.ReplyStream` for interactive handshakes.
 
 ### Runtime (v3)
 
 Session lifecycle management:
 
-- **`SessionEngine`** — single-session manager with `SubmitMessage()`, interrupt support, and budget tracking
+- **`SessionEngine`** — serializes `SubmitMessage()` turns, preserves the configured context manager/history, supports interruption, and tracks budgets. State snapshots still share message objects; persisted history is not an automatic restore lifecycle.
 - **`Turn`** — wraps a single loop execution with hooks and budget enforcement
 - **`AgentManager`** — spawns/stops subagents with concurrency limits via `BudgetTracker`
 - **`AgentPool`** — worker pool pattern for parallel agent execution with fan-out dispatch
@@ -256,9 +256,15 @@ Sandboxed command execution:
 - **`NoopSandbox`** — passthrough execution with no restrictions (default)
 - Provider registration via `RegisterProvider()` / `AutoSelect()`
 
+These types describe policy and execution interfaces, not universal enforcement.
+The orchestrator's current checks are name-based and incomplete for custom tools,
+case aliases, network allowlists, and resource controls. Configuring its `Sandbox`
+field does not by itself route tool calls through `Sandbox.Execute`. Use and test
+an appropriate `tool.WithBackend` workspace adapter for shell/file isolation.
+
 ### WASM Sandbox
 
-The `wasm` package provides a separate sandboxing layer that executes WebAssembly modules with strict resource limits (memory, CPU fuel, timeout). The `CLIRuntime` shells out to `wasmtime`, `wasmer`, or `wasm3` binaries (auto-discovered). This is useful for running untrusted user-supplied code in a portable, deterministic sandbox.
+The CLI implementation enforces fuel, linear-memory, timeout, directory-grant, and output-capture settings through Wasmtime. Wasmer and wasm3 may be discovered, but execution with the default resource limits returns `ErrUnsupportedLimits`. Select Wasmtime explicitly and check both errors and result status. Empty `AllowedPaths` grants no host directories.
 
 ### Hot-Reload Configuration
 
@@ -278,7 +284,7 @@ The `bench` package provides a `Runner` that executes `Scenario` definitions wit
 
 ### TCP Agent Mesh
 
-The `a2a/grpc` package provides a TCP-based transport for inter-agent communication using newline-delimited JSON messages. A `Server` accepts connections and dispatches incoming messages to a handler function. A `Client` connects to a remote server. Supports streaming via `IsStream`/`StreamEnd` flags.
+The `a2a/grpc` package provides a TCP-based transport for inter-agent communication using newline-delimited JSON messages. A `Server` accepts connections and dispatches incoming messages to a handler function. A `Client` connects to a remote server. The transport is not the gRPC wire protocol. Replies preserve the request ID. `Client.Stream` has a fixed 64-message buffer; cancellation, disconnect, or overflow can close it without `StreamEnd`. Consumers must observe `StreamEnd` for success and use fresh IDs on retries. The basic `Server.OnMessage` handler returns a single response.
 
 ## Data Flow
 
@@ -305,7 +311,7 @@ UnifiedAgent.Reply(ctx, input)
     │       │
     │       └── If ToolCallBlock:
     │               │
-    │               ├── OnCheckPermission chain
+    │               ├── Permission engine (OnCheckPermission needs explicit wiring)
     │               │       │
     │               │       ├── Permission check (Engine.CheckPermission)
     │               │       │       │
