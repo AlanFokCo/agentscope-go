@@ -12,7 +12,8 @@ import (
 
 // CostLedger aggregates model-call cost across sessions/agents/models/days
 // (HARNESS_DESIGN D2). It is the cross-session query surface; per-session
-// hard caps remain the job of CostTrackerMiddleware / ReplyCostBudget.
+// observed-cost guards are provided by CostTrackerMiddleware / ReplyCostBudget.
+// These guards do not reserve cost for in-flight calls.
 //
 // Prometheus exports must only use the low-cardinality dimensions
 // (agent/model/day). SessionID must never become a metric label — session
@@ -234,7 +235,8 @@ func (m *ReplyCostBudgetMiddleware) OnReply(ctx context.Context, input ReplyInpu
 	return next(ctx, input)
 }
 
-// OnModelCall enforces the budget before and after each call.
+// OnModelCall checks recorded cost before a call, then accounts for returned
+// usage. It does not reserve the call's cost or reject an overshooting response.
 func (m *ReplyCostBudgetMiddleware) OnModelCall(ctx context.Context, input *ModelCallInput, next ModelCallHandler) (*model.ChatResponse, error) {
 	mc := GetMiddleContext(ctx)
 	if mc == nil || m.maxUSD <= 0 {

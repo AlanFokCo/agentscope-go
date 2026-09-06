@@ -48,17 +48,17 @@ rsync -azR pkg/agentscope/model/model.go root@builder:/opt/Projects/agentscope-g
 
 ## Current state (2026-09)
 
-Feature-complete Python parity **plus** a large production-hardening pass (see `STABILITY.md` for the full list). Highlights already shipped: bash-redirect safety, workspace jail + Docker/E2B backend routing for file/shell tools, WebFetch SSRF guard, MCP env isolation, per-tool timeout/result caps, 429/Retry-After+jitter retries, ordered fallback chain, single-probe circuit breaker, streaming-error propagation (`ChatResponse.Error`/`StopReason`), ctx-aware event emission (goroutine-leak fixes), atomic file writes, token/duration budget enforcement, HTTP hardening + `/healthz`+`/readyz`+`/metrics`, a Prometheus metrics provider, JSON-Schema tool-input validation, MultiEdit + ApplyPatch tools, and fuzz targets. All green under `-race` and golangci-lint.
+Go framework capabilities **plus** a production-hardening pass (see `STABILITY.md` for the full list). Highlights already shipped: bash-redirect safety, workspace jail + Docker/E2B backend routing for file/shell tools, WebFetch SSRF guard, MCP env isolation, per-tool timeout/result caps, 429/Retry-After+jitter retries, ordered fallback chain, single-probe circuit breaker, streaming-error propagation (`ChatResponse.Error`/`StopReason`), ctx-aware event emission (goroutine-leak fixes), atomic file writes, token/duration budget enforcement, HTTP hardening + `/healthz`+`/readyz`+`/metrics`, a Prometheus metrics provider, JSON-Schema tool-input validation, MultiEdit + ApplyPatch tools, and fuzz targets. All green under `-race` and golangci-lint.
 
 Recent additions (2026-08):
-- **Process-group isolation** (`proc_unix.go`/`proc_windows.go`): child processes are killed as a group on timeout, preventing orphans/fork-bombs.
+- **Process-group isolation** (`proc_unix.go`): on Unix, child processes are killed as a group on timeout, reducing orphaned children; this is not a process-count limit. Windows does not use this process-group mechanism.
 - **Interpreter attack detection** (`CheckInterpreterAttack`): blocks dangerous API calls hidden inside `python -c`, `node -e`, `perl -e`, etc.
-- **Write hardening**: 10 MB size cap, atomic writes (`fsutil.WriteFileAtomic`), executable-extension bypass-immune ASK.
-- **Sandbox Policy enforcement** (`orchestrator.enforceSandboxPolicy`): the `sandbox.Policy` struct now actually controls tool execution — FSReadOnly blocks writes, AllowExec=false blocks bash, NetDisabled blocks WebFetch, DenyPaths blocks file access.
+- **Write hardening**: the local Write tool has a 10 MB input cap, atomic replacement (`fsutil.WriteFileAtomic`), and executable-extension bypass-immune ASK; Edit/MultiEdit/ApplyPatch and backend persistence differ.
+- **Sandbox Policy checks** (`orchestrator.enforceSandboxPolicy`): selected built-in names and inputs are checked. Custom tools, alternate call-name casing, shell/network access, and most resource limits are not fully covered; configuring Policy alone does not route calls through Sandbox.Execute.
 - **Audit logging** (`audit/`): structured `audit.Logger` interface with InMemory/File/Multi/Nop implementations; orchestrator records every tool execution, permission denial, and policy decision.
 - **Sandbox execution events** (`event/`): `tool_exec_start`, `tool_exec_end`, `tool_policy_denied` — visibility into what happens inside the execution layer.
 - **Eval harness** (`replay/eval.go`): `Scorer` interface with 5 built-in scorers (ExactMatch, Contains, JSONField, TextContains, Composite), `EvalTape()` runner, `AssertTape(t, ...)` go-test helper for regression testing.
-- **Hard spend cap** (`middleware/cost_tracker.go`): `WithMaxCostUSD(limit)` pre-flight budget enforcement + `WithExchangeRate("CNY", 7.2)` for multi-currency display.
+- **Observed-cost guard** (`middleware/cost_tracker.go`): `WithMaxCostUSD(limit)` blocks subsequent calls after accounted cost reaches the threshold; it does not reserve the next call's cost and can overshoot. `WithExchangeRate("CNY", 7.2)` converts totals for display.
 - **Output guardrails** (`middleware/guardrail.go`): `GuardrailMiddleware` with Block/Redact/Warn actions + 4 built-in rules (KeywordBlock, KeywordRedact, MaxLength, Custom).
 - **Reranker** (`rag/rerank.go`): `Reranker` interface + `RerankedIndex` wrapper for precision-improving two-stage retrieval.
 - **RedisFullStorage** (`storage/redis_full.go`): full `FullStorage` implementation over Redis (28 methods) with reverse-index message lookup.
@@ -68,7 +68,7 @@ Recent additions (2026-08):
 - **K8s workspace hardening** (`workspace/k8s.go`): `PodSecurityContext` (RunAsNonRoot/User/Group/FSGroup), `ResourceRequirements` (CPU/Memory limits+requests), `ServiceAccountName`, Labels/Annotations, `PodTTLSeconds` (activeDeadlineSeconds anti-leak), `ImagePullPolicy`, `DisableServiceAccount`, `SecretToken` (SecretStr). Bug fixes: duplicate timeout, GNU find portability, `buildPodManifest()` testability extraction.
 - **K8s cluster tools** (`workspace/k8s_tools.go`): `NewKubectlGetTool` (15 resource types, secrets BLOCKED), `NewKubectlLogTool` (tail/since/container). Read-only, 30s timeout, kubectl shell-out (no client-go dep).
 
-All originally-planned STABILITY.md items are now complete.
+Open work remains in sandbox enforcement, session-state isolation/restore, persistence coverage, and cost reservation. See `STABILITY.md` and `docs/adversarial-hardening.md`.
 
 Recent additions (2026-09) — **harness engineering batch** (evaluation, regression defense, cost governance, resilience, crash recovery):
 - **Flight recorder** (`replay/`): ring + per-entry size limits, atomic dump-on-error tapes, redaction hook; entries carry `reply_id`/`usage`. Reply IDs correlate through MiddleContext into recorders, audit entries, and tracing spans (`tracing.LateAttributer`).

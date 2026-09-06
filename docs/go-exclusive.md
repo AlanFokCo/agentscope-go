@@ -1,12 +1,12 @@
-# Go-Exclusive Features
+# Go Runtime Features
 
-These six features are unique to the Go implementation of AgentScope. They leverage Go's type system, concurrency primitives, and compilation model to provide capabilities that have no equivalent in the Python version.
+This guide covers six features provided by this Go repository. It does not assert feature exclusivity relative to a particular Python release.
 
 ## 1. Deterministic Replay
 
 **Package:** `pkg/agentscope/replay`
 
-Record all model call request/response pairs during an agent session, then replay them deterministically in CI/CD without API keys or network access. The replay middleware intercepts `OnModelCall` and either records responses (record mode) or returns pre-recorded responses (replay mode).
+Record model call responses during a session, then replay them in tape order through `OnModelCall`. Replay skips the model API, but does not compare the incoming prompt with the recorded request or intercept tool execution. Use mock/isolated tools for offline tests, and pass a non-nil model (for example `agenttest.NewMockModel()`) because the agent constructor and token counting still require it.
 
 ### Core Types
 
@@ -21,7 +21,7 @@ package main
 
 import (
     "context"
-    "encoding/json"
+    "log"
     "os"
 
     "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/agent"
@@ -30,55 +30,62 @@ import (
 )
 
 func main() {
-    cm, _ := model.NewDashScopeChatModel(model.DashScopeConfig{
-        APIKey: os.Getenv("DASHSCOPE_API_KEY"),
-        Model:  "qwen-plus",
+    ctx := context.Background()
+    cm, err := model.NewDashScopeChatModel(model.DashScopeConfig{
+        APIKey: os.Getenv("DASHSCOPE_API_KEY"), Model: "qwen-plus",
     })
-
-    // Create a recorder middleware
+    if err != nil { log.Fatal(err) }
     recorder := replay.NewRecorder()
-
     a := agent.NewUnifiedAgent("analyst", "You are a data analyst.", cm,
         agent.WithMiddlewares(recorder),
     )
-
-    // Run the agent — all model calls are captured
-    a.Reply(context.Background(), "Analyze the Q3 revenue trends")
-
-    // Save the tape to a file
-    data, _ := json.MarshalIndent(recorder.Tape(), "", "  ")
-    os.WriteFile("testdata/q3_analysis.tape.json", data, 0644)
+    if _, err := a.Reply(ctx, "Analyze the Q3 revenue trends"); err != nil { log.Fatal(err) }
+    store, err := replay.NewFileStore("testdata")
+    if err != nil { log.Fatal(err) }
+    if err := store.Save(ctx, "q3_analysis", recorder.Tape()); err != nil { log.Fatal(err) }
 }
 ```
 
 ### Replaying in Tests
 
 ```go
-func TestQ3Analysis(t *testing.T) {
-    // Load the pre-recorded tape
-    data, _ := os.ReadFile("testdata/q3_analysis.tape.json")
-    var tape replay.Tape
-    json.Unmarshal(data, &tape)
+package example
 
-    // Create a replayer — no model needed, no API key needed
-    replayer := replay.NewReplayer(&tape)
-    a := agent.NewUnifiedAgent("analyst", "You are a data analyst.", nil,
+import (
+    "context"
+    "strings"
+    "testing"
+
+    "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/agent"
+    "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/agenttest"
+    "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/replay"
+)
+
+func TestQ3Analysis(t *testing.T) {
+    ctx := context.Background()
+    store, err := replay.NewFileStore("testdata")
+    if err != nil { t.Fatal(err) }
+    tape, err := store.Load(ctx, "q3_analysis")
+    if err != nil { t.Fatal(err) }
+    placeholder := agenttest.NewMockModel()
+    replayer := replay.NewReplayer(tape)
+    a := agent.NewUnifiedAgent("analyst", "You are a data analyst.", placeholder,
         agent.WithMiddlewares(replayer),
     )
-
-    reply, err := a.Reply(context.Background(), "Analyze the Q3 revenue trends")
-    require.NoError(t, err)
-
+    reply, err := a.Reply(ctx, "Analyze the Q3 revenue trends")
+    if err != nil { t.Fatal(err) }
     text := reply.GetTextContent("\n")
-    assert.NotNil(t, text)
-    assert.Contains(t, *text, "revenue")
+    if text == nil || !strings.Contains(*text, "revenue") {
+        t.Fatalf("unexpected reply: %v", text)
+    }
+    if len(placeholder.Calls()) != 0 { t.Fatal("replay called the placeholder model") }
 }
 ```
 
 ### Properties
 
-- **No API keys in CI**: Replay mode never calls the real model
-- **No network access**: Fully offline, deterministic
+- **No model API keys in CI**: With a mock model, replay skips the model API
+- **Offline tests**: Require mock or isolated tools as well; real tool calls can still perform network/file operations
 - **Multi-turn**: Records entire multi-step ReAct conversations
 - **JSON format**: Tapes are human-readable, diffable, and versionable in Git
 
@@ -219,7 +226,7 @@ func main() {
 
 **Package:** `pkg/agentscope/wasm`
 
-Execute WebAssembly modules in a strict sandbox with memory, time, and instruction-count limits. Uses CLI runtimes (`wasmtime`, `wasmer`, `wasm3`) via auto-discovery.
+The CLI implementation enforces fuel, linear-memory, timeout, directory-grant, and output-capture settings through Wasmtime. Wasmer and wasm3 may be discovered, but execution with the default resource limits returns `ErrUnsupportedLimits`. Select Wasmtime explicitly and check both errors and result status. Empty `AllowedPaths` grants no host directories.
 
 ### Code Example
 
@@ -229,44 +236,38 @@ package main
 import (
     "context"
     "fmt"
+    "log"
     "time"
 
     "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/wasm"
 )
 
 func main() {
-    // Auto-discover available WASM runtime
-    rt, _ := wasm.NewCLIRuntime("")  // tries wasmtime, wasm3, wasmer in order
-
+    ctx := context.Background()
+    rt, err := wasm.NewCLIRuntime("wasmtime")
+    if err != nil { log.Fatal(err) }
     sandbox := wasm.NewSandbox(wasm.SandboxConfig{
-        Runtime:     rt,
-        MaxMemory:   32 * 1024 * 1024, // 32MB heap limit
-        MaxDuration: 5 * time.Second,   // 5s timeout
-        MaxFuel:     500_000,           // instruction count budget
+        Runtime:        rt,
+        MaxMemory:      64 * 1024 * 1024,
+        MaxDuration:    5 * time.Second,
+        MaxOutputBytes: 1024 * 1024,
     })
-
-    // Execute a WASM module
-    result, err := sandbox.Run(context.Background(),
-        "plugins/transform.wasm",
-        []byte(`{"text": "hello world"}`),
-    )
-    if err != nil {
-        fmt.Printf("Error: %v\n", err)
-        return
+    result, err := sandbox.Run(ctx, "tools/transform.wasm", []byte(`{"text":"hello"}`))
+    if err != nil { log.Fatal(err) }
+    if result.ExitCode != 0 || result.OutputTruncated {
+        log.Fatalf("WASM exit=%d, output truncated=%v", result.ExitCode, result.OutputTruncated)
     }
-
-    fmt.Printf("Output: %s\n", result.Stdout)
-    fmt.Printf("Exit code: %d, Duration: %v\n", result.ExitCode, result.Duration)
+    fmt.Println(string(result.Stdout))
 }
 ```
 
 ### Properties
 
-- **Memory-limited**: Hard cap prevents heap exhaustion
+- **Memory limit**: Bounds WASM linear memory; it does not cap all host/runtime process memory
 - **Time-limited**: Kills runaway modules
 - **CPU-limited**: Fuel budget (wasmtime) prevents infinite loops
-- **No network**: Modules cannot access the network by default
-- **Portable**: Same `.wasm` binary runs on any OS/architecture
+- **Network settings**: The CLI adapter does not pass flags enabling guest network access
+- **Portability**: Requires a compatible module, WASI imports, and installed runtime on the target
 - **No container runtime**: Lighter than Docker, no daemon needed
 
 ---
@@ -286,53 +287,44 @@ import (
     "context"
     "encoding/json"
     "fmt"
+    "log"
     "time"
 
     mesh "github.com/alanfokco/agentscope-go/v2/pkg/agentscope/a2a/grpc"
 )
 
 func main() {
-    ctx := context.Background()
-
-    // Start a server
-    server, _ := mesh.NewServer(":9090")
-    server.OnMessage(func(msg *mesh.Message) *mesh.Message {
-        fmt.Printf("Received from %s: %s\n", msg.From, string(msg.Payload))
-        return &mesh.Message{
-            ID:      "resp-1",
-            From:    "server-agent",
-            To:      msg.From,
-            Method:  "reply",
-            Payload: json.RawMessage(`{"answer": "42"}`),
-        }
-    })
-    go server.Listen(ctx)
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+    server, err := mesh.NewServer("127.0.0.1:0")
+    if err != nil { log.Fatal(err) }
     defer server.Close()
-
-    // Connect a client
-    time.Sleep(100 * time.Millisecond) // wait for server
-    client, _ := mesh.NewClient(server.Addr())
-    defer client.Close()
-
-    // Send a message and receive the response
-    resp, _ := client.Send(ctx, &mesh.Message{
-        ID:      "req-1",
-        From:    "client-agent",
-        To:      "server-agent",
-        Method:  "ask",
-        Payload: json.RawMessage(`{"question": "meaning of life"}`),
+    server.OnMessage(func(msg *mesh.Message) *mesh.Message {
+        return &mesh.Message{ID: msg.ID, From: "router", To: msg.From, Payload: msg.Payload}
     })
-    fmt.Printf("Response: %s\n", string(resp.Payload))
+    go func() {
+        if err := server.Listen(ctx); err != nil { log.Print(err) }
+    }()
+
+    client, err := mesh.NewClient(server.Addr())
+    if err != nil { log.Fatal(err) }
+    defer client.Close()
+    resp, err := client.Send(ctx, &mesh.Message{
+        ID: "request-1", From: "agent-alpha", To: "agent-beta", Method: "analyze",
+        Payload: json.RawMessage(`{"task":"analyze"}`),
+    })
+    if err != nil { log.Fatal(err) }
+    fmt.Println(string(resp.Payload))
 }
 ```
 
 ### Properties
 
-- **Simple protocol**: Newline-delimited JSON over TCP
-- **Streaming support**: `IsStream`/`StreamEnd` flags for multi-message responses
+- **Simple protocol**: Newline-delimited JSON over TCP, not the gRPC wire protocol
+- **Streaming protocol**: `Client.Stream` accepts multiple responses using `IsStream`/`StreamEnd`. The basic `Server.OnMessage` callback returns a single message; multi-frame servers must use a transport handler.
 - **Bidirectional**: Both sides can send and receive
-- **1MB max message**: Configurable buffer size
-- **No HTTP overhead**: Direct TCP for low-latency agent communication
+- **Fixed receive limit**: The scanner is capped at 1 MiB; this is not exposed as a public buffer-size option
+- **Cancellation and backpressure**: Each client stream buffers up to 64 messages. Cancellation, disconnect, or overflow closes it; buffered messages remain readable. Only receiving `StreamEnd` confirms success. Local cancellation does not stop remote work; retries need fresh IDs.
 - **Complementary to A2A HTTP**: Use TCP mesh for internal clusters, HTTP A2A for cross-network
 
 ---
@@ -419,7 +411,7 @@ func main() {
 
 ## See Also
 
-- [Architecture](architecture.md) — Package structure for all Go-exclusive packages
+- [Architecture](architecture.md) — Package structure for these runtime capabilities
 - [Deployment](deployment.md) — Production deployment with pools, replay, and hot-reload
 - [Middleware](middleware.md) — Replay middleware hook details
 - [Examples](examples.md) — Runnable demos for each feature

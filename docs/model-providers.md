@@ -219,11 +219,11 @@ Query bundled model metadata:
 card, _ := model.GetModelCard("claude-sonnet-4-6")
 // card.Name, card.Provider, card.ContextSize, card.OutputSize
 
-models := model.ListModels()          // all 54 chat model cards
+models := model.ListModels()          // all 78 model cards
 models = model.ListModels("openai")   // filter by provider
 ```
 
-54 chat/embedding model cards + 9 TTS model cards are bundled and accessible at runtime via `//go:embed`.
+78 model cards + 9 TTS model cards are bundled and accessible at runtime via `//go:embed`.
 
 ## Model Card Summary
 

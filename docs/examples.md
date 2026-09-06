@@ -1,6 +1,6 @@
 # Examples
 
-51 runnable examples in `examples/`. Run any with:
+54 runnable examples in `examples/`. Run any with:
 
 ```bash
 export DASHSCOPE_API_KEY=sk-...  # or ANTHROPIC_API_KEY / OPENAI_API_KEY
@@ -70,7 +70,7 @@ go run ./examples/<name>
 | `edge_serial_robot` | DeviceTool with serial robot arm control | Yes |
 | `edge_fleet` | Multi-agent PubSub coordination across devices | Yes |
 
-## Go-Exclusive Features
+## Go Runtime Features
 
 | Example | Description | API Key Required |
 |---------|-------------|------------------|
@@ -80,7 +80,7 @@ go run ./examples/<name>
 | `agent_pool` | Fan-out agent pool with 8 workers processing batch inputs | Yes |
 | `hotreload` | Watch config file for changes and update agent at runtime | Yes |
 | `wasm_sandbox` | Execute WASM modules in a sandboxed environment | No |
-| `grpc_a2a` | TCP Agent Mesh: server + client communicating via newline-delimited JSON | Yes |
+| `grpc_a2a` | TCP Agent Mesh: server + client communicating via newline-delimited JSON | No |
 | `bench` | Load-test an agent with configurable concurrency and duration | Yes |
 | `hub_install` | Browse and install MCP tools / skills from a remote hub | No |
 | `access_control` | Multi-tenant RBAC: grant, check, and revoke permissions | No |
@@ -102,5 +102,5 @@ go test ./...
 ## See Also
 
 - [Getting Started](getting-started.md) — Quick start guide
-- [Go-Exclusive Features](go-exclusive.md) — Detailed documentation for Go-only capabilities
+- [Go Runtime Features](go-exclusive.md) — Detailed documentation for runtime capabilities
 - [Architecture](architecture.md) — Package structure and design
